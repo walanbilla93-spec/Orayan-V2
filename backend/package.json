@@ -1,0 +1,15 @@
+{
+  "name": "orayan2-backend",
+  "version": "0.1.0",
+  "description": "Bybit USDT perpetual futures trading engine — gate-driven, paper-first",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "private": true
+}
