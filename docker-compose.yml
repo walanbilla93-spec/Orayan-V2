@@ -1,0 +1,16 @@
+services:
+  orayan2:
+    build: .
+    container_name: orayan2
+    ports:
+      - "8080:8080"
+    environment:
+      # The ONLY configuration outside the UI. Fill these in below, or in a
+      # sibling .env file (copy .env.example to .env) — either works.
+      BYBIT_API_KEY: ${BYBIT_API_KEY:-}
+      BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
+    volumes:
+      # Persist settings + trade history on the host, outside the container,
+      # so `docker compose down` / rebuilds never lose them.
+      - ./data:/app/backend/data
+    restart: unless-stopped

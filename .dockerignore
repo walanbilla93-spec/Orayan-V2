@@ -1,0 +1,9 @@
+node_modules
+backend/data/*.json
+backend/data/*.tmp
+backend/data/*.corrupt.*
+.git
+.env
+*.log
+docs
+README.md

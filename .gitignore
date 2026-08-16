@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.local
+
+# Runtime state — settings overrides, trade history. Machine-specific, never commit.
+backend/data/*.json
+backend/data/*.tmp
+backend/data/*.corrupt.*
+
+*.log
+.DS_Store
+.vscode/
+.idea/
