@@ -110,7 +110,11 @@
       <div class="panel">
         <div class="panel-head">
           <h2>Last scan</h2>
-          <p class="panel-sub">Every setup found, whether or not it passed. Click one to see its gate verdicts and score breakdown.</p>
+          <p class="panel-sub">Every setup found, whether or not it passed. Click one to see its gate verdicts and score breakdown. The download covers every scan since the server started, not just what's shown below.</p>
+          <div class="panel-actions">
+            <button class="btn btn-ghost" id="btnExportSignalsCsv">Download journal (CSV)</button>
+            <button class="btn btn-ghost" id="btnExportSignalsJson">JSON</button>
+          </div>
         </div>
         <div id="signalList"><div class="empty">No scan yet.</div></div>
       </div>
@@ -127,6 +131,10 @@
             <button class="chip" data-status="OPEN">Open</button>
             <button class="chip" data-status="CLOSED">Closed</button>
             <button class="chip" data-status="EXPIRED">Expired</button>
+          </div>
+          <div class="panel-actions">
+            <button class="btn btn-ghost" id="btnExportTradesCsv">Download journal (CSV)</button>
+            <button class="btn btn-ghost" id="btnExportTradesJson">JSON</button>
           </div>
         </div>
         <div id="tradeList"><div class="empty">No trades yet.</div></div>

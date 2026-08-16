@@ -284,13 +284,13 @@ function renderSignals() {
         const open = state.expandedSignal === sig.id;
         return `
           <div class="row row-signal row-clickable" data-signal="${esc(sig.id)}">
-            <div class="sym">${esc(sig.symbol)}</div>
-            <div class="side-${sig.side.toLowerCase()}">${esc(sig.side)}</div>
-            <div>${sig.score}</div>
-            <div>${fmt(sig.rr, 2)}</div>
-            <div class="dim">${fmt(sig.slDistPct, 2)}</div>
-            <div class="dim">${fmtCompact(sig.market.turnover24h)}</div>
-            <div>${verdict}</div>
+            <div class="sym" data-label="Symbol">${esc(sig.symbol)}</div>
+            <div class="side-${sig.side.toLowerCase()}" data-label="Side">${esc(sig.side)}</div>
+            <div data-label="Score">${sig.score}</div>
+            <div data-label="RR (planned)">${fmt(sig.rr, 2)}</div>
+            <div class="dim" data-label="Stop %">${fmt(sig.slDistPct, 2)}</div>
+            <div class="dim" data-label="24h turnover">${fmtCompact(sig.market.turnover24h)}</div>
+            <div data-label="Verdict">${verdict}</div>
           </div>
           ${open ? renderSignalDetail(sig) : ''}
         `;
@@ -360,19 +360,19 @@ function renderTrades() {
   el.innerHTML = `
     <div class="rows">
       <div class="row row-trade row-head">
-        <div>Symbol</div><div>Side</div><div>Status</div><div>Entry</div>
-        <div>Exit</div><div>R</div><div>Net P&L</div><div>Closed</div>
+        <div>Symbol</div><div>Side</div><div>Status</div><div>R</div>
+        <div>Net P&L</div><div>Entry</div><div>Exit</div><div>Closed</div>
       </div>
       ${list.map((t) => `
         <div class="row row-trade">
-          <div class="sym">${esc(t.symbol)}</div>
-          <div class="side-${t.side.toLowerCase()}">${esc(t.side)}</div>
-          <div><span class="pill ${t.status === 'OPEN' ? 'open' : t.status === 'PENDING' ? 'pending' : ''}">${esc(t.status)}</span></div>
-          <div>${fmt(t.fillPrice ?? t.plannedEntry, 6)}</div>
-          <div class="dim">${t.exitPrice ? fmt(t.exitPrice, 6) : '—'}</div>
-          <div class="${sgn(t.realisedRR)}">${t.realisedRR == null ? '—' : fmt(t.realisedRR, 2)}</div>
-          <div class="${sgn(t.netPnl)}">${t.netPnl == null ? '—' : fmtUsd(t.netPnl)}</div>
-          <div class="faint">${t.closedAt ? fmtDate(t.closedAt) : '—'}</div>
+          <div class="sym" data-label="Symbol">${esc(t.symbol)}</div>
+          <div class="side-${t.side.toLowerCase()}" data-label="Side">${esc(t.side)}</div>
+          <div data-label="Status"><span class="pill ${t.status === 'OPEN' ? 'open' : t.status === 'PENDING' ? 'pending' : ''}">${esc(t.status)}</span></div>
+          <div class="${sgn(t.realisedRR)}" data-label="R (multiple of risk)">${t.realisedRR == null ? '—' : fmt(t.realisedRR, 2)}</div>
+          <div class="${sgn(t.netPnl)}" data-label="Net P&L (USDT)">${t.netPnl == null ? '—' : fmtUsd(t.netPnl)}</div>
+          <div class="dim" data-label="Entry">${fmt(t.fillPrice ?? t.plannedEntry, 6)}</div>
+          <div class="dim" data-label="Exit">${t.exitPrice ? fmt(t.exitPrice, 6) : '—'}</div>
+          <div class="faint" data-label="Closed">${t.closedAt ? fmtDate(t.closedAt) : '—'}</div>
         </div>
       `).join('')}
     </div>`;
@@ -603,6 +603,12 @@ function init() {
     $$('.chip', $('#tradeFilters')).forEach((c) => c.classList.toggle('is-active', c === chip));
     renderTrades();
   });
+
+  const downloadFrom = (path) => { window.location.href = path; };
+  $('#btnExportTradesCsv').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=csv'));
+  $('#btnExportTradesJson').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=json'));
+  $('#btnExportSignalsCsv').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=csv'));
+  $('#btnExportSignalsJson').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=json'));
 
   $('#signalList').addEventListener('click', (e) => {
     const row = e.target.closest('[data-signal]');

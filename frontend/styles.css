@@ -491,6 +491,17 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outl
   .row-signal, .row-trade, .row-pos { grid-template-columns: 1fr 1fr 1fr; }
   .row-head { display: none; }
   .row > *:nth-child(n+7) { display: none; }
+  /* Column headers are hidden above, so every remaining cell gets its own inline label —
+     otherwise numbers like an R-multiple and a price are indistinguishable at a glance. */
+  .row:not(.row-head) > [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: 1px;
+  }
 }
 
 @media (max-width: 640px) {
