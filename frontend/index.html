@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orayan II — Trading Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230E1520'/><circle cx='16' cy='16' r='8' fill='none' stroke='%234FD1E8' stroke-width='2'/></svg>">
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ── Status rail ─────────────────────────────────────────────────────────────────── -->
+  <header class="statusbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">ORAYAN<span class="brand-num">II</span></span>
+    </div>
+
+    <div class="status-cluster" id="statusCluster">
+      <div class="stat" id="statMode">
+        <span class="stat-label">Mode</span>
+        <span class="stat-value" data-field="mode">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Engine</span>
+        <span class="stat-value" data-field="engine">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">BTC regime</span>
+        <span class="stat-value" data-field="regime">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Open</span>
+        <span class="stat-value" data-field="open">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Net P&amp;L</span>
+        <span class="stat-value" data-field="netpnl">—</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Today</span>
+        <span class="stat-value" data-field="today">—</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-start" id="btnStart">Start engine</button>
+      <button class="btn btn-stop" id="btnStop">Stop</button>
+      <button class="btn btn-scan" id="btnScan">Scan now</button>
+      <button class="btn btn-panic" id="btnPanic">Close everything</button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <!-- ── Navigation ──────────────────────────────────────────────────────────────────── -->
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" data-view="dashboard" role="tab">Dashboard</button>
+    <button class="tab" data-view="signals" role="tab">Signals</button>
+    <button class="tab" data-view="trades" role="tab">Trades</button>
+    <button class="tab" data-view="settings" role="tab">Settings</button>
+    <button class="tab" data-view="logs" role="tab">Logs</button>
+  </nav>
+
+  <main class="content">
+
+    <!-- ── Dashboard ─────────────────────────────────────────────────────────────────── -->
+    <section class="view is-active" data-view="dashboard">
+
+      <!-- SIGNATURE ELEMENT: the gate funnel. This whole system is an argument about which
+           gates earn their place, so the funnel is the primary instrument, not a side panel. -->
+      <div class="panel panel-funnel">
+        <div class="panel-head">
+          <h2>Gate funnel</h2>
+          <p class="panel-sub">Where candidates die, last scan</p>
+        </div>
+        <div class="funnel" id="funnel">
+          <div class="empty">Run a scan to see the funnel.</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head"><h2>Performance</h2></div>
+          <div class="metrics" id="metrics"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Account</h2></div>
+          <div class="metrics" id="account"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Live positions</h2>
+          <p class="panel-sub">Pending orders and open trades</p>
+        </div>
+        <div id="livePositions"><div class="empty">Nothing open.</div></div>
+      </div>
+    </section>
+
+    <!-- ── Signals ───────────────────────────────────────────────────────────────────── -->
+    <section class="view" data-view="signals">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Last scan</h2>
+          <p class="panel-sub">Every setup found, whether or not it passed. Click one to see its gate verdicts and score breakdown.</p>
+        </div>
+        <div id="signalList"><div class="empty">No scan yet.</div></div>
+      </div>
+    </section>
+
+    <!-- ── Trades ────────────────────────────────────────────────────────────────────── -->
+    <section class="view" data-view="trades">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Trade history</h2>
+          <div class="filter-row" id="tradeFilters">
+            <button class="chip is-active" data-status="">All</button>
+            <button class="chip" data-status="PENDING">Pending</button>
+            <button class="chip" data-status="OPEN">Open</button>
+            <button class="chip" data-status="CLOSED">Closed</button>
+            <button class="chip" data-status="EXPIRED">Expired</button>
+          </div>
+        </div>
+        <div id="tradeList"><div class="empty">No trades yet.</div></div>
+      </div>
+    </section>
+
+    <!-- ── Settings ──────────────────────────────────────────────────────────────────── -->
+    <section class="view" data-view="settings">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Configuration</h2>
+          <p class="panel-sub">
+            Every value here is stored on the server. Only the Bybit API key and secret live in the
+            environment. Fields marked <span class="pin-dot" aria-hidden="true"></span> are pinned by you
+            and no longer track the default.
+          </p>
+          <div class="panel-actions">
+            <button class="btn btn-ghost" id="btnResetAll">Reset all to defaults</button>
+          </div>
+        </div>
+        <div id="settingsForm"><div class="empty">Loading…</div></div>
+      </div>
+    </section>
+
+    <!-- ── Logs ──────────────────────────────────────────────────────────────────────── -->
+    <section class="view" data-view="logs">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Engine log</h2>
+          <div class="panel-actions">
+            <label class="inline-check">
+              <input type="checkbox" id="logFollow" checked> Follow
+            </label>
+          </div>
+        </div>
+        <div class="logstream" id="logStream"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast-stack" id="toasts"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
