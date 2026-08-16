@@ -5,6 +5,7 @@ const engine = require('../lib/engine');
 const logger = require('../lib/logger');
 const bybit = require('../lib/bybit');
 const marketData = require('../lib/marketData');
+const journal = require('../lib/journal');
 const { GATE_ORDER } = require('../lib/gates');
 const { num } = require('../lib/util');
 
@@ -53,6 +54,26 @@ const routes = {
   'GET /api/logs': async ({ query }) => ({
     logs: logger.tail(num(query.after, 0), num(query.limit, 300)),
   }),
+
+  'GET /api/journal/signals': async ({ query }) => ({
+    signals: journal.getSignalHistory({ limit: num(query.limit, 5000) }),
+  }),
+
+  'GET /api/journal/trades/export': async ({ query }) => {
+    const format = query.format === 'csv' ? 'csv' : 'json';
+    const trades = engine.getTrades({ status: query.status || null, limit: num(query.limit, 100000) });
+    const { body, contentType } = journal.exportTrades(trades, format);
+    return { __file: true, body, contentType, filename: `orayan2_trades_${Date.now()}.${format}` };
+  },
+
+  'GET /api/journal/signals/export': async ({ query }) => {
+    const format = query.format === 'csv' ? 'csv' : 'json';
+    const signals = journal.getSignalHistory({ limit: num(query.limit, 20000) });
+    const { body, contentType } = journal.exportSignals(signals, format);
+    return { __file: true, body, contentType, filename: `orayan2_signals_${Date.now()}.${format}` };
+  },
+
+  'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); return { ok: true }; },
 
   'POST /api/control/start': async () => engine.start(),
   'POST /api/control/stop': async () => engine.stop(),
