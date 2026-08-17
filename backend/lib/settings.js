@@ -65,7 +65,7 @@ const SCHEMA = [
 
   { key: 'gateSlDistEnabled', group: 'Gates', type: 'bool', default: true,
     label: 'Stop distance bounds', help: 'Stops too tight get noise-hunted; too wide break the cost maths.' },
-  { key: 'minSlDistPct', group: 'Gates', type: 'float', default: 0.40, min: 0.05, max: 10, label: 'Min stop distance (%)' },
+  { key: 'minSlDistPct', group: 'Gates', type: 'float', default: 0.80, min: 0.05, max: 10, label: 'Min stop distance (%)' },
   { key: 'maxSlDistPct', group: 'Gates', type: 'float', default: 2.50, min: 0.1, max: 25, label: 'Max stop distance (%)' },
 
   { key: 'gateBtcRegimeEnabled', group: 'Gates', type: 'bool', default: true,
@@ -85,6 +85,14 @@ const SCHEMA = [
   { key: 'gateSpreadEnabled', group: 'Gates', type: 'bool', default: true,
     label: 'Spread ceiling', help: 'A wide book quietly eats the edge before the trade starts.' },
   { key: 'maxSpreadPct', group: 'Gates', type: 'float', default: 0.06, min: 0.001, max: 5, label: 'Max spread (%)' },
+
+  // ── Structure quality ───────────────────────────────────────────────────────
+  { key: 'minLevelTouches', group: 'Gates', type: 'int', default: 2, min: 1, max: 10,
+    label: 'Min level touches', help: 'Require the structural support/resistance to have been touched at least this many times. 1 = weak, 2 = minimum recommended, 3+ = strong.' },
+  { key: 'requireStrongBreak', group: 'Gates', type: 'bool', default: true,
+    label: 'Require strong break', help: 'Only accept BOS/CHoCH that showed real displacement (strong body + range). Causal — uses only past candles.' },
+  { key: 'rejectFailedBreak', group: 'Gates', type: 'bool', default: true,
+    label: 'Reject failed breaks', help: 'Reject if price has already closed back through the broken level by the time the signal is born. Causal — no future data.' },
 
   // ── Entry ─────────────────────────────────────────────────────────────────────────────────
   { key: 'entryWindowMin', group: 'Entry', type: 'int', default: 45, min: 5, max: 480,

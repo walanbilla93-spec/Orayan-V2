@@ -49,9 +49,6 @@ function regimeAllows(regime, side) {
 
 /**
  * Score a setup out of 100 from transparent, separable components.
- *
- * Deliberately NOT a black box: every component is inspectable in the UI, because a score you
- * cannot decompose is a score you cannot debug when it starts losing.
  */
 function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRegime }) {
   const closes = candles.map((c) => c.close);
@@ -85,8 +82,7 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
   if (anchor && anchor.touches >= 2) structPts += 4;
   components.structure = structPts;
 
-  // Momentum (0-15). Extremes are penalised — chasing an exhausted move is how the ceiling
-  // half of SCORE_BAND earns its keep.
+  // Momentum (0-15)
   let momPts = 0;
   if (r != null) {
     if (isBuy) {
@@ -103,7 +99,7 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
   }
   components.momentum = momPts;
 
-  // Entry location (0-20) — how close the plan sits to a real level rather than mid-air.
+  // Entry location (0-20)
   let locPts = 0;
   if (anchor && price) {
     const distPct = (Math.abs(price - anchor.price) / price) * 100;
@@ -125,7 +121,6 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
   else if (rr > 5) rrPts = 4;
   components.rr = rrPts;
 
-  // BTC regime agreement — a modifier, not a component, so it cannot manufacture a score alone.
   const aligned = regimeAllows(btcRegime.regime, side);
   const regimeMult = aligned ? 1.0 : 0.75;
   components.regimeMultiplier = regimeMult;
@@ -139,15 +134,67 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
 }
 
 /**
+ * Causal displacement check.
+ * Only uses candles up to and including the break candle — never future data.
+ */
+function isStrongBreak(candles, eventIndex, side, atrVal) {
+  if (eventIndex == null || eventIndex < 1 || eventIndex >= candles.length) return false;
+
+  const breakCandle = candles[eventIndex];
+  const body = Math.abs(num(breakCandle.close) - num(breakCandle.open));
+  const range = num(breakCandle.high) - num(breakCandle.low);
+  if (range <= 0) return false;
+
+  // Average body of the 20 candles *before* the break (strictly causal)
+  const start = Math.max(0, eventIndex - 20);
+  const prior = candles.slice(start, eventIndex);
+  if (prior.length < 5) return false;
+
+  let bodySum = 0;
+  for (const c of prior) bodySum += Math.abs(num(c.close) - num(c.open));
+  const avgBody = bodySum / prior.length;
+
+  const strongBody = body > avgBody * 1.35;
+  const strongRange = range > atrVal * 0.85;
+  const closedInDirection = side === 'BUY'
+    ? num(breakCandle.close) > num(breakCandle.open)
+    : num(breakCandle.close) < num(breakCandle.open);
+
+  return strongBody && strongRange && closedInDirection;
+}
+
+/**
+ * Causal failed-break check.
+ * After the break, has price already closed back beyond the broken level
+ * by the time we are generating the signal? Uses only candles that already exist.
+ */
+function hasAlreadyFailed(candles, struct, side) {
+  const brokenLevel = side === 'BUY'
+    ? struct.lastHigh?.price
+    : struct.lastLow?.price;
+
+  if (brokenLevel == null || struct.eventIndex == null) return true;
+
+  // Only look at candles that closed *after* the break and *before* the current bar
+  const afterBreak = candles.slice(struct.eventIndex + 1, -1);
+  if (afterBreak.length === 0) return false;
+
+  const lookback = afterBreak.slice(-5);
+  for (const c of lookback) {
+    if (side === 'BUY' && num(c.close) < brokenLevel) return true;
+    if (side === 'SELL' && num(c.close) > brokenLevel) return true;
+  }
+  return false;
+}
+
+/**
  * Build a trade plan for one symbol, or return null with a reason.
  *
- * Entry is placed at the structural level, not at the current price: the plan is "wait for price
- * to come back to the level", which is the fill path that actually preserved reward:risk.
- *
- * STOP GEOMETRY (updated):
- * The stop is placed beyond the structural level with an ATR cushion, but is forced to respect
- * settings.minSlDistPct. This prevents the common failure mode where natural ATR-based stops
- * were 0.4–0.7% and then got rejected by the SL_DISTANCE gate (or got noise-hunted live).
+ * Quality filters:
+ * - Minimum touches on the structural level
+ * - Strong displacement on the original break (causal)
+ * - Reject if the break has already failed by signal time (causal)
+ * - Stop geometry respects minSlDistPct
  */
 function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   if (!candles || candles.length < 80) return { ok: false, reason: 'NOT_ENOUGH_HISTORY' };
@@ -161,7 +208,6 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   const struct = detectStructure(candles, 2);
   const levels = keyLevels(candles, price, 2);
 
-  // Direction comes from the structural event plus trend, never from price action alone.
   let side = null;
   if (['BOS_UP', 'CHOCH_UP'].includes(struct.event)) side = 'BUY';
   else if (['BOS_DOWN', 'CHOCH_DOWN'].includes(struct.event)) side = 'SELL';
@@ -172,15 +218,33 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   const isBuy = side === 'BUY';
   const support = levels.support?.price ?? null;
   const resistance = levels.resistance?.price ?? null;
+  const anchor = isBuy ? levels.support : levels.resistance;
 
-  // Minimum stop distance the geometry must respect (from settings, default 0.8%)
+  // Quality filter 1: minimum touches
+  const minTouches = Math.max(1, num(settings.minLevelTouches, 2));
+  if (!anchor || (anchor.touches || 0) < minTouches) {
+    return { ok: false, reason: 'WEAK_LEVEL' };
+  }
+
+  // Quality filter 2: strong displacement on the break (causal)
+  if (settings.requireStrongBreak !== false) {
+    if (!isStrongBreak(candles, struct.eventIndex, side, a)) {
+      return { ok: false, reason: 'WEAK_BREAK' };
+    }
+  }
+
+  // Quality filter 3: break has not already failed (causal)
+  if (settings.rejectFailedBreak !== false) {
+    if (hasAlreadyFailed(candles, struct, side)) {
+      return { ok: false, reason: 'FAILED_BREAK' };
+    }
+  }
+
+  // Stop geometry that respects minSlDistPct
   const minSlPct = num(settings.minSlDistPct, 0.8);
   const minSlAbs = price * (minSlPct / 100);
-
-  // ATR cushion (original logic) vs forced minimum — take the larger one so the stop
-  // is never tighter than the gate we are about to apply.
   const atrCushion = a * 0.5;
-  const cushion = Math.max(atrCushion, minSlAbs * 0.85); // 0.85 leaves a little room for entry offset
+  const cushion = Math.max(atrCushion, minSlAbs * 0.85);
 
   let entry;
   let sl;
@@ -188,31 +252,21 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
 
   if (isBuy) {
     if (support == null) return { ok: false, reason: 'NO_SUPPORT_LEVEL' };
-
-    // Entry slightly above the level (retest zone)
     entry = Math.min(price, support + a * 0.25);
-
-    // Stop below the level, forced to clear the minimum distance
     sl = support - cushion;
-
-    // Final safety: if even after the cushion the distance is still under min, push it further
     if ((entry - sl) / entry * 100 < minSlPct) {
       sl = entry * (1 - minSlPct / 100);
     }
-
     tp = resistance != null && resistance > entry
       ? resistance - a * 0.1
       : entry + Math.abs(entry - sl) * 2.5;
   } else {
     if (resistance == null) return { ok: false, reason: 'NO_RESISTANCE_LEVEL' };
-
     entry = Math.max(price, resistance - a * 0.25);
     sl = resistance + cushion;
-
     if ((sl - entry) / entry * 100 < minSlPct) {
       sl = entry * (1 + minSlPct / 100);
     }
-
     tp = support != null && support < entry
       ? support + a * 0.1
       : entry - Math.abs(entry - sl) * 2.5;
@@ -258,8 +312,20 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
       btcRegime: btcRegime.regime,
       regimeAligned: scored.aligned,
       timeframe: settings.timeframe,
+      quality: {
+        touches: anchor?.touches ?? 0,
+        strongBreak: true,
+        failedBreak: false,
+      },
     },
   };
 }
 
-module.exports = { buildSignal, detectBtcRegime, regimeAllows, scoreSetup };
+module.exports = {
+  buildSignal,
+  detectBtcRegime,
+  regimeAllows,
+  scoreSetup,
+  isStrongBreak,
+  hasAlreadyFailed,
+};
