@@ -93,8 +93,9 @@ const SCHEMA = [
     label: 'Require strong break', help: 'Only accept BOS/CHoCH that showed real displacement (strong body + range). Causal — uses only past candles.' },
   { key: 'rejectFailedBreak', group: 'Gates', type: 'bool', default: true,
     label: 'Reject failed breaks', help: 'Reject if price has already closed back through the broken level by the time the signal is born. Causal — no future data.' },
-  { key: 'entryMode', group: 'Entry', type: 'string', default: 'RETEST_OR_FADE',
-    label: 'Entry mode', help: 'CONTINUATION = classic retest with the break. RETEST_OR_FADE = if retest confirms take continuation; if retest fails take the opposite side.' },
+  { key: 'entryMode', group: 'Entry', type: 'enum', default: 'RETEST_OR_FADE',
+    options: ['RETEST_OR_FADE', 'CONTINUATION'],
+    label: 'Entry mode', help: 'RETEST_OR_FADE = if retest confirms take continuation; if retest fails take the opposite side. CONTINUATION = classic retest with the break only.' },
 
   // ── Entry ─────────────────────────────────────────────────────────────────────────────────
   { key: 'entryWindowMin', group: 'Entry', type: 'int', default: 45, min: 5, max: 480,
