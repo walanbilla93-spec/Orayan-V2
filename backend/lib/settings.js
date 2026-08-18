@@ -93,6 +93,8 @@ const SCHEMA = [
     label: 'Require strong break', help: 'Only accept BOS/CHoCH that showed real displacement (strong body + range). Causal — uses only past candles.' },
   { key: 'rejectFailedBreak', group: 'Gates', type: 'bool', default: true,
     label: 'Reject failed breaks', help: 'Reject if price has already closed back through the broken level by the time the signal is born. Causal — no future data.' },
+  { key: 'entryMode', group: 'Entry', type: 'string', default: 'RETEST_OR_FADE',
+    label: 'Entry mode', help: 'CONTINUATION = classic retest with the break. RETEST_OR_FADE = if retest confirms take continuation; if retest fails take the opposite side.' },
 
   // ── Entry ─────────────────────────────────────────────────────────────────────────────────
   { key: 'entryWindowMin', group: 'Entry', type: 'int', default: 45, min: 5, max: 480,
@@ -144,6 +146,8 @@ function coerce(spec, raw) {
       return raw === true || raw === 'true' || raw === 1 || raw === '1';
     case 'int':
       return Math.round(clamp(num(raw, spec.default), spec.min ?? -1e12, spec.max ?? 1e12));
+    case 'string':
+      return raw == null ? spec.default : String(raw);
     case 'float':
       return clamp(num(raw, spec.default), spec.min ?? -1e12, spec.max ?? 1e12);
     case 'enum':

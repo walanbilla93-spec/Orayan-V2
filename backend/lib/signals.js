@@ -5,8 +5,7 @@ const { detectStructure, keyLevels } = require('./structure');
 const { num, clamp, uid } = require('./util');
 
 /**
- * BTC regime. Every alt is levered beta on BTC, so a long setup on a random alt during a BTC
- * breakdown is not really a long setup on that alt.
+ * BTC regime.
  */
 function detectBtcRegime(candles) {
   if (!candles || candles.length < 60) return { regime: 'UNKNOWN', strength: 0 };
@@ -47,9 +46,6 @@ function regimeAllows(regime, side) {
   }
 }
 
-/**
- * Score a setup out of 100 from transparent, separable components.
- */
 function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRegime }) {
   const closes = candles.map((c) => c.close);
   const e20 = ema(closes, 20);
@@ -60,7 +56,6 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
 
   const components = {};
 
-  // Trend alignment (0-25)
   let trendPts = 0;
   if (isBuy) {
     if (price > e20) trendPts += 8;
@@ -73,7 +68,6 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
   }
   components.trend = trendPts;
 
-  // Structure quality (0-25)
   let structPts = 0;
   const wantEvent = isBuy ? ['BOS_UP', 'CHOCH_UP'] : ['BOS_DOWN', 'CHOCH_DOWN'];
   if (wantEvent.includes(struct.event)) structPts += 14;
@@ -82,7 +76,6 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
   if (anchor && anchor.touches >= 2) structPts += 4;
   components.structure = structPts;
 
-  // Momentum (0-15)
   let momPts = 0;
   if (r != null) {
     if (isBuy) {
@@ -99,7 +92,6 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
   }
   components.momentum = momPts;
 
-  // Entry location (0-20)
   let locPts = 0;
   if (anchor && price) {
     const distPct = (Math.abs(price - anchor.price) / price) * 100;
@@ -110,7 +102,6 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
   }
   components.location = locPts;
 
-  // Reward:risk shape (0-15)
   const risk = Math.abs(entry - sl);
   const reward = Math.abs(tp - entry);
   const rr = risk ? reward / risk : 0;
@@ -133,19 +124,13 @@ function scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRe
   return { score, components, rr, aligned };
 }
 
-/**
- * Causal displacement check.
- * Only uses candles up to and including the break candle — never future data.
- */
 function isStrongBreak(candles, eventIndex, side, atrVal) {
   if (eventIndex == null || eventIndex < 1 || eventIndex >= candles.length) return false;
-
   const breakCandle = candles[eventIndex];
   const body = Math.abs(num(breakCandle.close) - num(breakCandle.open));
   const range = num(breakCandle.high) - num(breakCandle.low);
   if (range <= 0) return false;
 
-  // Average body of the 20 candles *before* the break (strictly causal)
   const start = Math.max(0, eventIndex - 20);
   const prior = candles.slice(start, eventIndex);
   if (prior.length < 5) return false;
@@ -163,19 +148,10 @@ function isStrongBreak(candles, eventIndex, side, atrVal) {
   return strongBody && strongRange && closedInDirection;
 }
 
-/**
- * Causal failed-break check.
- * After the break, has price already closed back beyond the broken level
- * by the time we are generating the signal? Uses only candles that already exist.
- */
 function hasAlreadyFailed(candles, struct, side) {
-  const brokenLevel = side === 'BUY'
-    ? struct.lastHigh?.price
-    : struct.lastLow?.price;
-
+  const brokenLevel = side === 'BUY' ? struct.lastHigh?.price : struct.lastLow?.price;
   if (brokenLevel == null || struct.eventIndex == null) return true;
 
-  // Only look at candles that closed *after* the break and *before* the current bar
   const afterBreak = candles.slice(struct.eventIndex + 1, -1);
   if (afterBreak.length === 0) return false;
 
@@ -188,13 +164,139 @@ function hasAlreadyFailed(candles, struct, side) {
 }
 
 /**
- * Build a trade plan for one symbol, or return null with a reason.
+ * Dual-path decision at the retest level (causal).
  *
- * Quality filters:
- * - Minimum touches on the structural level
- * - Strong displacement on the original break (causal)
- * - Reject if the break has already failed by signal time (causal)
- * - Stop geometry respects minSlDistPct
+ * breakSide = direction of the original BOS/CHoCH
+ * level     = the structural level being retested
+ *
+ * Returns:
+ *   { path: 'CONTINUATION', side }  — retest held / rejected in favour of the break
+ *   { path: 'REVERSAL', side }      — retest failed (closed through the level)
+ *   null                            — no clear decision yet
+ */
+function decideRetestPath(candles, breakSide, level, atrVal) {
+  if (!candles || candles.length < 5 || level == null || !atrVal) return null;
+
+  // Use only closed candles (exclude the forming bar)
+  const closed = candles.slice(0, -1);
+  if (closed.length < 3) return null;
+
+  const zone = Math.max(atrVal * 0.35, level * 0.0015); // proximity zone
+  const recent = closed.slice(-8);
+
+  // Did price actually interact with the level recently?
+  let touched = false;
+  for (const c of recent) {
+    if (num(c.low) <= level + zone && num(c.high) >= level - zone) {
+      touched = true;
+      break;
+    }
+  }
+  if (!touched) return null;
+
+  const last = recent[recent.length - 1];
+  const prev = recent[recent.length - 2];
+  const lastClose = num(last.close);
+  const lastOpen = num(last.open);
+  const lastHigh = num(last.high);
+  const lastLow = num(last.low);
+  const body = Math.abs(lastClose - lastOpen);
+  const range = lastHigh - lastLow || 1e-12;
+  const upperWick = lastHigh - Math.max(lastClose, lastOpen);
+  const lowerWick = Math.min(lastClose, lastOpen) - lastLow;
+
+  // ── REVERSAL path: close through the level against the break ──────────────
+  // Original break was UP → failed retest = close back below level
+  // Original break was DOWN → failed retest = close back above level
+  if (breakSide === 'BUY' && lastClose < level - zone * 0.25) {
+    return { path: 'REVERSAL', side: 'SELL', reason: 'CLOSED_THROUGH_SUPPORT' };
+  }
+  if (breakSide === 'SELL' && lastClose > level + zone * 0.25) {
+    return { path: 'REVERSAL', side: 'BUY', reason: 'CLOSED_THROUGH_RESISTANCE' };
+  }
+
+  // ── CONTINUATION path: rejection at the level in break direction ──────────
+  // BUY break: bullish rejection (lower wick, close back above level)
+  if (breakSide === 'BUY') {
+    const nearLevel = lastLow <= level + zone && lastLow >= level - zone * 2;
+    const rejected = lowerWick > body * 0.6 && lastClose > level - zone * 0.5;
+    const closedUp = lastClose >= lastOpen;
+    if (nearLevel && rejected && (closedUp || lastClose > level)) {
+      return { path: 'CONTINUATION', side: 'BUY', reason: 'BULLISH_REJECTION' };
+    }
+  }
+
+  // SELL break: bearish rejection (upper wick, close back below level)
+  if (breakSide === 'SELL') {
+    const nearLevel = lastHigh >= level - zone && lastHigh <= level + zone * 2;
+    const rejected = upperWick > body * 0.6 && lastClose < level + zone * 0.5;
+    const closedDown = lastClose <= lastOpen;
+    if (nearLevel && rejected && (closedDown || lastClose < level)) {
+      return { path: 'CONTINUATION', side: 'SELL', reason: 'BEARISH_REJECTION' };
+    }
+  }
+
+  // Also allow a slightly slower confirmation: previous bar touched, current bar closes in break direction away from level
+  if (breakSide === 'BUY') {
+    const prevTouched = num(prev.low) <= level + zone && num(prev.high) >= level - zone;
+    if (prevTouched && lastClose > level + zone * 0.5 && lastClose > lastOpen) {
+      return { path: 'CONTINUATION', side: 'BUY', reason: 'BOUNCE_CONFIRM' };
+    }
+  }
+  if (breakSide === 'SELL') {
+    const prevTouched = num(prev.high) >= level - zone && num(prev.low) <= level + zone;
+    if (prevTouched && lastClose < level - zone * 0.5 && lastClose < lastOpen) {
+      return { path: 'CONTINUATION', side: 'SELL', reason: 'REJECT_CONFIRM' };
+    }
+  }
+
+  return null;
+}
+
+function buildPlan(side, price, support, resistance, a, minSlPct) {
+  const isBuy = side === 'BUY';
+  const minSlAbs = price * (minSlPct / 100);
+  const atrCushion = a * 0.5;
+  const cushion = Math.max(atrCushion, minSlAbs * 0.85);
+
+  let entry;
+  let sl;
+  let tp;
+
+  if (isBuy) {
+    if (support == null) return null;
+    entry = Math.min(price, support + a * 0.25);
+    // For reversal entries price may already be through — use marketable limit near price
+    if (price < support - a * 0.1) entry = price; // already through, enter near market
+    sl = Math.min(support, entry) - cushion;
+    if ((entry - sl) / entry * 100 < minSlPct) sl = entry * (1 - minSlPct / 100);
+    tp = resistance != null && resistance > entry
+      ? resistance - a * 0.1
+      : entry + Math.abs(entry - sl) * 2.5;
+  } else {
+    if (resistance == null) return null;
+    entry = Math.max(price, resistance - a * 0.25);
+    if (price > resistance + a * 0.1) entry = price;
+    sl = Math.max(resistance, entry) + cushion;
+    if ((sl - entry) / entry * 100 < minSlPct) sl = entry * (1 + minSlPct / 100);
+    tp = support != null && support < entry
+      ? support + a * 0.1
+      : entry - Math.abs(entry - sl) * 2.5;
+  }
+
+  if (!(entry > 0) || !(sl > 0) || !(tp > 0)) return null;
+  if (isBuy && !(sl < entry && tp > entry)) return null;
+  if (!isBuy && !(sl > entry && tp < entry)) return null;
+
+  return { entry, sl, tp };
+}
+
+/**
+ * Build a trade plan.
+ *
+ * entryMode:
+ *   'CONTINUATION'   — original behaviour (retest with the break)
+ *   'RETEST_OR_FADE' — if retest confirms → continuation; if retest fails → reversal
  */
 function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   if (!candles || candles.length < 80) return { ok: false, reason: 'NOT_ENOUGH_HISTORY' };
@@ -208,75 +310,86 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   const struct = detectStructure(candles, 2);
   const levels = keyLevels(candles, price, 2);
 
-  let side = null;
-  if (['BOS_UP', 'CHOCH_UP'].includes(struct.event)) side = 'BUY';
-  else if (['BOS_DOWN', 'CHOCH_DOWN'].includes(struct.event)) side = 'SELL';
-  else if (struct.trend === 'UP') side = 'BUY';
-  else if (struct.trend === 'DOWN') side = 'SELL';
-  if (!side) return { ok: false, reason: 'NO_DIRECTION' };
+  // Original break direction
+  let breakSide = null;
+  if (['BOS_UP', 'CHOCH_UP'].includes(struct.event)) breakSide = 'BUY';
+  else if (['BOS_DOWN', 'CHOCH_DOWN'].includes(struct.event)) breakSide = 'SELL';
+  else if (struct.trend === 'UP') breakSide = 'BUY';
+  else if (struct.trend === 'DOWN') breakSide = 'SELL';
+  if (!breakSide) return { ok: false, reason: 'NO_DIRECTION' };
 
-  const isBuy = side === 'BUY';
   const support = levels.support?.price ?? null;
   const resistance = levels.resistance?.price ?? null;
-  const anchor = isBuy ? levels.support : levels.resistance;
+  // Level that should be retested after the break
+  const retestLevel = breakSide === 'BUY'
+    ? (struct.lastHigh?.price ?? resistance)
+    : (struct.lastLow?.price ?? support);
+  const anchor = breakSide === 'BUY' ? levels.support : levels.resistance;
 
-  // Quality filter 1: minimum touches
-  const minTouches = Math.max(1, num(settings.minLevelTouches, 2));
-  if (!anchor || (anchor.touches || 0) < minTouches) {
-    return { ok: false, reason: 'WEAK_LEVEL' };
+  const minTouches = Math.max(1, num(settings.minLevelTouches, 1));
+  if (settings.minLevelTouches > 0 && anchor && (anchor.touches || 0) < minTouches) {
+    // soft: only enforce when we have an anchor with known touches
+    if ((anchor.touches || 0) > 0 && (anchor.touches || 0) < minTouches) {
+      return { ok: false, reason: 'WEAK_LEVEL' };
+    }
   }
 
-  // Quality filter 2: strong displacement on the break (causal)
-  if (settings.requireStrongBreak !== false) {
-    if (!isStrongBreak(candles, struct.eventIndex, side, a)) {
+  if (settings.requireStrongBreak === true) {
+    if (!isStrongBreak(candles, struct.eventIndex, breakSide, a)) {
       return { ok: false, reason: 'WEAK_BREAK' };
     }
   }
 
-  // Quality filter 3: break has not already failed (causal)
-  if (settings.rejectFailedBreak !== false) {
-    if (hasAlreadyFailed(candles, struct, side)) {
-      return { ok: false, reason: 'FAILED_BREAK' };
+  const entryMode = settings.entryMode || 'RETEST_OR_FADE';
+  const minSlPct = num(settings.minSlDistPct, 0.5);
+
+  let side = breakSide;
+  let path = 'CONTINUATION';
+  let pathReason = 'DEFAULT';
+
+  if (entryMode === 'RETEST_OR_FADE') {
+    // In dual mode we do NOT reject failed breaks — failure is a valid path
+    const decision = decideRetestPath(candles, breakSide, retestLevel, a);
+    if (!decision) {
+      return { ok: false, reason: 'WAITING_RETEST_DECISION' };
     }
-  }
-
-  // Stop geometry that respects minSlDistPct
-  const minSlPct = num(settings.minSlDistPct, 0.8);
-  const minSlAbs = price * (minSlPct / 100);
-  const atrCushion = a * 0.5;
-  const cushion = Math.max(atrCushion, minSlAbs * 0.85);
-
-  let entry;
-  let sl;
-  let tp;
-
-  if (isBuy) {
-    if (support == null) return { ok: false, reason: 'NO_SUPPORT_LEVEL' };
-    entry = Math.min(price, support + a * 0.25);
-    sl = support - cushion;
-    if ((entry - sl) / entry * 100 < minSlPct) {
-      sl = entry * (1 - minSlPct / 100);
-    }
-    tp = resistance != null && resistance > entry
-      ? resistance - a * 0.1
-      : entry + Math.abs(entry - sl) * 2.5;
+    side = decision.side;
+    path = decision.path;
+    pathReason = decision.reason;
   } else {
-    if (resistance == null) return { ok: false, reason: 'NO_RESISTANCE_LEVEL' };
-    entry = Math.max(price, resistance - a * 0.25);
-    sl = resistance + cushion;
-    if ((sl - entry) / entry * 100 < minSlPct) {
-      sl = entry * (1 + minSlPct / 100);
+    // Classic continuation only — reject already-failed breaks
+    if (settings.rejectFailedBreak !== false) {
+      if (hasAlreadyFailed(candles, struct, breakSide)) {
+        return { ok: false, reason: 'FAILED_BREAK' };
+      }
     }
-    tp = support != null && support < entry
-      ? support + a * 0.1
-      : entry - Math.abs(entry - sl) * 2.5;
   }
 
-  if (!(entry > 0) || !(sl > 0) || !(tp > 0)) return { ok: false, reason: 'INVALID_LEVELS' };
-  if (isBuy && !(sl < entry && tp > entry)) return { ok: false, reason: 'INVERTED_PLAN' };
-  if (!isBuy && !(sl > entry && tp < entry)) return { ok: false, reason: 'INVERTED_PLAN' };
+  // For reversal, the structural anchor flips
+  const planSupport = side === 'BUY' ? support : support;
+  const planResistance = side === 'SELL' ? resistance : resistance;
+  // Use nearest opposite level relative to chosen side
+  let useSupport = support;
+  let useResistance = resistance;
+  if (path === 'REVERSAL') {
+    // After a failed retest, place stop beyond the level that just failed
+    if (side === 'SELL') {
+      // was BUY break that failed → short, stop above failed level
+      useResistance = retestLevel;
+      useSupport = support;
+    } else {
+      useSupport = retestLevel;
+      useResistance = resistance;
+    }
+  }
 
-  const scored = scoreSetup({ side, candles, struct, levels, price, entry, sl, tp, btcRegime });
+  const plan = buildPlan(side, price, useSupport, useResistance, a, minSlPct);
+  if (!plan) return { ok: false, reason: 'INVALID_LEVELS' };
+
+  const { entry, sl, tp } = plan;
+  const scored = scoreSetup({
+    side, candles, struct, levels, price, entry, sl, tp, btcRegime,
+  });
   const slDistPct = (Math.abs(entry - sl) / entry) * 100;
 
   return {
@@ -297,6 +410,10 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
       components: scored.components,
       structureEvent: struct.event,
       structureTrend: struct.trend,
+      entryPath: path,
+      entryPathReason: pathReason,
+      breakSide,
+      retestLevel,
       levels: {
         support,
         resistance,
@@ -314,8 +431,8 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
       timeframe: settings.timeframe,
       quality: {
         touches: anchor?.touches ?? 0,
-        strongBreak: true,
-        failedBreak: false,
+        path,
+        pathReason,
       },
     },
   };
@@ -328,4 +445,5 @@ module.exports = {
   scoreSetup,
   isStrongBreak,
   hasAlreadyFailed,
+  decideRetestPath,
 };
