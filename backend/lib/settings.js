@@ -65,7 +65,7 @@ const SCHEMA = [
 
   { key: 'gateSlDistEnabled', group: 'Gates', type: 'bool', default: true,
     label: 'Stop distance bounds', help: 'Stops too tight get noise-hunted; too wide break the cost maths.' },
-  { key: 'minSlDistPct', group: 'Gates', type: 'float', default: 0.80, min: 0.05, max: 10, label: 'Min stop distance (%)' },
+  { key: 'minSlDistPct', group: 'Gates', type: 'float', default: 1.00, min: 0.05, max: 10, label: 'Min stop distance (%)' },
   { key: 'maxSlDistPct', group: 'Gates', type: 'float', default: 2.50, min: 0.1, max: 25, label: 'Max stop distance (%)' },
 
   { key: 'gateBtcRegimeEnabled', group: 'Gates', type: 'bool', default: true,
@@ -93,11 +93,17 @@ const SCHEMA = [
     label: 'Require strong break', help: 'Only accept BOS/CHoCH that showed real displacement (strong body + range). Causal — uses only past candles.' },
   { key: 'rejectFailedBreak', group: 'Gates', type: 'bool', default: true,
     label: 'Reject failed breaks', help: 'Reject if price has already closed back through the broken level by the time the signal is born. Causal — no future data.' },
-  { key: 'entryMode', group: 'Entry', type: 'enum', default: 'RETEST_OR_FADE',
-    options: ['RETEST_OR_FADE', 'CONTINUATION'],
-    label: 'Entry mode', help: 'RETEST_OR_FADE = if retest confirms take continuation; if retest fails take the opposite side. CONTINUATION = classic retest with the break only.' },
+  { key: 'entryMode', group: 'Entry', type: 'enum', default: 'TREND_PULLBACK',
+    options: ['TREND_PULLBACK', 'RETEST_OR_FADE', 'CONTINUATION'],
+    label: 'Entry mode', help: 'TREND_PULLBACK = resilient trend engine (recommended). Other modes are legacy structure-retest.' },
 
   // ── Entry ─────────────────────────────────────────────────────────────────────────────────
+    { key: 'minTrendStrength', group: 'Gates', type: 'float', default: 12, min: 0, max: 100,
+    label: 'Min trend strength', help: 'Reject flat EMA regimes. Higher = fewer but cleaner trends.' },
+  { key: 'minAtrPct', group: 'Gates', type: 'float', default: 0.25, min: 0.05, max: 5,
+    label: 'Min ATR (%)', help: 'Skip dead markets where stop is pure noise.' },
+  { key: 'trendTargetR', group: 'Entry', type: 'float', default: 2.0, min: 1.0, max: 5,
+    label: 'Trend target R', help: 'Take-profit as multiple of stop distance.' },
   { key: 'entryWindowMin', group: 'Entry', type: 'int', default: 45, min: 5, max: 480,
     label: 'Entry window (min)', help: 'Cancel the resting order if price never returns to the level in this time.' },
   { key: 'chaseMissedMove', group: 'Entry', type: 'bool', default: false,
