@@ -272,24 +272,27 @@ function renderSignals() {
   el.innerHTML = `
     <div class="rows">
       <div class="row row-signal row-head">
-        <div>Symbol</div><div>Side</div><div>Score</div><div>RR</div>
-        <div>Stop %</div><div>Turnover</div><div>Verdict</div>
+        <div>Time (UTC)</div><div>Symbol</div><div>Side</div><div>Score</div><div>RR</div>
+        <div>Stop %</div><div>Path</div><div>Verdict</div>
       </div>
       ${state.signals.map((sig) => {
         const passed = sig.gates?.passed;
         const failed = sig.gates?.failed || [];
         const verdict = passed
-          ? '<span class="pill pass">Passed all gates</span>'
+          ? '<span class="pill pass">Passed</span>'
           : `<span class="pill fail">${esc(failed[0] || 'blocked')}</span>${failed.length > 1 ? ` <span class="faint">+${failed.length - 1}</span>` : ''}`;
         const open = state.expandedSignal === sig.id;
+        const path = sig.entryPath || sig.structureEvent || '—';
+        const ts = sig.createdAt || sig.scanAt || null;
         return `
           <div class="row row-signal row-clickable" data-signal="${esc(sig.id)}">
+            <div class="faint" data-label="Time (UTC)">${fmtDate(ts)}</div>
             <div class="sym" data-label="Symbol">${esc(sig.symbol)}</div>
             <div class="side-${sig.side.toLowerCase()}" data-label="Side">${esc(sig.side)}</div>
             <div data-label="Score">${sig.score}</div>
             <div data-label="RR (planned)">${fmt(sig.rr, 2)}</div>
             <div class="dim" data-label="Stop %">${fmt(sig.slDistPct, 2)}</div>
-            <div class="dim" data-label="24h turnover">${fmtCompact(sig.market.turnover24h)}</div>
+            <div class="dim" data-label="Path">${esc(String(path).slice(0, 18))}</div>
             <div data-label="Verdict">${verdict}</div>
           </div>
           ${open ? renderSignalDetail(sig) : ''}
@@ -300,36 +303,48 @@ function renderSignals() {
 
 function renderSignalDetail(sig) {
   const c = sig.components || {};
+  const q = sig.quality || {};
   const checks = sig.gates?.checks || [];
+  const m = sig.market || {};
+  const ts = sig.createdAt || sig.scanAt || null;
   return `
     <div class="detail">
       <div class="detail-grid">
         <div>
           <h4>Plan</h4>
+          <div class="kv"><span>Created (UTC)</span><span>${ts ? new Date(ts).toISOString().replace('T', ' ').slice(0, 19) : '—'}</span></div>
+          <div class="kv"><span>Timeframe</span><span>${esc(sig.timeframe || '—')}m</span></div>
           <div class="kv"><span>Entry</span><span>${fmt(sig.entry, 6)}</span></div>
           <div class="kv"><span>Stop</span><span>${fmt(sig.sl, 6)}</span></div>
           <div class="kv"><span>Target</span><span>${fmt(sig.tp, 6)}</span></div>
           <div class="kv"><span>Last price</span><span>${fmt(sig.price, 6)}</span></div>
           <div class="kv"><span>ATR</span><span>${fmt(sig.atr, 6)}</span></div>
+          <div class="kv"><span>Stop distance</span><span>${fmt(sig.slDistPct, 3)}%</span></div>
+          <div class="kv"><span>Planned RR</span><span>${fmt(sig.rr, 2)}</span></div>
         </div>
         <div>
           <h4>Score ${sig.score}</h4>
-          <div class="kv"><span>Trend</span><span>${c.trend ?? '—'} / 25</span></div>
-          <div class="kv"><span>Structure</span><span>${c.structure ?? '—'} / 25</span></div>
-          <div class="kv"><span>Momentum</span><span>${c.momentum ?? '—'} / 15</span></div>
-          <div class="kv"><span>Location</span><span>${c.location ?? '—'} / 20</span></div>
-          <div class="kv"><span>Reward:risk</span><span>${c.rr ?? '—'} / 15</span></div>
+          <div class="kv"><span>Trend</span><span>${c.trend ?? '—'} pts</span></div>
+          <div class="kv"><span>Pullback / structure</span><span>${c.pullback ?? c.structure ?? '—'} pts</span></div>
+          <div class="kv"><span>Momentum</span><span>${c.momentum ?? '—'} pts</span></div>
+          <div class="kv"><span>Location</span><span>${c.location ?? '—'} pts</span></div>
+          <div class="kv"><span>Reward:risk</span><span>${c.rr ?? '—'} pts</span></div>
           <div class="kv"><span>Regime multiplier</span><span>${fmt(c.regimeMultiplier, 2)}</span></div>
         </div>
         <div>
           <h4>Context</h4>
-          <div class="kv"><span>Structure event</span><span>${esc(sig.structureEvent)}</span></div>
-          <div class="kv"><span>Structure trend</span><span>${esc(sig.structureTrend)}</span></div>
-          <div class="kv"><span>BTC regime</span><span>${esc(sig.btcRegime)}</span></div>
+          <div class="kv"><span>Entry path</span><span>${esc(sig.entryPath || '—')}</span></div>
+          <div class="kv"><span>Path reason</span><span>${esc(sig.entryPathReason || '—')}</span></div>
+          <div class="kv"><span>Structure event</span><span>${esc(sig.structureEvent || '—')}</span></div>
+          <div class="kv"><span>Structure trend</span><span>${esc(sig.structureTrend || '—')}</span></div>
+          <div class="kv"><span>BTC regime</span><span>${esc(sig.btcRegime || '—')}</span></div>
+          <div class="kv"><span>Regime aligned</span><span>${sig.regimeAligned == null ? '—' : sig.regimeAligned ? 'yes' : 'no'}</span></div>
           <div class="kv"><span>RSI</span><span>${fmt(c.rsi, 1)}</span></div>
-          <div class="kv"><span>Volume ratio</span><span>${fmt(c.volumeRatio, 2)}</span></div>
-          <div class="kv"><span>Spread</span><span>${sig.market.spreadPct == null ? '—' : `${fmt(sig.market.spreadPct, 4)}%`}</span></div>
-          <div class="kv"><span>Funding</span><span>${Number(sig.market.fundingRate ?? 0).toExponential(2)}</span></div>
+          <div class="kv"><span>Volume ratio</span><span>${fmt(c.volumeRatio ?? m.volRatio, 2)}</span></div>
+          <div class="kv"><span>Spread</span><span>${m.spreadPct == null ? '—' : `${fmt(m.spreadPct, 4)}%`}</span></div>
+          <div class="kv"><span>Funding</span><span>${Number(m.fundingRate ?? 0).toExponential(2)}</span></div>
+          <div class="kv"><span>24h turnover</span><span>${fmtCompact(m.turnover24h)}</span></div>
+          <div class="kv"><span>Trend strength</span><span>${q.trendStrength != null ? fmt(q.trendStrength, 1) : '—'}</span></div>
         </div>
         <div style="grid-column: 1 / -1">
           <h4>Gate verdicts</h4>
