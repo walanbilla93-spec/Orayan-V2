@@ -114,6 +114,7 @@
           <div class="panel-actions">
             <button class="btn btn-ghost" id="btnExportSignalsCsv">Download journal (CSV)</button>
             <button class="btn btn-ghost" id="btnExportSignalsJson">JSON</button>
+            <button class="btn btn-danger" id="btnClearSignals" title="Wipe signal journal and live list">Clear signals</button>
           </div>
         </div>
         <div id="signalList"><div class="empty">No scan yet.</div></div>
@@ -131,10 +132,14 @@
             <button class="chip" data-status="OPEN">Open</button>
             <button class="chip" data-status="CLOSED">Closed</button>
             <button class="chip" data-status="EXPIRED">Expired</button>
+            <label class="chip" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+              <input type="checkbox" id="hideExpiredTrades" checked /> Hide expired
+            </label>
           </div>
           <div class="panel-actions">
             <button class="btn btn-ghost" id="btnExportTradesCsv">Download journal (CSV)</button>
             <button class="btn btn-ghost" id="btnExportTradesJson">JSON</button>
+            <button class="btn btn-danger" id="btnClearTrades" title="Wipe all trades (pending/open/closed)">Clear trades</button>
           </div>
         </div>
         <div id="tradeList"><div class="empty">No trades yet.</div></div>

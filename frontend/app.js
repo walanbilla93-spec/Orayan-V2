@@ -364,9 +364,10 @@ function renderSignalDetail(sig) {
 
 function renderTrades() {
   const el = $('#tradeList');
-  const list = state.tradeFilter
+  let list = state.tradeFilter
     ? state.trades.filter((t) => t.status === state.tradeFilter)
-    : state.trades;
+    : state.trades.slice();
+  if (state.hideExpired && state.tradeFilter !== 'EXPIRED') list = list.filter((t) => t.status !== 'EXPIRED');
 
   if (!list.length) {
     el.innerHTML = '<div class="empty">No trades match this filter.</div>';
@@ -375,21 +376,25 @@ function renderTrades() {
   el.innerHTML = `
     <div class="rows">
       <div class="row row-trade row-head">
-        <div>Symbol</div><div>Side</div><div>Status</div><div>R</div>
-        <div>Net P&L</div><div>Entry</div><div>Exit</div><div>Closed</div>
+        <div>Created (UTC)</div><div>Engine</div><div>Symbol</div><div>Side</div><div>Status</div>
+        <div>R</div><div>Net P&L</div><div>Entry</div><div>Closed</div>
       </div>
-      ${list.map((t) => `
+      ${list.map((t) => {
+        const created = t.createdAt || t.filledAt || null;
+        const eng = t.engine || (t.entryPath === 'TREND_PULLBACK' ? 'TREND' : (t.plannedRR === 2 ? 'TREND?' : '—'));
+        return `
         <div class="row row-trade">
+          <div class="faint" data-label="Created (UTC)">${fmtDate(created)}</div>
+          <div class="dim" data-label="Engine">${esc(String(eng))}</div>
           <div class="sym" data-label="Symbol">${esc(t.symbol)}</div>
           <div class="side-${t.side.toLowerCase()}" data-label="Side">${esc(t.side)}</div>
           <div data-label="Status"><span class="pill ${t.status === 'OPEN' ? 'open' : t.status === 'PENDING' ? 'pending' : ''}">${esc(t.status)}</span></div>
-          <div class="${sgn(t.realisedRR)}" data-label="R (multiple of risk)">${t.realisedRR == null ? '—' : fmt(t.realisedRR, 2)}</div>
-          <div class="${sgn(t.netPnl)}" data-label="Net P&L (USDT)">${t.netPnl == null ? '—' : fmtUsd(t.netPnl)}</div>
+          <div class="${sgn(t.realisedRR)}" data-label="R">${t.realisedRR == null ? '—' : fmt(t.realisedRR, 2)}</div>
+          <div class="${sgn(t.netPnl)}" data-label="Net P&L">${t.netPnl == null ? '—' : fmtUsd(t.netPnl)}</div>
           <div class="dim" data-label="Entry">${fmt(t.fillPrice ?? t.plannedEntry, 6)}</div>
-          <div class="dim" data-label="Exit">${t.exitPrice ? fmt(t.exitPrice, 6) : '—'}</div>
           <div class="faint" data-label="Closed">${t.closedAt ? fmtDate(t.closedAt) : '—'}</div>
-        </div>
-      `).join('')}
+        </div>`;
+      }).join('')}
     </div>`;
 }
 
@@ -611,6 +616,14 @@ function init() {
     } catch (e) { toast(e.message, 'error'); }
   });
 
+  const hideExpEl = $('#hideExpiredTrades');
+  if (hideExpEl) {
+    hideExpEl.checked = state.hideExpired !== false;
+    hideExpEl.addEventListener('change', () => {
+      state.hideExpired = !!hideExpEl.checked;
+      renderTrades();
+    });
+  }
   $('#tradeFilters').addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
@@ -624,6 +637,25 @@ function init() {
   $('#btnExportTradesJson').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=json'));
   $('#btnExportSignalsCsv').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=csv'));
   $('#btnExportSignalsJson').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=json'));
+  $('#btnClearSignals').addEventListener('click', async () => {
+    if (!confirm('Clear ALL signal history and the live signals list? This cannot be undone.')) return;
+    try {
+      await api('/api/journal/signals/clear', { method: 'POST' });
+      state.signals = [];
+      state.funnel = {};
+      renderSignals();
+      alert('Signals cleared.');
+    } catch (e) { alert('Failed: ' + (e.message || e)); }
+  });
+  $('#btnClearTrades').addEventListener('click', async () => {
+    if (!confirm('Clear ALL trades (pending, open, closed, expired)? Paper positions will be wiped. This cannot be undone.')) return;
+    try {
+      await api('/api/journal/trades/clear', { method: 'POST' });
+      state.trades = [];
+      renderTrades();
+      alert('Trades cleared.');
+    } catch (e) { alert('Failed: ' + (e.message || e)); }
+  });
 
   $('#signalList').addEventListener('click', (e) => {
     const row = e.target.closest('[data-signal]');
