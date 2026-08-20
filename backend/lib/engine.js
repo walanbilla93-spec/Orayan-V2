@@ -5,7 +5,7 @@ const marketData = require('./marketData');
 const bybit = require('./bybit');
 const logger = require('./logger');
 const store = require('./store');
-const { buildSignal, detectBtcRegime } = require('./signals');
+const { buildSignal, buildSignalStructure, buildSignalTrend, detectBtcRegime } = require('./signals');
 const gates = require('./gates');
 const risk = require('./risk');
 const executor = require('./executor');
@@ -165,28 +165,50 @@ async function scanOnce() {
         continue;
       }
 
-      const built = buildSignal({ symbol, candles, ticker, btcRegime, settings });
-      if (!built.ok) {
-        funnel.noSignal++;
-        funnel.gated[built.reason] = (funnel.gated[built.reason] || 0) + 1;
-        continue;
+      const dual = settings.dualEngines === true;
+      const builders = dual
+        ? [
+            { name: 'STRUCTURE', fn: buildSignalStructure },
+            { name: 'TREND', fn: buildSignalTrend },
+          ]
+        : [
+            {
+              name: (settings.activeEngine === 'TREND' ? 'TREND' : 'STRUCTURE'),
+              fn: settings.activeEngine === 'TREND' ? buildSignalTrend : buildSignalStructure,
+            },
+          ];
+
+      for (const b of builders) {
+        const built = b.fn({ symbol, candles, ticker, btcRegime, settings });
+        if (!built.ok) {
+          funnel.noSignal++;
+          const key = `${b.name}:${built.reason}`;
+          funnel.gated[key] = (funnel.gated[key] || 0) + 1;
+          continue;
+        }
+
+        const signal = built.signal;
+        signal.engine = signal.engine || b.name;
+
+        const openPositions = [...openTrades(), ...pendingTrades()];
+        const verdict = gates.evaluate(signal, settings, {
+          openPositions,
+          symbolLockouts: state.symbolLockouts,
+          dualEngines: dual,
+        });
+        signal.gates = verdict;
+        signalsForUi.push(signal);
+
+        if (!verdict.passed) {
+          for (const f of verdict.failed) {
+            const key = `${b.name}:${f}`;
+            funnel.gated[key] = (funnel.gated[key] || 0) + 1;
+          }
+          continue;
+        }
+        funnel.passed++;
+        candidates.push(signal);
       }
-
-      const signal = built.signal;
-      const verdict = gates.evaluate(signal, settings, {
-        openPositions: [...openTrades(), ...pendingTrades()],
-        symbolLockouts: state.symbolLockouts,
-      });
-      signal.gates = verdict;
-
-      signalsForUi.push(signal);
-
-      if (!verdict.passed) {
-        for (const f of verdict.failed) funnel.gated[f] = (funnel.gated[f] || 0) + 1;
-        continue;
-      }
-      funnel.passed++;
-      candidates.push(signal);
     }
 
     // Best-first: the slot limit means ranking decides what actually gets traded.
@@ -214,7 +236,16 @@ async function scanOnce() {
       for (const signal of candidates) {
         const openNow = [...openTrades(), ...pendingTrades()];
         if (openNow.length >= settings.maxOpenPositions) break;
-        if (openNow.some((t) => t.symbol === signal.symbol)) continue;
+        const dual = settings.dualEngines === true;
+        const eng = signal.engine || 'STRUCTURE';
+        // Per-engine soft cap when dual (default half of max, min 2)
+        if (dual) {
+          const perEngine = Math.max(2, Math.floor(settings.maxOpenPositions / 2));
+          if (openNow.filter((t) => (t.engine || 'STRUCTURE') === eng).length >= perEngine) continue;
+        }
+        // Same symbol: block only same engine (dual can paper both theories on one pair)
+        if (openNow.some((t) => t.symbol === signal.symbol && (t.engine || 'STRUCTURE') === eng)) continue;
+        if (!dual && openNow.some((t) => t.symbol === signal.symbol)) continue;
         if (openNow.filter((t) => t.side === signal.side).length >= settings.maxPerDirection) continue;
 
         const instrument = instruments.get(signal.symbol);
@@ -414,7 +445,14 @@ function resetTrades() {
   return { ok: true };
 }
 
+function clearLastSignals() {
+  state.lastSignals = [];
+  state.funnel = {};
+  logger.warn('engine', 'Live signal list cleared by operator');
+  return { ok: true };
+}
+
 module.exports = {
   start, stop, scanOnce, panicClose, releaseKillSwitch, clearHalt,
-  getState, getTrades, resetTrades, summary, state,
+  getState, getTrades, resetTrades, clearLastSignals, summary, state,
 };

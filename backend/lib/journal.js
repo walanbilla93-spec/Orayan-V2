@@ -81,6 +81,9 @@ const TRADE_COLUMNS = [
   { label: 'btcRegime', get: (t) => t.btcRegime },
   { label: 'turnover24h', get: (t) => t.turnover24h },
   { label: 'timeframe', get: (t) => t.timeframe },
+  { label: 'engine', get: (t) => t.engine || '' },
+  { label: 'entryPath', get: (t) => t.entryPath || '' },
+  { label: 'createdAtIso', get: (t) => t.createdAtIso || (t.createdAt ? new Date(t.createdAt).toISOString() : '') },
   { label: 'exchangeOrderId', get: (t) => t.exchangeOrderId },
 ];
 

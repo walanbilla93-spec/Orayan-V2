@@ -42,6 +42,10 @@ function createPendingOrder({ signal, sizing, settings }) {
     timeframe: signal.timeframe,
     btcRegime: signal.btcRegime,
     turnover24h: signal.market.turnover24h,
+    engine: signal.engine || 'STRUCTURE',
+    entryPath: signal.entryPath || null,
+    structureEvent: signal.structureEvent || null,
+    createdAtIso: new Date().toISOString(),
     // filled in later
     fillPrice: null,
     filledAt: null,

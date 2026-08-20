@@ -115,8 +115,15 @@ function evaluate(signal, settings, ctx = {}) {
   }
   {
     const open = ctx.openPositions || [];
-    const pass = !open.some((p) => p.symbol === signal.symbol);
-    record('NO_DUPLICATE_SYMBOL', true, pass, pass ? 'no open position on this symbol' : 'already holding this symbol');
+    const dual = ctx.dualEngines === true || (signal.engine && settings.dualEngines === true);
+    const eng = signal.engine || 'STRUCTURE';
+    // Dual mode: allow same symbol if the other engine holds it; block same engine+symbol
+    const pass = dual
+      ? !open.some((p) => p.symbol === signal.symbol && (p.engine || 'STRUCTURE') === eng)
+      : !open.some((p) => p.symbol === signal.symbol);
+    record('NO_DUPLICATE_SYMBOL', true, pass,
+      pass ? (dual ? `no ${eng} position on this symbol` : 'no open position on this symbol')
+           : (dual ? `already have ${eng} on this symbol` : 'already holding this symbol'));
   }
   {
     const until = (ctx.symbolLockouts || {})[signal.symbol] || 0;
