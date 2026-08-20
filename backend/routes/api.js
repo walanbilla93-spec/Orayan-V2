@@ -73,7 +73,7 @@ const routes = {
     return { __file: true, body, contentType, filename: `orayan2_signals_${Date.now()}.${format}` };
   },
 
-  'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); return { ok: true }; },
+  'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); engine.clearLastSignals(); return { ok: true }; },
 
   'POST /api/control/start': async () => engine.start(),
   'POST /api/control/stop': async () => engine.stop(),
@@ -82,6 +82,7 @@ const routes = {
   'POST /api/control/release-kill': async () => engine.releaseKillSwitch(),
   'POST /api/control/clear-halt': async () => engine.clearHalt(),
   'POST /api/control/reset-trades': async () => engine.resetTrades(),
+  'POST /api/journal/trades/clear': async () => engine.resetTrades(),
   'POST /api/control/clear-cache': async () => { marketData.clearCaches(); return { ok: true }; },
 
   'GET /api/account': async () => {
