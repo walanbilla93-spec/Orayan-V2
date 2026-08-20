@@ -136,7 +136,7 @@ async function scanOnce() {
     const instruments = await marketData.getInstruments({ testnet: settings.testnet });
     const btcRegime = await getBtcRegime(settings);
 
-    const funnel = { evaluated: 0, noSignal: 0, gated: {}, passed: 0, sized: 0, placed: 0 };
+    const funnel = { evaluated: 0, noSignal: 0, gated: {}, passed: 0, sized: 0, placed: 0, dual: false };
     const candidates = [];
     const signalsForUi = [];
 
@@ -166,6 +166,7 @@ async function scanOnce() {
       }
 
       const dual = settings.dualEngines === true;
+      funnel.dual = dual;
       const builders = dual
         ? [
             { name: 'STRUCTURE', fn: buildSignalStructure },
@@ -238,12 +239,13 @@ async function scanOnce() {
         if (openNow.length >= settings.maxOpenPositions) break;
         const dual = settings.dualEngines === true;
         const eng = signal.engine || 'STRUCTURE';
-        // Per-engine soft cap when dual (default half of max, min 2)
+        // Dual A/B: each engine gets its own slot budget (default 7)
         if (dual) {
-          const perEngine = Math.max(2, Math.floor(settings.maxOpenPositions / 2));
-          if (openNow.filter((t) => (t.engine || 'STRUCTURE') === eng).length >= perEngine) continue;
+          const perEngine = Math.max(1, Number(settings.maxPerEngine) || 7);
+          const engCount = openNow.filter((t) => (t.engine || 'STRUCTURE') === eng).length;
+          if (engCount >= perEngine) continue;
         }
-        // Same symbol: block only same engine (dual can paper both theories on one pair)
+        // Same symbol: allowed once per engine in dual (both engines can test the same pair)
         if (openNow.some((t) => t.symbol === signal.symbol && (t.engine || 'STRUCTURE') === eng)) continue;
         if (!dual && openNow.some((t) => t.symbol === signal.symbol)) continue;
         if (openNow.filter((t) => t.side === signal.side).length >= settings.maxPerDirection) continue;

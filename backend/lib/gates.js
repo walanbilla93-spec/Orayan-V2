@@ -103,8 +103,16 @@ function evaluate(signal, settings, ctx = {}) {
   // Portfolio-level constraints. Not strategy opinions — hard exposure limits.
   {
     const open = ctx.openPositions || [];
+    const dual = ctx.dualEngines === true || settings.dualEngines === true;
+    const eng = signal.engine || 'STRUCTURE';
+    if (dual) {
+      const perEngine = Math.max(1, Number(settings.maxPerEngine) || 7);
+      const engCount = open.filter((p) => (p.engine || 'STRUCTURE') === eng).length;
+      const passEng = engCount < perEngine;
+      record('MAX_PER_ENGINE', true, passEng, `${eng} ${engCount} open vs max ${perEngine} per engine`);
+    }
     const pass = open.length < settings.maxOpenPositions;
-    record('MAX_POSITIONS', true, pass, `${open.length} open vs max ${settings.maxOpenPositions}`);
+    record('MAX_POSITIONS', true, pass, `${open.length} open vs max ${settings.maxOpenPositions} total`);
   }
   {
     const open = ctx.openPositions || [];
