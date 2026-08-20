@@ -49,12 +49,36 @@ function fmtCompact(n) {
 
 function fmtTime(ts) {
   if (!ts) return '—';
-  return new Date(ts).toISOString().slice(11, 19);
+  try {
+    return new Date(ts).toLocaleTimeString('en-GB', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  } catch (e) {
+    return new Date(ts).toISOString().slice(11, 19);
+  }
 }
 
 function fmtDate(ts) {
   if (!ts) return '—';
-  return new Date(ts).toISOString().slice(5, 16).replace('T', ' ');
+  try {
+    const d = new Date(ts);
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Colombo',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(d);
+    const get = (t) => (parts.find((p) => p.type === t) || {}).value || '';
+    return `${get('day')}/${get('month')} ${get('hour')}:${get('minute')}`;
+  } catch (e) {
+    return new Date(ts).toISOString().slice(5, 16).replace('T', ' ');
+  }
+}
+
+function fmtDateFull(ts) {
+  if (!ts) return '—';
+  try {
+    return new Date(ts).toLocaleString('en-GB', { timeZone: 'Asia/Colombo', hour12: false });
+  } catch (e) {
+    return new Date(ts).toISOString().replace('T', ' ').slice(0, 19);
+  }
 }
 
 function sgn(n) {
@@ -137,29 +161,51 @@ function renderFunnel() {
     return;
   }
 
-  // Walk the gate order, subtracting each gate's kills to show the survivor count at every step.
   const gated = f.gated || {};
-  const stages = [];
-  let alive = f.evaluated;
 
-  stages.push({ name: 'Scanned', count: alive, killed: 0, enabled: true });
-
-  const noSignalKeys = ['NOT_ENOUGH_HISTORY', 'NO_PRICE', 'NO_ATR', 'NO_DIRECTION',
-    'NO_SUPPORT_LEVEL', 'NO_RESISTANCE_LEVEL', 'INVALID_LEVELS', 'INVERTED_PLAN'];
-  const noSignalKilled = noSignalKeys.reduce((a, k) => a + (gated[k] || 0), 0);
-  alive -= noSignalKilled;
-  stages.push({ name: 'Has setup', count: alive, killed: noSignalKilled, enabled: true });
-
-  for (const g of state.gateOrder) {
-    const killed = gated[g] || 0;
-    const enabled = isGateEnabled(g);
-    alive -= killed;
-    stages.push({ name: g.replace(/_/g, ' '), count: Math.max(0, alive), killed, enabled });
+  function killsFor(gateName) {
+    let n = 0;
+    for (const [k, v] of Object.entries(gated)) {
+      if (k === gateName || k.endsWith(':' + gateName)) n += Number(v) || 0;
+    }
+    return n;
   }
 
+  // Rebuild: count attempts that reached gate evaluation
+  const gateOrder = state.gateOrder || [];
+  const gateKillTotal = gateOrder.reduce((a, g) => a + killsFor(g), 0);
+  const reachedGates = (f.passed || 0) + gateKillTotal;
+  const noSignal = f.noSignal != null ? f.noSignal : Math.max(0, (f.dual ? f.evaluated * 2 : f.evaluated) - reachedGates);
+
+  const stages = [];
+  const scanned = f.evaluated;
+  stages.push({ name: 'Symbols scanned', count: scanned, killed: 0, enabled: true });
+  stages.push({
+    name: 'Engine attempts w/ setup',
+    count: reachedGates,
+    killed: noSignal,
+    enabled: true,
+  });
+
+  let cursor = reachedGates;
+  for (const g of gateOrder) {
+    const k = killsFor(g);
+    const enabled = isGateEnabled(g);
+    cursor = Math.max(0, cursor - k);
+    stages.push({ name: g.replace(/_/g, ' '), count: cursor, killed: k, enabled });
+  }
+  stages.push({ name: 'Passed all gates', count: f.passed || 0, killed: 0, enabled: true });
   stages.push({ name: 'Placed', count: f.placed || 0, killed: 0, enabled: true, terminal: true });
 
-  const top = Math.max(1, f.evaluated);
+  const top = Math.max(1, scanned, reachedGates, f.passed || 0);
+
+  // Top rejection reasons (raw) so dual prefixes are visible
+  const topRejects = Object.entries(gated)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([k, v]) => `<div class="funnel-reject"><span>${esc(k)}</span><span>−${v}</span></div>`)
+    .join('');
+
   el.innerHTML = stages.map((s) => `
     <div class="funnel-stage${s.enabled ? '' : ' disabled'}${s.terminal ? ' terminal' : ''}">
       <div class="funnel-name">${esc(s.name)}</div>
@@ -167,7 +213,7 @@ function renderFunnel() {
       <div class="funnel-killed ${s.killed ? '' : 'none'}">${s.killed ? `−${s.killed}` : (s.enabled ? '—' : 'off')}</div>
       <div class="funnel-bar"><span style="width:${Math.min(100, (s.count / top) * 100)}%"></span></div>
     </div>
-  `).join('');
+  `).join('') + (topRejects ? `<div class="funnel-rejects"><div class="funnel-rejects-title">Top rejects (last scan)</div>${topRejects}</div>` : '');
 }
 
 function isGateEnabled(gateName) {
@@ -272,7 +318,7 @@ function renderSignals() {
   el.innerHTML = `
     <div class="rows">
       <div class="row row-signal row-head">
-        <div>Time (UTC)</div><div>Symbol</div><div>Side</div><div>Score</div><div>RR</div>
+        <div>Time (LK)</div><div>Symbol</div><div>Side</div><div>Score</div><div>RR</div>
         <div>Stop %</div><div>Path</div><div>Verdict</div>
       </div>
       ${state.signals.map((sig) => {
@@ -286,7 +332,7 @@ function renderSignals() {
         const ts = sig.createdAt || sig.scanAt || null;
         return `
           <div class="row row-signal row-clickable" data-signal="${esc(sig.id)}">
-            <div class="faint" data-label="Time (UTC)">${fmtDate(ts)}</div>
+            <div class="faint" data-label="Time (LK)">${fmtDate(ts)}</div>
             <div class="sym" data-label="Symbol">${esc(sig.symbol)}</div>
             <div class="side-${sig.side.toLowerCase()}" data-label="Side">${esc(sig.side)}</div>
             <div data-label="Score">${sig.score}</div>
@@ -312,7 +358,7 @@ function renderSignalDetail(sig) {
       <div class="detail-grid">
         <div>
           <h4>Plan</h4>
-          <div class="kv"><span>Created (UTC)</span><span>${ts ? new Date(ts).toISOString().replace('T', ' ').slice(0, 19) : '—'}</span></div>
+          <div class="kv"><span>Created (LK)</span><span>${fmtDateFull(ts)}</span></div>
           <div class="kv"><span>Timeframe</span><span>${esc(sig.timeframe || '—')}m</span></div>
           <div class="kv"><span>Entry</span><span>${fmt(sig.entry, 6)}</span></div>
           <div class="kv"><span>Stop</span><span>${fmt(sig.sl, 6)}</span></div>
@@ -333,6 +379,7 @@ function renderSignalDetail(sig) {
         </div>
         <div>
           <h4>Context</h4>
+          <div class="kv"><span>Engine</span><span>${esc(sig.engine || '—')}</span></div>
           <div class="kv"><span>Entry path</span><span>${esc(sig.entryPath || '—')}</span></div>
           <div class="kv"><span>Path reason</span><span>${esc(sig.entryPathReason || '—')}</span></div>
           <div class="kv"><span>Structure event</span><span>${esc(sig.structureEvent || '—')}</span></div>
@@ -376,21 +423,21 @@ function renderTrades() {
   el.innerHTML = `
     <div class="rows">
       <div class="row row-trade row-head">
-        <div>Created (UTC)</div><div>Engine</div><div>Symbol</div><div>Side</div><div>Status</div>
-        <div>R</div><div>Net P&L</div><div>Entry</div><div>Closed</div>
+        <div>Created (LK)</div><div>Engine</div><div>Symbol</div><div>Side</div><div>Status</div>
+        <div>Net USDT</div><div>R</div><div>Entry</div><div>Closed</div>
       </div>
       ${list.map((t) => {
         const created = t.createdAt || t.filledAt || null;
-        const eng = t.engine || (t.entryPath === 'TREND_PULLBACK' ? 'TREND' : (t.plannedRR === 2 ? 'TREND?' : '—'));
+        const eng = t.engine || t.entryPath || (t.structureEvent === 'TREND_PULLBACK' ? 'TREND' : (Math.abs((t.plannedRR||0)-2)<1e-6 ? 'TREND' : 'STRUCTURE'));
         return `
         <div class="row row-trade">
-          <div class="faint" data-label="Created (UTC)">${fmtDate(created)}</div>
+          <div class="faint" data-label="Created (LK)">${fmtDate(created)}</div>
           <div class="dim" data-label="Engine">${esc(String(eng))}</div>
           <div class="sym" data-label="Symbol">${esc(t.symbol)}</div>
           <div class="side-${t.side.toLowerCase()}" data-label="Side">${esc(t.side)}</div>
           <div data-label="Status"><span class="pill ${t.status === 'OPEN' ? 'open' : t.status === 'PENDING' ? 'pending' : ''}">${esc(t.status)}</span></div>
+          <div class="${sgn(t.netPnl)}" data-label="Net USDT">${t.netPnl == null ? '—' : fmtUsd(t.netPnl)}</div>
           <div class="${sgn(t.realisedRR)}" data-label="R">${t.realisedRR == null ? '—' : fmt(t.realisedRR, 2)}</div>
-          <div class="${sgn(t.netPnl)}" data-label="Net P&L">${t.netPnl == null ? '—' : fmtUsd(t.netPnl)}</div>
           <div class="dim" data-label="Entry">${fmt(t.fillPrice ?? t.plannedEntry, 6)}</div>
           <div class="faint" data-label="Closed">${t.closedAt ? fmtDate(t.closedAt) : '—'}</div>
         </div>`;

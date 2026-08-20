@@ -523,3 +523,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outl
   color: #f88;
 }
 .btn-danger:hover { background: rgba(200,60,60,0.15); }
+
+.funnel-rejects { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; }
+.funnel-rejects-title { opacity: 0.6; margin-bottom: 6px; }
+.funnel-reject { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; opacity: 0.85; }
