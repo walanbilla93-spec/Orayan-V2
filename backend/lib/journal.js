@@ -36,6 +36,34 @@ function clearSignalHistory() {
   logger.warn('journal', 'Signal history cleared by operator');
 }
 
+/**
+ * Records a BOS held/fake outcome (see bosTracker.js) into the same signal journal —
+ * no separate store, same export. Called once when a break is first detected (PENDING)
+ * and once again when it resolves (HELD/FAKE/UNRESOLVED_STALE), so each break produces
+ * at most 2 rows rather than one per scan.
+ */
+function recordBosEvent(ev) {
+  if (!ev) return;
+  const row = {
+    kind: 'bos_event',
+    scanId: null,
+    scanAt: Date.now(),
+    id: ev.key,
+    symbol: ev.symbol,
+    side: ev.side,
+    bosLevel: ev.level,
+    bosBreakTs: ev.breakTs,
+    bosBreakIso: ev.breakIso,
+    bosOutcome: ev.outcome,
+    bosBarsChecked: ev.barsChecked,
+  };
+  signalHistory.push(row);
+  if (signalHistory.length > MAX_SIGNAL_HISTORY) {
+    signalHistory.splice(0, signalHistory.length - MAX_SIGNAL_HISTORY);
+  }
+  store.write('signalHistory', signalHistory);
+}
+
 // ── CSV ──────────────────────────────────────────────────────────────────────────────────
 
 function csvEscape(v) {
@@ -91,6 +119,7 @@ const SIGNAL_COLUMNS = [
   { label: 'scanId', get: (s) => s.scanId },
   { label: 'scanAt', get: (s) => s.scanAt },
   { label: 'scanAtIso', get: (s) => new Date(s.scanAt).toISOString() },
+  { label: 'kind', get: (s) => s.kind || 'signal_scan' },
   { label: 'id', get: (s) => s.id },
   { label: 'symbol', get: (s) => s.symbol },
   { label: 'side', get: (s) => s.side },
@@ -115,6 +144,13 @@ const SIGNAL_COLUMNS = [
   { label: 'momentumPts', get: (s) => s.components?.momentum },
   { label: 'locationPts', get: (s) => s.components?.location },
   { label: 'rrPts', get: (s) => s.components?.rr },
+  // kind:'bos_event' rows only (fake-BOS forward validation) — see bosTracker.js.
+  // Blank on ordinary kind:'signal_scan' rows.
+  { label: 'bosLevel', get: (s) => s.bosLevel },
+  { label: 'bosBreakTs', get: (s) => s.bosBreakTs },
+  { label: 'bosBreakIso', get: (s) => s.bosBreakIso },
+  { label: 'bosOutcome', get: (s) => s.bosOutcome },
+  { label: 'bosBarsChecked', get: (s) => s.bosBarsChecked },
 ];
 
 function exportTrades(trades, format) {
@@ -128,6 +164,6 @@ function exportSignals(signals, format) {
 }
 
 module.exports = {
-  recordSignals, getSignalHistory, clearSignalHistory,
+  recordSignals, getSignalHistory, clearSignalHistory, recordBosEvent,
   exportTrades, exportSignals,
 };

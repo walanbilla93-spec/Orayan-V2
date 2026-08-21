@@ -14,6 +14,8 @@
 const { ema, rsi, atr, volumeRatio } = require('./indicators');
 const { detectStructure, keyLevels } = require('./structure');
 const { num, clamp, uid } = require('./util');
+const bosTracker = require('./bosTracker');
+const journal = require('./journal');
 
 function detectBtcRegime(candles) {
   if (!candles || candles.length < 60) return { regime: 'UNKNOWN', strength: 0 };
@@ -192,6 +194,13 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   const pivotWidth = Math.max(2, Math.round(num(settings.pivotWidth, 2)));
   const struct = detectStructure(closed, pivotWidth);
 
+  // Resolve any of this symbol's still-pending break outcomes against fresh candles —
+  // do this every scan regardless of whether today's struct event even exists, so
+  // resolution isn't gated on a new break happening. See bosTracker.js.
+  for (const resolvedEv of bosTracker.resolvePendingForSymbol(symbol, closed)) {
+    journal.recordBosEvent(resolvedEv);
+  }
+
   if (!['BOS_UP', 'BOS_DOWN', 'CHOCH_UP', 'CHOCH_DOWN'].includes(struct.event)) {
     return { ok: false, reason: 'NO_STRUCTURE_EVENT' };
   }
@@ -201,6 +210,19 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   if (brokenLevel == null || struct.eventIndex == null) {
     return { ok: false, reason: 'NO_BREAK_LEVEL' };
   }
+
+  // Record this break for forward validation — BEFORE any WEAK_BREAK/FAILED_BREAK
+  // rejection below, so the fake-BOS filter can be validated on the full population
+  // of detected breaks, not just the ones that survived to become a trade.
+  const bosEv = bosTracker.trackBreak({
+    symbol,
+    side,
+    eventIndex: struct.eventIndex,
+    brokenLevel,
+    closedCandles: closed,
+    timeframe: settings.timeframe,
+  });
+  if (bosEv) journal.recordBosEvent(bosEv);
 
   // Optional: only BOS (skip CHoCH) for stricter mode
   if (settings.bosOnly === true && !struct.event.startsWith('BOS')) {
