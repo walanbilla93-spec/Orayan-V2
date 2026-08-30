@@ -47,7 +47,66 @@ the earlier system measured 0 wins from 7 trades above 80.
 function in this repo is new code. The band is a reasonable starting point, not a transferred
 result. `[Guessing]` on whether 40/80 are still the right numbers here.
 
----
+**Update 2026-08-30 — RETRACTED and replaced. Read this whole block.**
+
+An earlier revision of this file claimed the score was confirmed dead on this generator, citing
+that winners averaged 72.0 and losers 72.2 on the live ledger. **That conclusion was wrong and
+the test was invalid.**
+
+SCORE_BAND's finding is that score is **U-shaped**. A U-shape has the same mean on both sides by
+construction, so a mean comparison cannot detect it — the identical blind spot that made the old
+linear test read r≈0 and produced the mistaken "score is dead weight" rule in the first place.
+The correct test is by BUCKET, and it always was. `[Certain]` — this is a property of the
+statistic, not an empirical claim.
+
+**The band was never actually tested here.** All 19 closed trades scored between 66 and 78. Zero
+observations below 40, zero above 80. The gate rejected 135 of 20,000 signals (0.7%). It had
+nothing to act on.
+
+**Root cause: the additive score had almost no variance.** Measured across 20,000 signals:
+
+| Component | Observed | Problem |
+|---|---|---|
+| `rrPts` | 15 on 100% | RR fixed at targetR by construction — a constant |
+| `trendPts` | 22 on 94.9% | `Math.max(trendPts, 22)` pinned it to the floor |
+| `momentumPts` | 3 distinct values | coarse |
+| `pullbackPts` | **not exported** | the one component that varied had no journal column |
+
+37 points of every score were constant. Only two components moved, one of them unmeasurable.
+`[Certain]` — counted directly from the journal.
+
+**Fix: the score was rebuilt on the original multiplicative BASE-50 architecture** (see
+`signals_trend.js`). This matters structurally, not cosmetically. A U-shape is what multiplicative
+stacking produces and additive points cannot: reaching 80+ requires every factor near maximum
+simultaneously, which is a fully-extended euphoric setup — the 0W/7L end. An additive sum
+reaching 80 only says "several things were somewhat good", a different statement entirely.
+
+Factor-space sweep of the rebuilt score: range 10-97, with **<40 / 40-80 / 80+ all populated**,
+80+ at 5.4% against the 4.2% (7 of 167) the old system actually observed. The band has something
+to act on again.
+
+**Because the scale is restored, 40/80 are restored too** — they are the original validated
+numbers on the architecture they were validated against, not re-fitted ones. Every score factor
+now has a journal column, so this is measurable from the first scan.
+
+**Status: `[Likely]`, not `[Certain]`.** Same generator architecture, different signal source.
+Pre-registered re-validation below.
+
+### Pre-registered test — lock before looking
+
+Criteria fixed 2026-08-30, before any post-rebuild data exists:
+
+1. **Bucket, never mean or correlation.** Report WR and mean R for `<40`, `40-80`, `80+`.
+2. **Minimum sample:** n ≥ 150 resolved trades, with n ≥ 15 in each outer bucket. Below that,
+   report and do not conclude.
+3. **Pass:** the `40-80` bucket beats the pooled outer buckets by ≥ 10pp WR *and* mean R,
+   with within-day stratified permutation p < 0.05.
+4. **Robustness:** must survive top-5-pair removal, and hold in ≥ 5 of 7 day-partitions
+   (leave-one-day-out), matching the original's 6/6.
+5. **Plateau:** sweep floors 30-50 and ceilings 70-90. A result that only works at one exact
+   pair of numbers is a fitted knife-edge and is rejected regardless of significance.
+6. **If it fails:** the band comes out. Do not re-tune the numbers against the data that
+   failed it — that is the post-hoc fitting this project has rejected throughout.
 
 ## TURNOVER_GATE
 
