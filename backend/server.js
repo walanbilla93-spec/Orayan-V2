@@ -7,6 +7,7 @@ const { routes } = require('./routes/api');
 const logger = require('./lib/logger');
 const engine = require('./lib/engine');
 const bybit = require('./lib/bybit');
+const journal = require('./lib/journal');
 
 const PORT = Number(process.env.PORT) || 8080;
 const FRONTEND_DIR = path.resolve(__dirname, '..', 'frontend');
@@ -136,6 +137,8 @@ process.on('uncaughtException', (e) => {
 function shutdown(sig) {
   logger.warn('server', `${sig} received — stopping the engine. Open positions are left as they are.`);
   try { engine.stop(); } catch (_e) { /* best effort */ }
+  // Journal writes are batched on a timer; force the buffer out before the process dies.
+  try { journal.flush(); } catch (_e) { /* best effort */ }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
 }
