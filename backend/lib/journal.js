@@ -16,14 +16,52 @@ const logger = require('./logger');
 const MAX_SIGNAL_HISTORY = 20000;
 let signalHistory = store.read('signalHistory', []);
 
+/*
+ * WRITE BATCHING
+ *
+ * Every append used to call store.write() immediately, which serialises and rewrites the whole
+ * array. At the 20,000-row cap that file is several megabytes, and recordBosEvent() can fire
+ * many times per scan across the universe — so a single scan could trigger dozens of
+ * multi-megabyte writes. Scan latency grew with history length, which is exactly backwards.
+ *
+ * Writes are now coalesced onto a short timer. The cost of a crash is at most a couple of
+ * seconds of journal rows, which is an acceptable trade for a research log.
+ */
+let flushTimer = null;
+let dirty = false;
+
+function scheduleFlush() {
+  dirty = true;
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    if (!dirty) return;
+    dirty = false;
+    store.write('signalHistory', signalHistory);
+  }, 3000);
+  if (flushTimer.unref) flushTimer.unref();
+}
+
+/** Force an immediate write — used on shutdown so nothing in the buffer is lost. */
+function flush() {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  if (!dirty) return;
+  dirty = false;
+  store.write('signalHistory', signalHistory);
+}
+
+function trim() {
+  if (signalHistory.length > MAX_SIGNAL_HISTORY) {
+    signalHistory.splice(0, signalHistory.length - MAX_SIGNAL_HISTORY);
+  }
+}
+
 function recordSignals(signals, scanMeta) {
   if (!signals || !signals.length) return;
   const stamped = signals.map((s) => ({ ...s, scanId: scanMeta.scanId, scanAt: scanMeta.scanAt }));
   signalHistory.push(...stamped);
-  if (signalHistory.length > MAX_SIGNAL_HISTORY) {
-    signalHistory.splice(0, signalHistory.length - MAX_SIGNAL_HISTORY);
-  }
-  store.write('signalHistory', signalHistory);
+  trim();
+  scheduleFlush();
 }
 
 function getSignalHistory({ limit = 5000 } = {}) {
@@ -32,6 +70,8 @@ function getSignalHistory({ limit = 5000 } = {}) {
 
 function clearSignalHistory() {
   signalHistory = [];
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  dirty = false;
   store.write('signalHistory', signalHistory);
   logger.warn('journal', 'Signal history cleared by operator');
 }
@@ -58,10 +98,8 @@ function recordBosEvent(ev) {
     bosBarsChecked: ev.barsChecked,
   };
   signalHistory.push(row);
-  if (signalHistory.length > MAX_SIGNAL_HISTORY) {
-    signalHistory.splice(0, signalHistory.length - MAX_SIGNAL_HISTORY);
-  }
-  store.write('signalHistory', signalHistory);
+  trim();
+  scheduleFlush();
 }
 
 // ── CSV ──────────────────────────────────────────────────────────────────────────────────
@@ -139,11 +177,22 @@ const SIGNAL_COLUMNS = [
   { label: 'volRatio', get: (s) => s.market?.volRatio },
   { label: 'passed', get: (s) => s.gates?.passed },
   { label: 'failedGates', get: (s) => (s.gates?.failed || []).join('|') },
-  { label: 'trendPts', get: (s) => s.components?.trend },
-  { label: 'structurePts', get: (s) => s.components?.structure },
-  { label: 'momentumPts', get: (s) => s.components?.momentum },
-  { label: 'locationPts', get: (s) => s.components?.location },
-  { label: 'rrPts', get: (s) => s.components?.rr },
+  // Score factors. The score is multiplicative (BASE 50 x factors) — see signals_trend.js.
+  // EVERY factor is exported. The previous additive schema silently omitted the TREND engine's
+  // `pullback` component entirely, so the one component that actually varied was invisible in
+  // the journal and nobody could see that 37 of every score was a constant. Never ship a score
+  // component that has no column here.
+  { label: 'base', get: (s) => s.components?.base },
+  { label: 'trendMult', get: (s) => s.components?.trendMult },
+  { label: 'entryMult', get: (s) => s.components?.entryMult },
+  { label: 'breakMult', get: (s) => s.components?.breakMult },
+  { label: 'locMult', get: (s) => s.components?.locMult },
+  { label: 'regimeMult', get: (s) => s.components?.regimeMult },
+  { label: 'momMult', get: (s) => s.components?.momMult },
+  { label: 'entryDistAtr', get: (s) => s.components?.entryDistAtr ?? s.components?.locDistAtr },
+  { label: 'trendStrength', get: (s) => s.components?.trendStrength },
+  { label: 'emaAgree', get: (s) => s.components?.emaAgree },
+  { label: 'rsi', get: (s) => s.components?.rsi },
   // kind:'bos_event' rows only (fake-BOS forward validation) — see bosTracker.js.
   // Blank on ordinary kind:'signal_scan' rows.
   { label: 'bosLevel', get: (s) => s.bosLevel },
@@ -164,6 +213,6 @@ function exportSignals(signals, format) {
 }
 
 module.exports = {
-  recordSignals, getSignalHistory, clearSignalHistory, recordBosEvent,
+  recordSignals, getSignalHistory, clearSignalHistory, recordBosEvent, flush,
   exportTrades, exportSignals,
 };

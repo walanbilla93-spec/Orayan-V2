@@ -49,6 +49,7 @@ function createPendingOrder({ signal, sizing, settings }) {
     // filled in later
     fillPrice: null,
     filledAt: null,
+    lastCheckedTs: null,
     exitPrice: null,
     closedAt: null,
     closeReason: null,
@@ -63,7 +64,14 @@ function createPendingOrder({ signal, sizing, settings }) {
 /** Advance one paper trade against 1-minute candles. Returns true if the trade changed. */
 async function stepPaperTrade(trade, settings) {
   const testnet = settings.testnet;
-  const sinceMin = Math.ceil((Date.now() - (trade.filledAt || trade.createdAt)) / 60000) + 5;
+
+  // Only fetch back to where we last looked, not to the fill. Bybit caps a kline page at 1000
+  // bars; on 1-minute candles that is under 17 hours, while maxHoldMin allows up to 72. Anchoring
+  // the window to filledAt meant that once a trade aged past the cap, the earliest minutes fell
+  // outside the fetch and any stop or target hit in them was never seen — the trade would drift
+  // to its time stop and book a price that never happened.
+  const anchor = num(trade.lastCheckedTs) || trade.filledAt || trade.createdAt;
+  const sinceMin = Math.ceil((Date.now() - anchor) / 60000) + 5;
   const limit = Math.min(1000, Math.max(10, sinceMin));
 
   let candles;
@@ -115,7 +123,9 @@ async function stepPaperTrade(trade, settings) {
   // ── Managing an open position ───────────────────────────────────────────────────────────
   const tpBuf = trade.tp * (num(settings.tpThroughBps) / 1e4);
   const slSlip = num(settings.slSlipBps) / 1e4;
-  const after = candles.filter((c) => c.ts >= trade.filledAt);
+  // Resume from the last bar we already examined, never earlier than the fill.
+  const from = Math.max(num(trade.filledAt), num(trade.lastCheckedTs));
+  const after = candles.filter((c) => c.ts >= from);
 
   for (const c of after) {
     const hitTp = isBuy ? c.high >= trade.tp + tpBuf : c.low <= trade.tp - tpBuf;
@@ -134,6 +144,15 @@ async function stepPaperTrade(trade, settings) {
       closeTrade(trade, trade.tp, c.ts, 'Take profit', settings);
       return true;
     }
+  }
+
+  // Nothing triggered: remember how far we got so the next pass need not refetch from the fill.
+  if (after.length) {
+    const newest = after[after.length - 1].ts;
+    // Deliberately does NOT set `changed`. This is a recomputable optimisation, not state worth
+    // a disk write every scan — if it is lost on restart the anchor falls back to filledAt,
+    // which is simply the old behaviour.
+    if (newest > num(trade.lastCheckedTs)) trade.lastCheckedTs = newest;
   }
 
   // ── Time stop ───────────────────────────────────────────────────────────────────────────
@@ -158,7 +177,11 @@ function closeTrade(trade, exitPrice, closedAt, reason, settings) {
     ? (exitPrice - trade.fillPrice) * trade.qty
     : (trade.fillPrice - exitPrice) * trade.qty;
 
-  const fees = estimateFees({ notional: trade.fillPrice * trade.qty, settings });
+  const fees = estimateFees({
+    notional: trade.fillPrice * trade.qty,
+    exitNotional: exitPrice * trade.qty,
+    settings,
+  });
   trade.grossPnl = gross;
   trade.fees = fees;
   trade.netPnl = gross - fees;
@@ -295,9 +318,18 @@ async function syncLiveTrades(trades, settings) {
         t.status = 'CLOSED';
         t.exitPrice = num(rec.avgExitPrice);
         t.closedAt = num(rec.updatedTime) || Date.now();
-        t.grossPnl = num(rec.closedPnl);
-        t.fees = num(rec.cumEntryValue) * (num(settings.takerFeePct) + num(settings.makerFeePct)) / 100;
-        t.netPnl = num(rec.closedPnl); // Bybit's closedPnl is already net of fees
+        // Bybit's closedPnl is already net of fees. Previously `fees` was reconstructed from the
+        // configured fee rates while `grossPnl` was set equal to `netPnl` — so gross === net,
+        // and `fees` reconciled with neither. Any fee-drag analysis on live rows was meaningless,
+        // which matters because fee drag is one of the main things this project is measuring.
+        // Prefer the exchange's own fee figures; fall back to configured rates only if absent.
+        const exchangeFees = num(rec.cumEntryValue) > 0 || num(rec.cumExitValue) > 0
+          ? num(rec.cumEntryValue) * (num(settings.makerFeePct) / 100)
+            + num(rec.cumExitValue) * (num(settings.takerFeePct) / 100)
+          : 0;
+        t.netPnl = num(rec.closedPnl);
+        t.fees = exchangeFees;
+        t.grossPnl = t.netPnl + exchangeFees; // gross = net + costs, so the three reconcile
         t.closeReason = 'Closed on exchange';
         const risk = Math.abs(num(t.fillPrice) - num(t.sl)) * num(t.qty);
         t.realisedRR = risk > 0 ? t.netPnl / risk : null;

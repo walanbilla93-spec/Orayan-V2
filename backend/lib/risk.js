@@ -57,10 +57,23 @@ function sizePosition({ entry, sl, settings, instrument }) {
   };
 }
 
-/** Round-trip fee estimate in USDT: maker in (resting limit), taker out (stop or target). */
-function estimateFees({ notional, settings }) {
-  const inFee = notional * (num(settings.makerFeePct) / 100);
-  const outFee = notional * (num(settings.takerFeePct) / 100);
+/**
+ * Round-trip fee estimate in USDT: maker in (resting limit), taker out (stop or target).
+ *
+ * The exit leg is charged on the EXIT notional when it is known. Charging both legs on entry
+ * notional understates fees on winners — the exit is larger precisely when the trade went your
+ * way — which biases every backtest in the flattering direction. On a system where fees are
+ * already close to deciding profitability, that is the last place to be optimistic.
+ *
+ * exitNotional is optional: at sizing time the exit price is genuinely unknown, and entry
+ * notional is the honest estimate available.
+ */
+function estimateFees({ notional, exitNotional, settings }) {
+  const inFee = num(notional) * (num(settings.makerFeePct) / 100);
+  const outBase = Number.isFinite(Number(exitNotional)) && Number(exitNotional) > 0
+    ? Number(exitNotional)
+    : num(notional);
+  const outFee = outBase * (num(settings.takerFeePct) / 100);
   return inFee + outFee;
 }
 

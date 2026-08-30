@@ -12,14 +12,23 @@
  */
 
 const { ema, rsi, atr, volumeRatio } = require('./indicators');
-const { detectStructure, keyLevels } = require('./structure');
+const { detectStructure, keyLevels, findPivots } = require('./structure');
 const { num, clamp, uid } = require('./util');
 const bosTracker = require('./bosTracker');
 const journal = require('./journal');
 
+/** See signals_trend.js — same validated curve, shared shape for both engines. */
+function smoothPeak(x, lo, hi, peakLo, peakHi) {
+  if (!(x > lo) || x >= hi) return 0;
+  if (x >= peakLo && x <= peakHi) return 1;
+  if (x < peakLo) return (x - lo) / (peakLo - lo);
+  return (hi - x) / (hi - peakHi);
+}
+
 function detectBtcRegime(candles) {
   if (!candles || candles.length < 60) return { regime: 'UNKNOWN', strength: 0 };
-  const closed = candles.slice(0, -1);
+  // marketData.getCandles() has already dropped the forming bar; do not slice again.
+  const closed = candles;
   const closes = closed.map((c) => c.close);
   const e20 = ema(closes, 20);
   const e50 = ema(closes, 50);
@@ -41,14 +50,24 @@ function detectBtcRegime(candles) {
   return { regime, strength: clamp(Math.abs(slopePct) * 40, 0, 100), atrPct, price };
 }
 
+/*
+ * Regime permission — the single canonical implementation. signals_trend.js imports this one;
+ * do not reintroduce a second copy.
+ *
+ * BEAR_RANGE is blocked outright, not merely restricted to shorts. This is the only result in
+ * the project that has survived every validation gate: live t = -4.89, independently reproduced
+ * in backtest. Shorts taken in BEAR_RANGE lost money consistently and the effect did not come
+ * from a handful of pairs. Treat this as settled unless new evidence overturns it.
+ */
 function regimeAllows(regime, side) {
   switch (regime) {
     case 'BULL_TREND':
     case 'BULL_RANGE':
       return side === 'BUY';
     case 'BEAR_TREND':
-    case 'BEAR_RANGE':
       return side === 'SELL';
+    case 'BEAR_RANGE':
+      return false; // validated block — see note above
     case 'CHOP':
       return false;
     default:
@@ -92,96 +111,114 @@ function hasAlreadyFailed(closedCandles, eventIndex, brokenLevel, side) {
   if (eventIndex == null || brokenLevel == null) return true;
   const after = closedCandles.slice(eventIndex + 1);
   if (!after.length) return false;
-  // Look at up to last 8 closed bars after break
-  const win = after.slice(-8);
-  for (const c of win) {
+
+  // Check EVERY closed bar since the break, not a trailing window.
+  //
+  // This previously looked at only the last 8 bars. Combined with the 30-bar staleness cutoff in
+  // structure.js, that left a hole: a break that failed at bar 3 and then recovered by bar 25
+  // passed the filter cleanly. It answered "is this break failed right now", when the validated
+  // fake-BOS finding is about whether the break EVER reverted through the level. A break that
+  // has already been rejected once is exactly the population the finding says to avoid.
+  for (const c of after) {
     if (side === 'BUY' && num(c.close) < brokenLevel) return true;
     if (side === 'SELL' && num(c.close) > brokenLevel) return true;
   }
   return false;
 }
 
+/*
+ * SCORING — multiplicative, BASE 50. Same architecture and same scale as signals_trend.js, so
+ * one SCORE_BAND means the same thing for both engines. See the long note in that file for why
+ * the additive version was replaced and why the U-shape requires multiplicative stacking.
+ */
 function scoreStructure({ side, closed, struct, levels, price, entry, sl, tp, strong, btcRegime }) {
   const closes = closed.map((c) => c.close);
   const e20 = ema(closes, 20);
   const e50 = ema(closes, 50);
   const r = rsi(closes, 14);
   const vr = volumeRatio(closed, 20);
+  const a = atr(closed, 14);
   const isBuy = side === 'BUY';
   const components = {};
+  const BASE = 50;
 
-  // Trend vs EMAs (soft)
-  let trendPts = 0;
+  // FACTOR 1 — EMA agreement (0.80 .. 1.30). Three independent checks, each worth a third.
+  let agree = 0;
   if (isBuy) {
-    if (price > e20) trendPts += 8;
-    if (price > e50) trendPts += 7;
-    if (e20 > e50) trendPts += 8;
+    if (price > e20) agree++;
+    if (price > e50) agree++;
+    if (e20 > e50) agree++;
   } else {
-    if (price < e20) trendPts += 8;
-    if (price < e50) trendPts += 7;
-    if (e20 < e50) trendPts += 8;
+    if (price < e20) agree++;
+    if (price < e50) agree++;
+    if (e20 < e50) agree++;
   }
-  components.trend = trendPts;
+  const trendMult = 0.80 + 0.50 * (agree / 3);
+  components.trendMult = Number(trendMult.toFixed(4));
+  components.emaAgree = agree;
 
-  // Structure event quality
-  let structPts = 0;
-  if (['BOS_UP', 'BOS_DOWN'].includes(struct.event)) structPts += 16;
-  else if (['CHOCH_UP', 'CHOCH_DOWN'].includes(struct.event)) structPts += 12;
-  if ((isBuy && struct.trend === 'UP') || (!isBuy && struct.trend === 'DOWN')) structPts += 6;
-  if (strong) structPts += 8;
+  // FACTOR 2 — break quality (0.70 .. 1.25). BOS beats CHoCH, displacement beats a drift-through,
+  // and a level that has been tested repeatedly beats one that has not.
+  let q = 0.70;
+  if (['BOS_UP', 'BOS_DOWN'].includes(struct.event)) q += 0.20;
+  else if (['CHOCH_UP', 'CHOCH_DOWN'].includes(struct.event)) q += 0.12;
+  if (strong) q += 0.20;
   const anchor = isBuy ? levels.support : levels.resistance;
-  if (anchor && anchor.touches >= 2) structPts += 4;
-  components.structure = structPts;
+  if (anchor && anchor.touches >= 2) q += 0.10;
+  const breakMult = clamp(q, 0.70, 1.25);
+  components.breakMult = Number(breakMult.toFixed(4));
 
-  // RSI — mild preference for not extreme
-  let momPts = 5;
+  // FACTOR 3 — location (0.45 .. 1.15), distance from the retest level in ATR units. Same span
+  // as the trend engine's entry factor: far from the level is a chase, on top of it is noise.
+  const dAtr = (a > 0 && struct.brokenLevel != null)
+    ? Math.abs(price - struct.brokenLevel) / a
+    : 0;
+  const locPeak = smoothPeak(dAtr, 0.0, 2.2, 0.10, 0.80);
+  const locMult = 0.45 + 0.70 * locPeak;
+  components.locMult = Number(locMult.toFixed(4));
+  components.locDistAtr = Number(dAtr.toFixed(4));
+
+  // FACTOR 4 — regime alignment scaled by strength (0.30 .. 1.20). Identical to the trend engine.
+  const regimeStrength = clamp(num(btcRegime && btcRegime.strength) / 100, 0, 1);
+  const aligned = regimeAllows(btcRegime.regime, side);
+  const regimeMult = aligned
+    ? 1.00 + 0.20 * regimeStrength
+    : clamp(0.85 - 0.50 * regimeStrength, 0.30, 0.95);
+  components.regimeMult = Number(regimeMult.toFixed(4));
+
+  // FACTOR 5 — momentum (0.85 .. 1.10). Weakest factor, same as the trend engine.
+  let momMult = 1.00;
   if (r != null) {
-    if (isBuy && r >= 40 && r <= 65) momPts = 12;
-    else if (isBuy && r > 65 && r <= 75) momPts = 6;
-    else if (!isBuy && r >= 35 && r <= 60) momPts = 12;
-    else if (!isBuy && r >= 25 && r < 35) momPts = 6;
-    else momPts = 3;
+    if (isBuy && r >= 40 && r <= 65) momMult = 1.10;
+    else if (!isBuy && r >= 35 && r <= 60) momMult = 1.10;
+    else if (isBuy && r > 75) momMult = 0.85;
+    else if (!isBuy && r < 25) momMult = 0.85;
   }
-  components.momentum = momPts;
+  components.momMult = Number(momMult.toFixed(4));
 
-  // Location: distance from retest level
-  let locPts = 0;
-  if (struct.brokenLevel != null && price) {
-    const distPct = (Math.abs(price - struct.brokenLevel) / price) * 100;
-    if (distPct <= 0.35) locPts = 18;
-    else if (distPct <= 0.8) locPts = 12;
-    else if (distPct <= 1.5) locPts = 6;
-    else locPts = 2;
-  }
-  components.location = locPts;
-
+  // rrPts removed — RR is fixed at structureTargetR by construction, so it was a constant.
   const risk = Math.abs(entry - sl);
   const reward = Math.abs(tp - entry);
   const rr = risk ? reward / risk : 0;
-  let rrPts = 0;
-  if (rr >= 1.8 && rr <= 3.5) rrPts = 14;
-  else if (rr >= 1.5 && rr < 1.8) rrPts = 9;
-  else if (rr > 3.5 && rr <= 5) rrPts = 7;
-  else if (rr >= 1.2 && rr < 1.5) rrPts = 4;
-  components.rr = rrPts;
 
-  // Soft regime info only — small penalty, not a hard invert of ranking
-  const aligned = regimeAllows(btcRegime.regime, side);
-  const regimeMult = aligned ? 1.0 : 0.9;
-  components.regimeMultiplier = regimeMult;
-  components.volumeRatio = vr;
   components.rsi = r;
+  components.volumeRatio = vr;
+  components.regimeAligned = aligned;
+  components.base = BASE;
 
-  const raw = trendPts + structPts + momPts + locPts + rrPts;
-  const score = Math.round(clamp(raw * regimeMult, 0, 100));
+  const score = Math.round(clamp(BASE * trendMult * breakMult * locMult * regimeMult * momMult, 0, 100));
   return { score, components, rr, aligned };
 }
 
 function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   if (!candles || candles.length < 90) return { ok: false, reason: 'NOT_ENOUGH_HISTORY' };
 
-  // CRITICAL: structure only on closed bars
-  const closed = candles.slice(0, -1);
+  // Structure runs on closed bars only. marketData.getCandles() already removes the forming
+  // candle for every caller (see the comment there), so slicing again here dropped a second,
+  // genuinely-closed bar — leaving STRUCTURE permanently one bar staler than TREND. Not a
+  // look-ahead bug, it erred safe, but it meant the two engines were never judging the same
+  // data, which is another confound on any A/B between them.
+  const closed = candles;
   if (closed.length < 80) return { ok: false, reason: 'NOT_ENOUGH_CLOSED' };
 
   const price = num(ticker?.markPrice) || num(candles[candles.length - 1].close);
@@ -247,20 +284,34 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
   const tolPct = Math.max(0.12, Math.min(0.45, atrPct * 0.35));
   const levels = keyLevels(closed, price, pivotWidth, tolPct);
 
+  // Touches on the level the break actually went through. Enforced, not advisory — this block
+  // was previously empty, so the UI presented an active-looking control that did nothing.
+  //
+  // Counted directly from the pivots rather than read off keyLevels(). Two reasons that matters:
+  //
+  //  1. keyLevels() splits clusters by CURRENT price. Once a high has been broken upward, price
+  //     sits above it, so the broken level lands among the supports and levels.resistance is the
+  //     next untouched level beyond it — the wrong level entirely.
+  //  2. The clustering tolerance and the "is this pivot the same level" tolerance are not the
+  //     same question. tolPct is deliberately tight (0.12–0.45%) to keep distinct levels apart;
+  //     reusing it here matched nothing at all, so the gate silently never fired.
+  //
+  // A pivot counts as a touch of the broken level if it sits within half an ATR of it, which
+  // scales with the instrument instead of assuming a fixed percentage.
   const minTouches = Math.max(1, num(settings.minLevelTouches, 1));
-  // Touches on the broken level's cluster (nearest same-side pivot group)
-  const levelTouches = side === 'BUY'
-    ? (levels.resistance?.touches || 1) // broke a high — that resistance cluster
-    : (levels.support?.touches || 1);
-
-  // Soft: only enforce if we have cluster data
-  if (minTouches > 1 && levelTouches < minTouches) {
-    // Don't hard-block forever on volatile pairs — only when cluster exists with low touches
-    // Actually user wanted cleaner: keep soft min 1 default
+  if (minTouches > 1) {
+    const touchBand = Math.max(a * 0.5, brokenLevel * 0.0015);
+    const pv = findPivots(closed, pivotWidth);
+    // A broken high was tested as resistance, a broken low as support.
+    const relevant = side === 'BUY' ? pv.highs : pv.lows;
+    const touches = relevant.filter((p) => Math.abs(p.price - brokenLevel) <= touchBand).length;
+    if (touches < minTouches) {
+      return { ok: false, reason: 'TOO_FEW_TOUCHES' };
+    }
   }
 
-  const minSlPct = num(settings.minSlDistPct, 0.8);
-  const maxSlPct = num(settings.maxSlDistPct, 2.5);
+  const minSlPct = num(settings.minSlDistPct, 3.0);
+  const maxSlPct = num(settings.maxSlDistPct, 5.0);
   const minSlAbs = price * (minSlPct / 100);
   const cushion = Math.max(a * 0.55, minSlAbs * 0.85);
 

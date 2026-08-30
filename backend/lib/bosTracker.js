@@ -22,14 +22,56 @@
  * the event whenever something changed (created or resolved); the caller is
  * responsible for recording that into the existing journal (see journal.recordBosEvent),
  * so BOS outcomes end up in the same signals journal export instead of a new file.
- * In-flight PENDING events (a break with fewer than 2 confirming candles so far) live
- * only in memory and are lost on restart — acceptable, since resolution normally takes
- * just a couple of candles.
+ *
+ * PERSISTENCE — in-flight PENDING events are now written to disk.
+ *
+ * They used to live in memory only, on the reasoning that resolution takes just a couple of
+ * candles. That reasoning was wrong in practice: the operator was redeploying to clear a stuck
+ * kill switch, and every redeploy wiped every PENDING break before it could resolve. Those
+ * breaks never reached the journal at all, so the exact dataset the fake-BOS finding depends on
+ * was the dataset most exposed to being lost. Only unresolved events are kept — resolved ones
+ * have already gone to the journal and are dropped on save.
  */
 
+const store = require('./store');
+const logger = require('./logger');
 const { num } = require('./util');
 
 const events = new Map(); // key -> event
+
+// Restore unresolved breaks from the previous process.
+try {
+  const saved = store.read('bosPending', []);
+  if (Array.isArray(saved)) {
+    for (const ev of saved) {
+      if (ev && ev.key && ev.outcome === 'PENDING') events.set(ev.key, ev);
+    }
+    if (events.size) logger.info('bosTracker', `Restored ${events.size} unresolved break(s) from disk`);
+  }
+} catch (e) {
+  logger.warn('bosTracker', 'Could not restore pending breaks', { error: e.message });
+}
+
+let saveTimer = null;
+/** Debounced — resolution churns during a scan and this file is small but written often. */
+function persist() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const pending = [...events.values()].filter((e) => e.outcome === 'PENDING');
+    store.write('bosPending', pending);
+
+    // Resolved events stay in memory deliberately. trackBreak() treats "key not in map" as a new
+    // detection, so dropping a resolved event would let the same break be re-detected and
+    // re-journalled, double-counting it in the very statistic this module exists to measure.
+    // They are only pruned once they are far older than any live break could be.
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    for (const [k, v] of events) {
+      if (v.outcome !== 'PENDING' && num(v.resolvedAt) && v.resolvedAt < cutoff) events.delete(k);
+    }
+  }, 2000);
+  if (saveTimer.unref) saveTimer.unref();
+}
 
 function makeKey(symbol, side, breakTs) {
   return `${symbol}:${side}:${breakTs}`;
@@ -88,6 +130,7 @@ function trackBreak({ symbol, side, eventIndex, brokenLevel, closedCandles, time
   let ev = events.get(key);
   if (ev) {
     const resolved = resolveOne(ev, closedCandles);
+    if (resolved) persist();
     return resolved ? { ...ev } : null;
   }
 
@@ -105,6 +148,7 @@ function trackBreak({ symbol, side, eventIndex, brokenLevel, closedCandles, time
   };
   events.set(key, ev);
   resolveOne(ev, closedCandles); // may resolve immediately if candles already exist past the break
+  persist();
   return { ...ev }; // always report the new detection, even if still PENDING
 }
 
@@ -121,11 +165,13 @@ function resolvePendingForSymbol(symbol, closedCandles) {
     if (ev.symbol !== symbol || ev.outcome !== 'PENDING') continue;
     if (resolveOne(ev, closedCandles)) resolved.push({ ...ev });
   }
+  if (resolved.length) persist();
   return resolved;
 }
 
 function clearTracked() {
   events.clear();
+  store.write('bosPending', []);
 }
 
 module.exports = { trackBreak, resolvePendingForSymbol, clearTracked };

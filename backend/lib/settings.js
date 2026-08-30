@@ -51,6 +51,20 @@ const SCHEMA = [
   // ── Gates ─────────────────────────────────────────────────────────────────────────────────
   { key: 'gateScoreBandEnabled', group: 'Gates', type: 'bool', default: true,
     label: 'SCORE_BAND', help: 'VALIDATED. Best single gate in backtest — trades below the floor are weak, at/above the ceiling are exhaustion.' },
+  // SCORE_BAND — 40 ≤ score < 80. These are the ORIGINAL validated numbers, restored 2026-08-30.
+  //
+  // They were briefly rescaled to 47/94 when the score was an additive point-sum, because on that
+  // scale 40/80 meant nothing. The score is now multiplicative on BASE 50 again — the same
+  // architecture and the same scale the band was validated against — so the original numbers are
+  // the correct ones. See docs/EVIDENCE.md for the bucket evidence and the transfer caveat.
+  //
+  // The ceiling is not decoration. 80+ measured 0 wins from 7 trades: on a multiplicative score,
+  // reaching 80 requires every factor near maximum at once, which is an extended, euphoric setup
+  // rather than a confident one. The floor and ceiling do different jobs.
+  //
+  // The plateau was flat across floors 35-45 and ceilings 75-85, so these are not a knife-edge —
+  // but they are also not re-validated on THIS signal source yet. Test by BUCKET, never by mean
+  // or linear correlation: a U-shape reads as r≈0 under both.
   { key: 'scoreBandLo', group: 'Gates', type: 'int', default: 40, min: 0, max: 100, label: 'Score floor (inclusive)' },
   { key: 'scoreBandHi', group: 'Gates', type: 'int', default: 80, min: 0, max: 101, label: 'Score ceiling (exclusive)' },
 
@@ -72,8 +86,15 @@ const SCHEMA = [
 
   { key: 'gateSlDistEnabled', group: 'Gates', type: 'bool', default: true,
     label: 'Stop distance bounds', help: 'Stops too tight get noise-hunted; too wide break the cost maths.' },
-  { key: 'minSlDistPct', group: 'Gates', type: 'float', default: 0.80, min: 0.05, max: 10, label: 'Min stop distance (%)' },
-  { key: 'maxSlDistPct', group: 'Gates', type: 'float', default: 2.50, min: 0.1, max: 25, label: 'Max stop distance (%)' },
+  // VALIDATED (Phase 3b). Stop distance is the most robust cross-engine predictor found so far:
+  // Spearman rho +0.28 to +0.39, replicated independently on both STRUCTURE and TREND. Tight
+  // stops get noise-hunted and round-trip fees eat most of the gross edge at sub-1% distances.
+  // 3.0% is the validated floor. The previous default of 0.80 meant a fresh deploy or a settings
+  // reset silently discarded the one fix that had actually been proven.
+  { key: 'minSlDistPct', group: 'Gates', type: 'float', default: 3.00, min: 0.05, max: 10, label: 'Min stop distance (%)' },
+  // NOT validated — the ceiling has never been tested. It exists only to keep the cost maths
+  // sane and to stay above the floor. Treat as a placeholder, not a finding.
+  { key: 'maxSlDistPct', group: 'Gates', type: 'float', default: 5.00, min: 0.1, max: 25, label: 'Max stop distance (%)' },
 
   { key: 'gateBtcRegimeEnabled', group: 'Gates', type: 'bool', default: true,
     label: 'BTC regime alignment', help: 'Only take longs in bullish BTC regimes and shorts in bearish ones.' },
@@ -100,9 +121,10 @@ const SCHEMA = [
     label: 'Require strong break', help: 'Only accept BOS/CHoCH that showed real displacement (strong body + range). Causal — uses only past candles.' },
   { key: 'rejectFailedBreak', group: 'Gates', type: 'bool', default: true,
     label: 'Reject failed breaks', help: 'Reject if price has already closed back through the broken level by the time the signal is born. Causal — no future data.' },
-  { key: 'entryMode', group: 'Entry', type: 'enum', default: 'STRUCTURE_RETEST',
-    options: ['STRUCTURE_RETEST'],
-    label: 'Entry mode', help: 'STRUCTURE_RETEST = single clean structure engine (BOS/CHoCH → retest).' },
+  // NOTE: 'entryMode' used to live here as a single-option dropdown. It was never read by
+  // engine.js, signals.js, or either builder — pure dead code left over from before the
+  // dual-engine split, and it misled the operator into thinking it selected the engine.
+  // The real controls are 'activeEngine' and 'dualEngines', both in the Engine group above.
 
   // ── Entry ─────────────────────────────────────────────────────────────────────────────────
     { key: 'minTrendStrength', group: 'Gates', type: 'float', default: 12, min: 0, max: 100,
@@ -195,6 +217,17 @@ function reconcile(s) {
   if (s.maxRR <= s.minRR) {
     s.maxRR = Number((s.minRR + 0.5).toFixed(2));
     fixes.push(`Max RR must exceed min RR — raised it to ${s.maxRR}.`);
+  }
+  // Dual engines is a paper-only A/B tool and must never run against real orders.
+  //
+  // Dual mode deliberately allows the same symbol on both engines, but Bybit one-way mode holds
+  // exactly one net position per symbol. executor.syncLiveTrades() maps exchange positions by
+  // symbol alone, so two local trades on one symbol both match the same exchange position: fills,
+  // exits and P&L get attributed to whichever local record is found first. The books silently
+  // diverge from the exchange, which is the one failure mode that costs real money quietly.
+  if (s.dualEngines && s.mode === 'live') {
+    s.dualEngines = false;
+    fixes.push('Dual engines cannot run in live mode — position reconciliation is per-symbol and would mis-attribute fills. Switched dual engines off.');
   }
   if (s.maxPerDirection > s.maxOpenPositions) {
     s.maxPerDirection = s.maxOpenPositions;

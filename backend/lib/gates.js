@@ -59,10 +59,22 @@ function evaluate(signal, settings, ctx = {}) {
       `target move ${tpMovePct.toFixed(3)}% vs required ${required.toFixed(3)}%`);
   }
 
-  // Stop distance bounds
+  // Stop distance bounds.
+  //
+  // BOUNDARY TOLERANCE — do not remove. The signal builders clamp the stop to sit exactly on
+  // one of these bounds, then this gate re-derives the distance from the clamped price with
+  // (entry - sl) / entry * 100. That round trip is not exact in binary floating point: it lands
+  // a few ulps below the bound and a naive >= comparison rejects it.
+  //
+  // Measured on the live journal of 2026-08-29 (20,000 scans, bounds 2.1%–4.1%): 14,523 signals
+  // were rejected by this gate. Every single one sat exactly on a clamp — 14,293 on the floor,
+  // 230 on the ceiling. Zero were genuinely out of range. Of the signals clamped to precisely
+  // 2.1%, 36 passed and 14,293 failed: identical value, identical code path, decided by rounding.
+  // 73% of the entire signal population was discarded for nothing.
   {
+    const EPS = 1e-9;
     const d = num(signal.slDistPct);
-    const pass = d >= settings.minSlDistPct && d <= settings.maxSlDistPct;
+    const pass = d >= settings.minSlDistPct - EPS && d <= settings.maxSlDistPct + EPS;
     record('SL_DISTANCE', settings.gateSlDistEnabled, pass,
       `stop ${d.toFixed(3)}% vs [${settings.minSlDistPct}%, ${settings.maxSlDistPct}%]`);
   }
@@ -147,7 +159,7 @@ function evaluate(signal, settings, ctx = {}) {
 const GATE_ORDER = [
   'SCORE_BAND', 'TURNOVER_GATE', 'RR_BOUNDS', 'COST_FLOOR', 'SL_DISTANCE',
   'BTC_REGIME', 'SPREAD', 'VOLUME_GATE', 'FUNDING_GATE',
-  'MAX_POSITIONS', 'MAX_PER_DIRECTION', 'NO_DUPLICATE_SYMBOL', 'SYMBOL_LOCKOUT',
+  'MAX_PER_ENGINE', 'MAX_POSITIONS', 'MAX_PER_DIRECTION', 'NO_DUPLICATE_SYMBOL', 'SYMBOL_LOCKOUT',
 ];
 
 module.exports = { evaluate, GATE_ORDER };
