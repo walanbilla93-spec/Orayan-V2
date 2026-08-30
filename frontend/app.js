@@ -652,6 +652,13 @@ function init() {
   $('#btnPanic').addEventListener('click', () => control('/api/control/panic',
     'Close every open position and cancel every pending order now?'));
 
+  // Both endpoints already existed but were never exposed, so the only apparent way to recover
+  // from a stuck kill switch was a redeploy — which also wiped every in-flight BOS event.
+  $('#btnReleaseKill').addEventListener('click', () => control('/api/control/release-kill',
+    'Release the kill switch and allow new entries again?'));
+  $('#btnClearHalt').addEventListener('click', () => control('/api/control/clear-halt',
+    'Clear the circuit-breaker halt and all symbol lockouts?'));
+
   $('#btnResetAll').addEventListener('click', async () => {
     if (!confirm('Reset every setting back to its default?')) return;
     try {
