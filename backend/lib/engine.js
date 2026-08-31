@@ -9,6 +9,7 @@ const { buildSignal, buildSignalStructure, buildSignalTrend, detectBtcRegime } =
 const gates = require('./gates');
 const risk = require('./risk');
 const executor = require('./executor');
+const symbolStats = require('./symbolStats');
 const journal = require('./journal');
 const { num, uid } = require('./util');
 
@@ -89,6 +90,13 @@ function recordLockout(trade, settings) {
   if (num(trade.netPnl) < 0 && settings.cbSymbolLossLockoutMin > 0) {
     state.symbolLockouts[trade.symbol] = Date.now() + settings.cbSymbolLossLockoutMin * 60000;
   }
+  // Feed the rolling per-symbol record. Called from the single place every close passes
+  // through, so each trade is counted exactly once.
+  try {
+    symbolStats.recordClose(trade, settings);
+  } catch (e) {
+    logger.warn('engine', `symbolStats failed on ${trade.symbol}`, { error: e.message });
+  }
 }
 
 /** Move every open and pending trade forward. Runs even when trading is disabled. */
@@ -96,8 +104,19 @@ async function manageOpenTrades(settings) {
   let changed = false;
 
   if (settings.mode === 'live') {
+    // Live closes happen inside syncLiveTrades, which does not run recordLockout. Snapshot the
+    // statuses first and reconcile after, otherwise the symbol tracker would only ever learn
+    // from paper trades and would sit permanently blind in live mode.
+    const beforeStatus = new Map(trades.map((t) => [t.id, t.status]));
     const r = await executor.syncLiveTrades(trades, settings);
     if (r.changed) changed = true;
+    for (const t of trades) {
+      if (t.status === 'CLOSED' && beforeStatus.get(t.id) !== 'CLOSED') {
+        try { recordLockout(t, settings); } catch (e) {
+          logger.warn('engine', `post-live-sync record failed on ${t.symbol}`, { error: e.message });
+        }
+      }
+    }
   }
 
   const active = trades.filter((t) => ['PENDING', 'OPEN'].includes(t.status) && t.mode === 'paper');

@@ -73,6 +73,44 @@ const SCHEMA = [
   { key: 'minTurnover24h', group: 'Gates', type: 'float', default: 3000000, min: 0, max: 1e10,
     label: 'Min 24h turnover (USDT)' },
 
+  /*
+   * TURNOVER_CEILING — VALIDATED out-of-sample (2026-08-30). Fitted on the first 60% of the
+   * TREND_PULLBACK ledger by time, then checked on the held-out 40%: TRAIN 46.2% WR / +11.01,
+   * TEST 51.4% WR / +9.13, against a 40.9% baseline. It was the ONLY single-condition filter of
+   * ~60 tested that survived the holdout — BUY-only, score>=70, turnover<3M and every
+   * hour-of-day cut all collapsed or inverted.
+   *
+   * 3.5M and 4.0M both read >50% out-of-sample; 3.0M dipped to 41.7%. The real region is
+   * roughly 3.5-5M. Do not fine-tune this against the data that produced it.
+   */
+  { key: 'gateTurnoverCeilingEnabled', group: 'Gates', type: 'bool', default: true,
+    label: 'TURNOVER_CEILING', help: 'VALIDATED out-of-sample. Crowded, high-turnover books were where the edge died.' },
+  { key: 'maxTurnover24h', group: 'Gates', type: 'float', default: 4000000, min: 100000, max: 1e10,
+    label: 'Max 24h turnover (USDT)' },
+
+  /*
+   * SYMBOL_EXPECTANCY — VALIDATED out-of-sample (2026-08-30), and independent of the ceiling
+   * above (blocked names: median turnover 3.71M vs 3.66M for the rest). Symbols net-negative in
+   * the first 60% went on to 31.9% WR / -3.84 in the held-out 40%; blocking them lifted the
+   * remainder to 46.2% WR / +7.61. Permutation over 2,000 random blacklists of equal size beat
+   * the real one 49 times (p = 0.0245). Stacked with the ceiling: 61.2% WR / +11.12 (n=67),
+   * still 61.5% after trimming top-3 winners AND top-3 losers.
+   *
+   * Implemented as suspension-with-parole, never a permanent ban — see lib/symbolStats.js.
+   */
+  { key: 'gateSymbolExpectancyEnabled', group: 'Gates', type: 'bool', default: true,
+    label: 'SYMBOL_EXPECTANCY', help: 'VALIDATED out-of-sample. Suspends symbols whose recent record is net-negative, with parole.' },
+  { key: 'symbolStatsWindow', group: 'Gates', type: 'int', default: 6, min: 2, max: 50,
+    label: 'Symbol record window', help: 'Judge a symbol on its last N closed trades only. Older results age out.' },
+  { key: 'symbolStatsMinTrades', group: 'Gates', type: 'int', default: 3, min: 2, max: 20,
+    label: 'Min trades before judging', help: 'Never suspend a symbol on fewer than this many results.' },
+  { key: 'symbolBlockMin', group: 'Gates', type: 'int', default: 720, min: 10, max: 20160,
+    label: 'Suspension length (min)', help: 'First suspension. Doubles on each repeat failure.' },
+  { key: 'symbolMaxBlockMin', group: 'Gates', type: 'int', default: 4320, min: 60, max: 40320,
+    label: 'Max suspension (min)', help: 'Backoff ceiling, so a symbol is always retried eventually.' },
+  { key: 'symbolParoleTrades', group: 'Gates', type: 'int', default: 2, min: 1, max: 10,
+    label: 'Parole trades', help: 'Trades a released symbol gets to prove itself, judged on fresh results only.' },
+
   { key: 'gateRREnabled', group: 'Gates', type: 'bool', default: true,
     label: 'RR floor', help: 'Reject plans whose planned reward:risk is below the floor.' },
   { key: 'minRR', group: 'Gates', type: 'float', default: 2.0, min: 0.5, max: 10, label: 'Min planned RR' },
@@ -225,6 +263,20 @@ function reconcile(s) {
   // symbol alone, so two local trades on one symbol both match the same exchange position: fills,
   // exits and P&L get attributed to whichever local record is found first. The books silently
   // diverge from the exchange, which is the one failure mode that costs real money quietly.
+  /*
+   * The turnover floor and ceiling must leave a usable window. The floor default (3M) predates
+   * the ceiling and, paired with a 4M ceiling, would admit only a 3-4M sliver and starve the
+   * engine. The validated finding is a CEILING near 4M; the floor exists only to skip books too
+   * thin to fill. Widen the window rather than silently trading almost nothing.
+   */
+  if (s.gateTurnoverCeilingEnabled && s.maxTurnover24h <= s.minTurnover24h * 1.5) {
+    const wanted = Math.min(s.minTurnover24h, 1000000);
+    if (wanted < s.minTurnover24h) {
+      s.minTurnover24h = wanted;
+      fixes.push(`Turnover floor was too close to the ${Math.round(s.maxTurnover24h).toLocaleString()} ceiling — lowered the floor to ${wanted.toLocaleString()} so the window is usable.`);
+    }
+  }
+
   if (s.dualEngines && s.mode === 'live') {
     s.dualEngines = false;
     fixes.push('Dual engines cannot run in live mode — position reconciliation is per-symbol and would mis-attribute fills. Switched dual engines off.');

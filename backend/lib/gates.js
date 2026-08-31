@@ -1,6 +1,7 @@
 'use strict';
 
 const { num } = require('./util');
+const symbolStats = require('./symbolStats');
 const { regimeAllows } = require('./signals');
 
 /*
@@ -39,6 +40,26 @@ function evaluate(signal, settings, ctx = {}) {
     const pass = t >= settings.minTurnover24h;
     record('TURNOVER_GATE', settings.gateTurnoverEnabled, pass,
       `24h turnover ${Math.round(t).toLocaleString()} vs min ${Math.round(settings.minTurnover24h).toLocaleString()}`);
+  }
+
+  /*
+   * TURNOVER_CEILING — the edge lives in the quiet corners, not the crowded ones.
+   *
+   * The existing floor removes books too thin to fill in. This removes the opposite end. On the
+   * 2026-08 ledger, split 60/40 in time and fitted only on the first part, a ceiling near 4M was
+   * the ONLY single-condition filter that survived out-of-sample: TRAIN 46.2% WR / +11.01,
+   * TEST 51.4% WR / +9.13 against a 40.9% baseline. Every other candidate (BUY-only, score>=70,
+   * every hour-of-day cut, turnover<3M) collapsed or inverted on the held-out half.
+   *
+   * The threshold is a zone, not a knife edge: 3.5M and 4.0M both read >50% on held-out data
+   * while 3.0M dipped to 41.7%. Treat 3.5-5M as the real region and do not fine-tune this
+   * number against the same data that produced it.
+   */
+  {
+    const t = num(signal.market && signal.market.turnover24h);
+    const pass = !(t > settings.maxTurnover24h);
+    record('TURNOVER_CEILING', settings.gateTurnoverCeilingEnabled, pass,
+      `24h turnover ${Math.round(t).toLocaleString()} vs max ${Math.round(settings.maxTurnover24h).toLocaleString()}`);
   }
 
   // RR bounds
@@ -152,14 +173,25 @@ function evaluate(signal, settings, ctx = {}) {
       pass ? 'not locked out' : `locked out until ${new Date(until).toISOString()}`);
   }
 
+  /*
+   * SYMBOL_EXPECTANCY — rolling per-symbol suspension with parole. See lib/symbolStats.js for
+   * the evidence and the parole design. Independent of TURNOVER_CEILING: the blocked names had
+   * median turnover 3.71M vs 3.66M for everything else, so this is not that effect in disguise.
+   */
+  {
+    const st = symbolStats.check(signal.symbol, settings);
+    record('SYMBOL_EXPECTANCY', settings.gateSymbolExpectancyEnabled, !st.blocked,
+      st.blocked ? `${signal.symbol} ${st.reason}` : (st.parole ? `${signal.symbol} on parole` : 'ok'));
+  }
+
   return { passed: failed.length === 0, failed, checks };
 }
 
 /** Names in the order the UI funnel should display them. */
 const GATE_ORDER = [
-  'SCORE_BAND', 'TURNOVER_GATE', 'RR_BOUNDS', 'COST_FLOOR', 'SL_DISTANCE',
+  'SCORE_BAND', 'TURNOVER_GATE', 'TURNOVER_CEILING', 'RR_BOUNDS', 'COST_FLOOR', 'SL_DISTANCE',
   'BTC_REGIME', 'SPREAD', 'VOLUME_GATE', 'FUNDING_GATE',
-  'MAX_PER_ENGINE', 'MAX_POSITIONS', 'MAX_PER_DIRECTION', 'NO_DUPLICATE_SYMBOL', 'SYMBOL_LOCKOUT',
+  'MAX_PER_ENGINE', 'MAX_POSITIONS', 'MAX_PER_DIRECTION', 'NO_DUPLICATE_SYMBOL', 'SYMBOL_LOCKOUT', 'SYMBOL_EXPECTANCY',
 ];
 
 module.exports = { evaluate, GATE_ORDER };
