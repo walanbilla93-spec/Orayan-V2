@@ -6,8 +6,45 @@ const logger = require('../lib/logger');
 const bybit = require('../lib/bybit');
 const marketData = require('../lib/marketData');
 const journal = require('../lib/journal');
+const executor = require('../lib/executor');
 const { GATE_ORDER } = require('../lib/gates');
 const { num } = require('../lib/util');
+
+/**
+ * Attach mark-to-market floating P&L on OPEN trades so the UI is not blind until close.
+ * Uses a short ticker TTL so the number moves with the market on each poll.
+ * Live trades may already carry exchange unrealisedPnl from syncLiveTrades; we only fill gaps.
+ */
+async function withFloatingPnl(trades) {
+  const list = Array.isArray(trades) ? trades : [];
+  const open = list.filter((t) => t.status === 'OPEN' && num(t.fillPrice) > 0 && num(t.qty) > 0);
+  if (!open.length) return list;
+
+  const settings = settingsMod.effective();
+  let bySymbol = new Map();
+  try {
+    const tickers = await marketData.getTickers({ testnet: settings.testnet, ttlMs: 5000 });
+    bySymbol = new Map(tickers.map((t) => [t.symbol, t]));
+  } catch (e) {
+    logger.warn('api', 'Could not refresh tickers for floating P&L', { error: e.message });
+  }
+
+  return list.map((t) => {
+    if (t.status !== 'OPEN') return t;
+    // Prefer a fresh ticker mark; fall back to whatever sync already stamped.
+    const tick = bySymbol.get(t.symbol);
+    const mark = num(tick?.markPrice) || num(tick?.lastPrice) || num(t.markPrice);
+    if (!(mark > 0)) return t;
+    const fp = executor.floatingPnl(t, mark, settings);
+    if (!fp) return t;
+    return {
+      ...t,
+      markPrice: fp.markPrice,
+      unrealisedPnl: fp.unrealisedPnl,
+      unrealisedRR: fp.unrealisedRR,
+    };
+  });
+}
 
 /** Route table: 'METHOD /path' -> async (ctx) => body */
 const routes = {
@@ -46,10 +83,19 @@ const routes = {
     lastScanAt: engine.state.lastScanAt,
   }),
 
-  'GET /api/trades': async ({ query }) => ({
-    trades: engine.getTrades({ status: query.status || null, limit: num(query.limit, 200) }),
-    summary: engine.summary(),
-  }),
+  'GET /api/trades': async ({ query }) => {
+    const trades = await withFloatingPnl(
+      engine.getTrades({ status: query.status || null, limit: num(query.limit, 200) }),
+    );
+    const openFloat = trades
+      .filter((t) => t.status === 'OPEN' && Number.isFinite(Number(t.unrealisedPnl)))
+      .reduce((a, t) => a + Number(t.unrealisedPnl), 0);
+    return {
+      trades,
+      summary: engine.summary(),
+      openUnrealisedPnl: openFloat,
+    };
+  },
 
   'GET /api/logs': async ({ query }) => ({
     logs: logger.tail(num(query.after, 0), num(query.limit, 300)),
