@@ -204,3 +204,54 @@ Be honest about the gap between "promising" and "validated":
 
 The prior project's own hardest-won lesson: nearly every hypothesis that showed broad support
 collapsed on temporal stability testing. Assume that applies here until proven otherwise.
+
+---
+
+## TURNOVER_CEILING + SYMBOL_EXPECTANCY (added 2026-08-30)
+
+Both found by fitting on the first 60% of the TREND_PULLBACK ledger **by time** and checking on
+the held-out final 40%. Roughly 60 single-condition filters were tried; these are the only two
+that survived.
+
+**What failed the holdout** (recorded so nobody re-mines them): `turnover < 3M` (train 50.6% →
+test 41.7%), `side == BUY` (43.5% → 36.1%, went negative), `score >= 70` (41.2% → 38.7%), every
+hour-of-day and day-of-week cut, time-to-fill, entry slippage, concurrent-open-positions,
+notional size, actual stop %. Baseline was 40.9%.
+
+### TURNOVER_CEILING — `[Likely]`
+TRAIN 46.2% WR / +11.01 · TEST **51.4% WR / +9.13** · baseline 40.9%.
+Beat the unfiltered book on 7 of 9 days, including cutting the worst day from −7.79 to −3.39.
+Threshold is a zone, not a point: 3.5M and 4.0M both >50% out-of-sample, 3.0M dipped to 41.7%.
+Real region ≈ 3.5–5M. **Do not fine-tune against the data that produced it.**
+
+### SYMBOL_EXPECTANCY — `[Likely]`
+Symbols net-negative in TRAIN went on to 31.9% WR / −3.84 in TEST; blocking them lifted the
+remainder to 46.2% WR / +7.61. Permutation over 2,000 random blacklists of equal size beat the
+real one 49 times (**p = 0.0245**).
+
+Independent of the ceiling: blocked names had median turnover 3.71M vs 3.66M for the rest.
+
+**Stacked:** 61.2% WR / +11.12 (n=67), still **61.5%** after a symmetric top-3-winner AND
+top-3-loser trim, 4 of 5 days net-positive.
+
+Implemented as suspension-with-parole (`lib/symbolStats.js`), never a permanent ban: rolling
+window, timed suspension, forced parole trades on fresh evidence, exponential backoff capped so
+every symbol is retried eventually.
+
+### Caveats — read before trusting
+- Test side is **n=67**. Thin.
+- 12 calendar days total, and BTC regime is serially correlated, so the effective independent
+  sample is far smaller than the trade count suggests.
+- The ledger spans code eras (pre/post the SL_DISTANCE and score rebuild fixes); some of this
+  effect could be era artefact rather than market structure.
+- Two gates were adopted from ~60 tested. Even with a holdout, that is real multiple-comparisons
+  exposure. Treat both as `[Likely]`, not settled.
+
+### Pre-registered forward test — lock before looking
+1. Report bucketed by gate: ceiling-only, expectancy-only, both, neither.
+2. Minimum n ≥ 150 closed with the gates live before concluding anything.
+3. **Pass:** filtered set beats unfiltered by ≥ 8pp WR *and* positive mean R, net-positive on
+   ≥ 5 of 7 days.
+4. **Fail:** the gate comes out. Do not re-tune 4M or the window against the data that failed it.
+5. Watch the parole logs. If symbols cycle suspend → parole → suspend indefinitely, the window
+   or `minTrades` is too tight and the design needs revisiting, not the threshold.
