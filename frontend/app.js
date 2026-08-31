@@ -121,7 +121,19 @@ function renderStatus(s) {
   set('engine', s.running ? (s.scanning ? 'SCANNING' : 'RUNNING') : 'STOPPED', s.running ? 'on' : 'off');
   set('regime', s.btcRegime?.regime || '—');
   set('open', `${s.summary.open}+${s.summary.pending}`);
-  set('netpnl', fmtUsd(s.summary.netPnl), sgn(s.summary.netPnl));
+  // Closed realised stays the primary NET P&L. When anything is open, append floating total
+  // so you are not blind until close (e.g. "-2.92  float -0.41").
+  const closedNet = s.summary.netPnl;
+  const float = state.openUnrealisedPnl;
+  if (s.summary.open > 0 && float != null && Number.isFinite(Number(float))) {
+    const el = $('[data-field="netpnl"]');
+    if (el) {
+      el.innerHTML = `${fmtUsd(closedNet)} <span class="faint ${sgn(float)}">float ${fmtUsd(float)}</span>`;
+      el.className = `stat-value ${sgn(closedNet)}`;
+    }
+  } else {
+    set('netpnl', fmtUsd(closedNet), sgn(closedNet));
+  }
   set('today', fmtUsd(s.summary.todayPnl), sgn(s.summary.todayPnl));
 
   $('#btnStart').disabled = s.running;
@@ -291,9 +303,11 @@ function renderLivePositions() {
     <div class="rows">
       <div class="row row-pos row-head">
         <div>Symbol</div><div>Side</div><div>State</div><div>Entry</div>
-        <div>Stop</div><div>Target</div><div>Qty</div>
+        <div>Stop</div><div>Target</div><div>Qty</div><div>Float</div>
       </div>
-      ${live.map((t) => `
+      ${live.map((t) => {
+        const float = t.status === 'OPEN' && t.unrealisedPnl != null ? t.unrealisedPnl : null;
+        return `
         <div class="row row-pos">
           <div class="sym">${esc(t.symbol)}</div>
           <div class="side-${t.side.toLowerCase()}">${esc(t.side)}</div>
@@ -302,8 +316,9 @@ function renderLivePositions() {
           <div class="dim">${fmt(t.sl, 6)}</div>
           <div class="dim">${fmt(t.tp, 6)}</div>
           <div class="dim">${fmt(t.qty, 4)}</div>
-        </div>
-      `).join('')}
+          <div class="${sgn(float)}">${float == null ? '—' : fmtUsd(float)}</div>
+        </div>`;
+      }).join('')}
     </div>`;
 }
 
@@ -429,6 +444,15 @@ function renderTrades() {
       ${list.map((t) => {
         const created = t.createdAt || t.filledAt || null;
         const eng = t.engine || t.entryPath || (t.structureEvent === 'TREND_PULLBACK' ? 'TREND' : (Math.abs((t.plannedRR||0)-2)<1e-6 ? 'TREND' : 'STRUCTURE'));
+        // OPEN: show live floating (mark-to-market) P&L; CLOSED: realised net; PENDING: —
+        const isOpen = t.status === 'OPEN';
+        const pnl = isOpen
+          ? (t.unrealisedPnl != null ? t.unrealisedPnl : null)
+          : (t.netPnl != null ? t.netPnl : null);
+        const rr = isOpen
+          ? (t.unrealisedRR != null ? t.unrealisedRR : null)
+          : (t.realisedRR != null ? t.realisedRR : null);
+        const pnlLabel = isOpen && pnl != null ? 'Float' : 'Net USDT';
         return `
         <div class="row row-trade">
           <div class="faint" data-label="Created (LK)">${fmtDate(created)}</div>
@@ -436,10 +460,10 @@ function renderTrades() {
           <div class="sym" data-label="Symbol">${esc(t.symbol)}</div>
           <div class="side-${t.side.toLowerCase()}" data-label="Side">${esc(t.side)}</div>
           <div data-label="Status"><span class="pill ${t.status === 'OPEN' ? 'open' : t.status === 'PENDING' ? 'pending' : ''}">${esc(t.status)}</span></div>
-          <div class="${sgn(t.netPnl)}" data-label="Net USDT">${t.netPnl == null ? '—' : fmtUsd(t.netPnl)}</div>
-          <div class="${sgn(t.realisedRR)}" data-label="R">${t.realisedRR == null ? '—' : fmt(t.realisedRR, 2)}</div>
+          <div class="${sgn(pnl)}" data-label="${pnlLabel}">${pnl == null ? '—' : fmtUsd(pnl)}${isOpen && pnl != null ? ' <span class="faint">live</span>' : ''}</div>
+          <div class="${sgn(rr)}" data-label="R">${rr == null ? '—' : fmt(rr, 2)}</div>
           <div class="dim" data-label="Entry">${fmt(t.fillPrice ?? t.plannedEntry, 6)}</div>
-          <div class="faint" data-label="Closed">${t.closedAt ? fmtDate(t.closedAt) : '—'}</div>
+          <div class="faint" data-label="Closed">${t.closedAt ? fmtDate(t.closedAt) : (isOpen && t.markPrice ? `m ${fmt(t.markPrice, 6)}` : '—')}</div>
         </div>`;
       }).join('')}
     </div>`;
@@ -587,6 +611,7 @@ async function refresh() {
     state.funnel = signals.funnel || {};
     state.gateOrder = signals.gateOrder || [];
     state.trades = trades.trades || [];
+    state.openUnrealisedPnl = trades.openUnrealisedPnl;
 
     renderStatus(status);
     if (state.view === 'dashboard') {
