@@ -185,12 +185,44 @@ function closeTrade(trade, exitPrice, closedAt, reason, settings) {
   trade.grossPnl = gross;
   trade.fees = fees;
   trade.netPnl = gross - fees;
+  // Clear mark-to-market fields so closed rows never show a stale floating figure.
+  trade.markPrice = null;
+  trade.unrealisedPnl = null;
+  trade.unrealisedRR = null;
 
   const risk = Math.abs(trade.fillPrice - trade.sl) * trade.qty;
   trade.realisedRR = risk > 0 ? trade.netPnl / risk : null;
 
   logger.info('executor',
     `Closed ${trade.symbol} ${trade.side} — ${reason} — net ${trade.netPnl.toFixed(4)} USDT`);
+}
+
+/**
+ * Mark-to-market P&L for an OPEN trade, using the same fee model as closeTrade so the floating
+ * number is what you would book if you closed at this mark right now.
+ * Returns null when the trade is not open or inputs are incomplete.
+ */
+function floatingPnl(trade, markPrice, settings) {
+  if (!trade || trade.status !== 'OPEN') return null;
+  const fill = num(trade.fillPrice);
+  const qty = num(trade.qty);
+  const mark = num(markPrice);
+  if (!(fill > 0) || !(qty > 0) || !(mark > 0)) return null;
+
+  const isBuy = trade.side === 'BUY';
+  const gross = isBuy ? (mark - fill) * qty : (fill - mark) * qty;
+  const fees = estimateFees({
+    notional: fill * qty,
+    exitNotional: mark * qty,
+    settings,
+  });
+  const net = gross - fees;
+  const risk = Math.abs(fill - num(trade.sl)) * qty;
+  return {
+    markPrice: mark,
+    unrealisedPnl: net,
+    unrealisedRR: risk > 0 ? net / risk : null,
+  };
 }
 
 // ── Live execution ────────────────────────────────────────────────────────────────────────
@@ -309,6 +341,25 @@ async function syncLiveTrades(trades, settings) {
       continue;
     }
 
+    if (t.status === 'OPEN' && pos) {
+      // Stamp exchange mark-to-market so the UI can show floating P&L between API polls
+      // without waiting for a close. Prefer Bybit's own unrealisedPnl when present.
+      const mark = num(pos.markPrice) || num(pos.avgPrice);
+      if (mark > 0) t.markPrice = mark;
+      if (pos.unrealisedPnl != null && pos.unrealisedPnl !== '') {
+        t.unrealisedPnl = num(pos.unrealisedPnl);
+        const risk = Math.abs(num(t.fillPrice) - num(t.sl)) * num(t.qty);
+        t.unrealisedRR = risk > 0 ? t.unrealisedPnl / risk : null;
+      } else if (mark > 0) {
+        const fp = floatingPnl(t, mark, settings);
+        if (fp) {
+          t.unrealisedPnl = fp.unrealisedPnl;
+          t.unrealisedRR = fp.unrealisedRR;
+        }
+      }
+      continue;
+    }
+
     if (t.status === 'OPEN' && !pos) {
       // Position is gone from the exchange — find the settled P&L record for it.
       const rec = closedPnls
@@ -331,6 +382,9 @@ async function syncLiveTrades(trades, settings) {
         t.fees = exchangeFees;
         t.grossPnl = t.netPnl + exchangeFees; // gross = net + costs, so the three reconcile
         t.closeReason = 'Closed on exchange';
+        t.markPrice = null;
+        t.unrealisedPnl = null;
+        t.unrealisedRR = null;
         const risk = Math.abs(num(t.fillPrice) - num(t.sl)) * num(t.qty);
         t.realisedRR = risk > 0 ? t.netPnl / risk : null;
         changed++;
@@ -358,6 +412,7 @@ module.exports = {
   createPendingOrder,
   stepPaperTrade,
   closeTrade,
+  floatingPnl,
   placeLiveOrder,
   cancelLiveOrder,
   closeLivePosition,
