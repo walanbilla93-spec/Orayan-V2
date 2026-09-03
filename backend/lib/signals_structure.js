@@ -16,6 +16,7 @@ const { detectStructure, keyLevels, findPivots } = require('./structure');
 const { num, clamp, uid } = require('./util');
 const bosTracker = require('./bosTracker');
 const journal = require('./journal');
+const { detectStructureV2 } = require('./structureV2');
 
 /** See signals_trend.js — same validated curve, shared shape for both engines. */
 function smoothPeak(x, lo, hi, peakLo, peakHi) {
@@ -230,6 +231,39 @@ function buildSignal({ symbol, candles, ticker, btcRegime, settings }) {
 
   const pivotWidth = Math.max(2, Math.round(num(settings.pivotWidth, 2)));
   const struct = detectStructure(closed, pivotWidth);
+
+  // SHADOW MODE ONLY — logging for comparison, does not affect struct/side/gating below.
+  // Protected-swing CHoCH candidate (see structureV2.js). Once enough live data has
+  // accumulated, pre-register a criterion for whether this outperforms the current
+  // undifferentiated CHoCH before ever touching the gating logic above.
+  try {
+    const structV2 = detectStructureV2(closed, pivotWidth);
+    if (structV2.event !== 'NONE') {
+      const v2Side = ['BOS_UP', 'CHOCH_UP'].includes(structV2.event) ? 'BUY' : 'SELL';
+      journal.recordBosEvent({
+        key: `v2:${symbol}:${structV2.eventIndex}:${structV2.event}`,
+        symbol,
+        side: v2Side,
+        level: structV2.brokenLevel,
+        breakTs: closed[structV2.eventIndex]?.timestamp ?? null,
+        breakIso: closed[structV2.eventIndex]?.timestampIso ?? null,
+        outcome: structV2.event,
+        barsChecked: null,
+      });
+    }
+  } catch (err) {
+    // Shadow logging must never break live signal generation.
+    journal.recordBosEvent({
+      key: `v2:${symbol}:error`,
+      symbol,
+      side: null,
+      level: null,
+      breakTs: Date.now(),
+      breakIso: new Date().toISOString(),
+      outcome: `V2_ERROR:${err.message}`,
+      barsChecked: null,
+    });
+  }
 
   // Resolve any of this symbol's still-pending break outcomes against fresh candles —
   // do this every scan regardless of whether today's struct event even exists, so
