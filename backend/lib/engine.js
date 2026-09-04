@@ -11,6 +11,7 @@ const risk = require('./risk');
 const executor = require('./executor');
 const symbolStats = require('./symbolStats');
 const journal = require('./journal');
+const locationResearch = require('./locationResearch');
 const { num, uid } = require('./util');
 
 const state = {
@@ -209,6 +210,11 @@ async function scanOnce() {
 
         const signal = built.signal;
         signal.engine = signal.engine || b.name;
+
+        // Observational research telemetry only. This must NEVER gate, score, size or alter the
+        // setup. Attach before gate evaluation so both passed and rejected signal-journal rows
+        // carry the same frozen location snapshot.
+        signal.locationResearch = locationResearch.measure({ candles, signal });
 
         const openPositions = [...openTrades(), ...pendingTrades()];
         const verdict = gates.evaluate(signal, settings, {

@@ -45,6 +45,9 @@ function createPendingOrder({ signal, sizing, settings }) {
     engine: signal.engine || 'STRUCTURE',
     entryPath: signal.entryPath || null,
     structureEvent: signal.structureEvent || null,
+    // Freeze the signal-time research snapshot into the trade. Do not recompute at fill/close:
+    // resolved-trade analysis must use only information that existed when the setup was born.
+    locationResearch: signal.locationResearch ? { ...signal.locationResearch } : null,
     createdAtIso: new Date().toISOString(),
     // filled in later
     fillPrice: null,
