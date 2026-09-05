@@ -4,7 +4,8 @@ const bybit = require('./bybit');
 const logger = require('./logger');
 const { num } = require('./util');
 
-const klineCache = new Map();   // `${symbol}:${interval}` -> { at, candles }
+const klineCache = new Map();   // `${symbol}:${interval}` -> { at, expiresAt, candles }
+const MAX_KLINE_CACHE_ENTRIES = 180; // 100-symbol universe + BTC + room for managed 1m trades
 const instrumentCache = { at: 0, map: new Map() };
 let tickerCache = { at: 0, list: [] };
 
@@ -16,10 +17,23 @@ let tickerCache = { at: 0, list: [] };
  * so any indicator built on it silently repaints. It is dropped here, once, so nothing
  * downstream has to remember to.
  */
-async function getCandles(symbol, interval, limit, { testnet, ttlMs = 20000 } = {}) {
+async function getCandles(symbol, interval, limit, { testnet, ttlMs } = {}) {
   const key = `${symbol}:${interval}`;
+  const now = Date.now();
+  const intervalMs = Math.max(60000, num(interval) * 60000);
   const hit = klineCache.get(key);
-  if (hit && Date.now() - hit.at < ttlMs && hit.candles.length >= limit) {
+
+  // Closed candles cannot change until the next timeframe boundary. For ordinary strategy
+  // scans, cache exactly to that boundary instead of refetching the same 200 candles every
+  // 20 seconds. Callers that genuinely need fresher data (trade management) pass ttlMs.
+  const explicitTtl = ttlMs !== undefined && ttlMs !== null;
+  const valid = hit && hit.candles.length >= limit && (
+    explicitTtl ? (now - hit.at < Math.max(0, ttlMs)) : (now < hit.expiresAt)
+  );
+  if (valid) {
+    // Touch entry so Map insertion order acts as a tiny LRU.
+    klineCache.delete(key);
+    klineCache.set(key, hit);
     return hit.candles.slice(-limit);
   }
 
@@ -43,11 +57,20 @@ async function getCandles(symbol, interval, limit, { testnet, ttlMs = 20000 } = 
     }))
     .sort((a, b) => a.ts - b.ts);
 
-  const intervalMs = num(interval) * 60000;
-  const now = Date.now();
-  const closed = candles.filter((c) => c.ts + intervalMs <= now);
+  const fetchedAt = Date.now();
+  const closed = candles.filter((c) => c.ts + intervalMs <= fetchedAt);
+  // Add a small grace after the next boundary so Bybit has time to finalise the just-closed bar.
+  const nextBoundary = (Math.floor(fetchedAt / intervalMs) + 1) * intervalMs;
+  const expiresAt = explicitTtl
+    ? fetchedAt + Math.max(0, ttlMs)
+    : nextBoundary + 2000;
 
-  klineCache.set(key, { at: Date.now(), candles: closed });
+  klineCache.delete(key);
+  klineCache.set(key, { at: fetchedAt, expiresAt, candles: closed });
+  while (klineCache.size > MAX_KLINE_CACHE_ENTRIES) {
+    const oldestKey = klineCache.keys().next().value;
+    klineCache.delete(oldestKey);
+  }
   return closed.slice(-limit);
 }
 
@@ -119,4 +142,10 @@ function clearCaches() {
   instrumentCache.map = new Map();
 }
 
-module.exports = { getCandles, getTickers, getInstruments, clearCaches };
+function cacheStats() {
+  let candleCount = 0;
+  for (const v of klineCache.values()) candleCount += Array.isArray(v.candles) ? v.candles.length : 0;
+  return { klineEntries: klineCache.size, cachedCandles: candleCount };
+}
+
+module.exports = { getCandles, getTickers, getInstruments, clearCaches, cacheStats };

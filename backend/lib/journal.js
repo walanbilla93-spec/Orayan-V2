@@ -14,7 +14,61 @@ const logger = require('./logger');
  */
 
 const MAX_SIGNAL_HISTORY = 20000;
+
+/**
+ * Keep the research journal deliberately compact. The engine signal object contains several
+ * nested UI/execution helpers that are useful for the current scan but are not needed for
+ * offline research. Retaining 20,000 full signal objects became expensive once
+ * LOCATION_RESEARCH_V1 was added and could push small Node containers into heap OOM during
+ * JSON.stringify(). This projection preserves every field used by the CSV/JSON research
+ * exports while dropping unrelated transient structure.
+ */
+function compactSignalForJournal(s) {
+  if (!s || s.kind === 'bos_event') return s;
+  return {
+    kind: s.kind || 'signal_scan',
+    scanId: s.scanId ?? null,
+    scanAt: s.scanAt ?? null,
+    id: s.id,
+    createdAt: s.createdAt,
+    symbol: s.symbol,
+    side: s.side,
+    score: s.score,
+    rr: s.rr,
+    slDistPct: s.slDistPct,
+    price: s.price,
+    entry: s.entry,
+    sl: s.sl,
+    tp: s.tp,
+    structureEvent: s.structureEvent,
+    structureTrend: s.structureTrend,
+    entryPath: s.entryPath,
+    btcRegime: s.btcRegime,
+    regimeAligned: s.regimeAligned,
+    timeframe: s.timeframe,
+    market: s.market ? {
+      turnover24h: s.market.turnover24h,
+      spreadPct: s.market.spreadPct,
+      fundingRate: s.market.fundingRate,
+      volRatio: s.market.volRatio,
+    } : null,
+    gates: s.gates ? {
+      passed: s.gates.passed,
+      failed: Array.isArray(s.gates.failed) ? s.gates.failed.slice() : [],
+    } : null,
+    components: s.components ? { ...s.components } : null,
+    locationResearch: s.locationResearch ? { ...s.locationResearch } : null,
+  };
+}
+
+// Compact legacy/full rows immediately on process start as well. This matters after an upgrade:
+// otherwise an already-large persisted journal can OOM before enough new compact rows replace it.
 let signalHistory = store.read('signalHistory', []);
+if (!Array.isArray(signalHistory)) signalHistory = [];
+signalHistory = signalHistory.map(compactSignalForJournal);
+if (signalHistory.length > MAX_SIGNAL_HISTORY) {
+  signalHistory = signalHistory.slice(-MAX_SIGNAL_HISTORY);
+}
 
 /*
  * WRITE BATCHING
@@ -58,7 +112,11 @@ function trim() {
 
 function recordSignals(signals, scanMeta) {
   if (!signals || !signals.length) return;
-  const stamped = signals.map((s) => ({ ...s, scanId: scanMeta.scanId, scanAt: scanMeta.scanAt }));
+  const stamped = signals.map((s) => compactSignalForJournal({
+    ...s,
+    scanId: scanMeta.scanId,
+    scanAt: scanMeta.scanAt,
+  }));
   signalHistory.push(...stamped);
   trim();
   scheduleFlush();
