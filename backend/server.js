@@ -123,6 +123,19 @@ server.listen(PORT, () => {
     logger.warn('server',
       'BYBIT_API_KEY / BYBIT_API_SECRET are not set. Paper mode works fully; live mode and account balance will not.');
   }
+
+  // Resume only when the previous process had a persisted RUN intent. Manual stops and
+  // uncaught exceptions clear that intent; deploys/container restarts preserve it.
+  if (engine.shouldAutoResume()) {
+    logger.warn('server', 'Previous engine RUN intent found — auto-resuming after process restart');
+    setImmediate(async () => {
+      try {
+        await engine.start({ source: 'AUTO_RESUME_PROCESS_RESTART' });
+      } catch (e) {
+        logger.error('server', 'Engine auto-resume failed', { error: e.message, stack: e.stack });
+      }
+    });
+  }
 });
 
 // Never leave positions unmanaged because of an unhandled rejection.
@@ -131,12 +144,12 @@ process.on('unhandledRejection', (e) => {
 });
 process.on('uncaughtException', (e) => {
   logger.error('process', 'Uncaught exception — stopping the engine', { error: e?.message, stack: e?.stack });
-  try { engine.stop(); } catch (_e) { /* best effort */ }
+  try { engine.stop({ reason: `UNCAUGHT_EXCEPTION: ${e?.message || 'unknown'}`, preserveDesired: false }); } catch (_e) { /* best effort */ }
 });
 
 function shutdown(sig) {
   logger.warn('server', `${sig} received — stopping the engine. Open positions are left as they are.`);
-  try { engine.stop(); } catch (_e) { /* best effort */ }
+  try { engine.stop({ reason: `PROCESS_SIGNAL_${sig}`, preserveDesired: true }); } catch (_e) { /* best effort */ }
   // Journal writes are batched on a timer; force the buffer out before the process dies.
   try { journal.flush(); } catch (_e) { /* best effort */ }
   server.close(() => process.exit(0));
