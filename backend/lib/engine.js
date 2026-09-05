@@ -32,10 +32,37 @@ const state = {
   killSwitch: false,
   lastError: null,
   startedAt: null,
+  desiredRunning: false,
+  stoppedAt: null,
+  stopReason: null,
+  startSource: null,
 };
 
 let trades = store.read('trades', []);
 let timer = null;
+
+// Persist the operator's run intent separately from process memory. A deploy/container restart
+// creates a fresh Node process, so `state.running` necessarily resets to false; without this
+// persisted intent Orayan silently stays stopped until somebody notices and presses Start again.
+let engineControl = store.read('engineControl', {
+  desiredRunning: false,
+  lastStartedAt: null,
+  lastStoppedAt: null,
+  lastStopReason: null,
+  lastStartSource: null,
+});
+if (!engineControl || typeof engineControl !== 'object' || Array.isArray(engineControl)) {
+  engineControl = { desiredRunning: false, lastStartedAt: null, lastStoppedAt: null, lastStopReason: null, lastStartSource: null };
+}
+state.desiredRunning = engineControl.desiredRunning === true;
+state.stoppedAt = engineControl.lastStoppedAt || null;
+state.stopReason = engineControl.lastStopReason || null;
+state.startSource = engineControl.lastStartSource || null;
+
+function persistEngineControl() {
+  store.write('engineControl', engineControl);
+}
+
 
 function persistTrades() {
   store.write('trades', trades.slice(-5000));
@@ -328,25 +355,56 @@ function scheduleNext() {
   }, ms);
 }
 
-async function start() {
+async function start({ source = 'OPERATOR' } = {}) {
   if (state.running) return { ok: true, already: true };
   const settings = settingsMod.effective();
+  const now = Date.now();
   state.running = true;
-  state.startedAt = Date.now();
-  logger.info('engine', `Engine started in ${settings.mode.toUpperCase()} mode (${settings.testnet ? 'testnet' : 'mainnet'})`);
-  await bybit.syncClock(settings.testnet);
-  await scanOnce();
-  scheduleNext();
-  return { ok: true };
+  state.desiredRunning = true;
+  state.startedAt = now;
+  state.stoppedAt = null;
+  state.stopReason = null;
+  state.startSource = source;
+  engineControl.desiredRunning = true;
+  engineControl.lastStartedAt = now;
+  engineControl.lastStartSource = source;
+  engineControl.lastStopReason = null;
+  persistEngineControl();
+  logger.info('engine', `Engine started in ${settings.mode.toUpperCase()} mode (${settings.testnet ? 'testnet' : 'mainnet'}) [${source}]`);
+  try {
+    await bybit.syncClock(settings.testnet);
+    await scanOnce();
+    scheduleNext();
+    return { ok: true };
+  } catch (e) {
+    // A failed startup is not a healthy running engine. Fail closed and require an operator
+    // restart rather than persisting a broken auto-resume loop.
+    stop({ reason: `START_FAILED: ${e.message}`, preserveDesired: false });
+    throw e;
+  }
 }
 
-function stop() {
+function stop({ reason = 'OPERATOR_STOP', preserveDesired = false } = {}) {
+  const now = Date.now();
   state.running = false;
+  state.stoppedAt = now;
+  state.stopReason = reason;
+  if (!preserveDesired) state.desiredRunning = false;
   if (timer) clearTimeout(timer);
   timer = null;
   state.nextScanAt = null;
-  logger.warn('engine', 'Engine stopped — open positions are NOT closed automatically');
-  return { ok: true };
+
+  engineControl.lastStoppedAt = now;
+  engineControl.lastStopReason = reason;
+  if (!preserveDesired) engineControl.desiredRunning = false;
+  persistEngineControl();
+
+  logger.warn('engine', `Engine stopped [${reason}] — open positions are NOT closed automatically`);
+  return { ok: true, reason, desiredRunning: state.desiredRunning };
+}
+
+function shouldAutoResume() {
+  return engineControl.desiredRunning === true;
 }
 
 /** Close everything now and stop opening more. The button you want when something is wrong. */
@@ -480,6 +538,6 @@ function clearLastSignals() {
 }
 
 module.exports = {
-  start, stop, scanOnce, panicClose, releaseKillSwitch, clearHalt,
+  start, stop, shouldAutoResume, scanOnce, panicClose, releaseKillSwitch, clearHalt,
   getState, getTrades, resetTrades, clearLastSignals, summary, state,
 };
