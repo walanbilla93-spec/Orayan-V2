@@ -64,7 +64,8 @@
   <nav class="tabs" role="tablist">
     <button class="tab is-active" data-view="dashboard" role="tab">Dashboard</button>
     <button class="tab" data-view="signals" role="tab">Signals</button>
-    <button class="tab" data-view="trades" role="tab">Trades</button>
+    <button class="tab" data-view="trades" role="tab">Orayan Trades</button>
+    <button class="tab" data-view="shadow" role="tab">Marci Shadow</button>
     <button class="tab" data-view="settings" role="tab">Settings</button>
     <button class="tab" data-view="logs" role="tab">Logs</button>
   </nav>
@@ -145,6 +146,39 @@
           </div>
         </div>
         <div id="tradeList"><div class="empty">No trades yet.</div></div>
+      </div>
+    </section>
+
+
+    <!-- ── Marci Shadow ─────────────────────────────────────────────────────────────── -->
+    <section class="view" data-view="shadow">
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Marci Shadow — Performance</h2>
+            <p class="panel-sub">Research-only paper engine. Same Orayan signal source; BTC veto removed; Little-Rizzy geometry manages permission/target/invalidation.</p>
+          </div>
+          <div class="metrics" id="shadowMetrics"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Experiment</h2>
+            <p class="panel-sub">MARCI_SHADOW_V1 is a deterministic proxy, not a claim of exact discretionary replication.</p>
+          </div>
+          <div class="metrics" id="shadowExperiment"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Marci Shadow positions & trades</h2>
+          <div class="panel-actions">
+            <button class="btn btn-ghost" id="btnExportShadowCsv">Download shadow CSV</button>
+            <button class="btn btn-ghost" id="btnExportShadowJson">JSON</button>
+            <button class="btn btn-danger" id="btnClearShadow">Clear shadow trades</button>
+            <button class="btn btn-danger" id="btnResetResearch" title="Clear signal log + Orayan trades + Marci shadow trades">Start clean experiment</button>
+          </div>
+        </div>
+        <div id="shadowTradeList"><div class="empty">No shadow trades yet.</div></div>
       </div>
     </section>
 
