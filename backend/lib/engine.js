@@ -12,6 +12,7 @@ const executor = require('./executor');
 const symbolStats = require('./symbolStats');
 const journal = require('./journal');
 const locationResearch = require('./locationResearch');
+const marciShadow = require('./marciShadow');
 const { num, uid } = require('./util');
 
 const state = {
@@ -25,6 +26,7 @@ const state = {
   universe: [],
   universeBuiltAt: 0,
   funnel: {},
+  shadowFunnel: {},
   lastSignals: [],
   haltedUntil: 0,
   haltReason: null,
@@ -39,6 +41,7 @@ const state = {
 };
 
 let trades = store.read('trades', []);
+let shadowTrades = store.read('marciShadowTrades', []);
 let timer = null;
 
 // Persist the operator's run intent separately from process memory. A deploy/container restart
@@ -68,6 +71,10 @@ function persistTrades() {
   store.write('trades', trades.slice(-5000));
 }
 
+function persistShadowTrades() {
+  store.write('marciShadowTrades', shadowTrades.slice(-5000));
+}
+
 function openTrades() {
   return trades.filter((t) => t.status === 'OPEN');
 }
@@ -77,6 +84,9 @@ function pendingTrades() {
 function closedTrades() {
   return trades.filter((t) => t.status === 'CLOSED');
 }
+function openShadowTrades() { return shadowTrades.filter((t) => t.status === 'OPEN'); }
+function pendingShadowTrades() { return shadowTrades.filter((t) => t.status === 'PENDING'); }
+function closedShadowTrades() { return shadowTrades.filter((t) => t.status === 'CLOSED'); }
 
 /** Symbols worth scanning: liquid, tradable, not excluded by the operator. */
 async function buildUniverse(settings) {
@@ -163,6 +173,48 @@ async function manageOpenTrades(settings) {
   return changed;
 }
 
+
+async function manageShadowTrades(settings) {
+  let changed = false;
+  const paperSettings = { ...settings, mode: 'paper' };
+  const active = shadowTrades.filter((t) => ['PENDING', 'OPEN'].includes(t.status));
+
+  for (const t of active) {
+    try {
+      const did = await executor.stepPaperTrade(t, paperSettings);
+      if (did) changed = true;
+      if (!['PENDING', 'OPEN'].includes(t.status)) continue;
+
+      // Marci-style structural invalidation is a CANDLE-CLOSE rule, not a wick rule. We evaluate
+      // it only on the engine timeframe's latest closed candle. Hard SL remains the max-loss
+      // backstop inside stepPaperTrade().
+      const candles = await marketData.getCandles(t.symbol, settings.timeframe, 5, {
+        testnet: settings.testnet,
+      });
+      const last = candles[candles.length - 1];
+      const inv = marciShadow.invalidation(t, last);
+      if (!inv.invalidated) continue;
+
+      if (t.status === 'PENDING') {
+        t.status = 'CANCELLED';
+        t.closedAt = last?.ts || Date.now();
+        t.closeReason = 'MARCI trendline invalidated before fill (candle close)';
+        t.netPnl = 0; t.grossPnl = 0; t.fees = 0;
+      } else {
+        executor.closeTrade(t, inv.close, last?.ts || Date.now(),
+          'MARCI trendline close invalidation', paperSettings);
+      }
+      t.marciTrendlineAtExit = inv.line;
+      changed = true;
+    } catch (e) {
+      logger.error('engine', `Error advancing MARCI shadow trade on ${t.symbol}`, { error: e.message });
+    }
+  }
+
+  if (changed) persistShadowTrades();
+  return changed;
+}
+
 async function scanOnce() {
   if (state.scanning) {
     logger.debug('engine', 'Scan already in progress, skipping this tick');
@@ -174,6 +226,7 @@ async function scanOnce() {
 
   try {
     await manageOpenTrades(settings);
+    await manageShadowTrades(settings);
 
     if (Date.now() - state.universeBuiltAt > settings.universeRefreshMin * 60000 || !state.universe.length) {
       await buildUniverse(settings);
@@ -185,6 +238,8 @@ async function scanOnce() {
 
     const funnel = { evaluated: 0, noSignal: 0, gated: {}, passed: 0, sized: 0, placed: 0, dual: false };
     const candidates = [];
+    const shadowCandidates = [];
+    const shadowFunnel = { assessed: 0, passed: 0, placed: 0, rejected: {} };
     const signalsForUi = [];
 
     const cb = risk.checkCircuitBreakers({ settings, state, closedTrades: closedTrades() });
@@ -250,6 +305,36 @@ async function scanOnce() {
           dualEngines: dual,
         });
         signal.gates = verdict;
+
+        // Parallel research engine: same source signal, separate portfolio and trade ledger.
+        // BTC is disabled ONLY for the shadow verdict and the score is recomputed without the
+        // BTC regime multiplier, otherwise BTC would still veto the experiment indirectly.
+        const shadowSignalForGates = { ...signal, score: marciShadow.independentScore(signal), engine: 'MARCI_SHADOW' };
+        const shadowSettings = {
+          ...settings,
+          gateBtcRegimeEnabled: false,
+          gateRREnabled: false,
+          gateCostFloorEnabled: false,
+          gateSymbolExpectancyEnabled: false,
+          dualEngines: false,
+        };
+        const shadowBaseVerdict = gates.evaluate(shadowSignalForGates, shadowSettings, {
+          openPositions: [...openShadowTrades(), ...pendingShadowTrades()],
+          symbolLockouts: {},
+          dualEngines: false,
+        });
+        const shadowAssessment = marciShadow.evaluate(signal, shadowBaseVerdict, settings);
+        shadowFunnel.assessed++;
+        signal.marciShadow = shadowAssessment;
+        if (shadowAssessment.passed) {
+          shadowFunnel.passed++;
+          shadowCandidates.push(marciShadow.buildShadowSignal(signal, shadowAssessment));
+        } else {
+          for (const reason of shadowAssessment.failed || []) {
+            shadowFunnel.rejected[reason] = (shadowFunnel.rejected[reason] || 0) + 1;
+          }
+        }
+
         signalsForUi.push(signal);
 
         if (!verdict.passed) {
@@ -330,6 +415,36 @@ async function scanOnce() {
       if (funnel.placed) persistTrades();
     }
 
+    // MARCI_SHADOW is always paper-only. It shares the signal source but has its own positions,
+    // duplicate-symbol checks, targets, exits and ledger. It may take the same symbol at the same
+    // time as Orayan because that overlap is exactly what gives us a clean head-to-head sample.
+    if (settings.tradingEnabled && !state.killSwitch) {
+      shadowCandidates.sort((a, b) => b.score - a.score);
+      for (const signal of shadowCandidates) {
+        const activeShadow = [...openShadowTrades(), ...pendingShadowTrades()];
+        if (activeShadow.length >= settings.maxOpenPositions) break;
+        if (activeShadow.some((t) => t.symbol === signal.symbol)) continue;
+        if (activeShadow.filter((t) => t.side === signal.side).length >= settings.maxPerDirection) continue;
+
+        const instrument = instruments.get(signal.symbol);
+        const shadowSettings = { ...settings, mode: 'paper' };
+        const sizing = risk.sizePosition({ entry: signal.entry, sl: signal.sl, settings: shadowSettings, instrument });
+        if (!sizing.ok) continue;
+
+        const trade = executor.createPendingOrder({ signal, sizing, settings: shadowSettings });
+        trade.engine = 'MARCI_SHADOW';
+        trade.researchEngine = 'MARCI_SHADOW_V1';
+        trade.sourceSignalId = signal.sourceSignalId || signal.signalId || signal.id;
+        trade.sourceScore = signal.sourceScore ?? null;
+        trade.marciShadow = signal.marciShadow ? { ...signal.marciShadow } : null;
+        shadowTrades.push(trade);
+        shadowFunnel.placed++;
+        logger.info('engine', `MARCI shadow queued: ${signal.symbol} ${signal.side} D-target R ${Number(signal.rr).toFixed(2)}`);
+      }
+      persistShadowTrades();
+    }
+
+    state.shadowFunnel = shadowFunnel;
     state.lastScanAt = Date.now();
     state.lastScanMs = Date.now() - t0;
     state.scanCount++;
@@ -443,7 +558,24 @@ async function panicClose() {
     }
   }
 
+  // Research shadow is paper-only, but the panic button should still stop/cancel every
+  // simulated position so the operator has one unmistakable emergency control.
+  const shadowSettings = { ...settings, mode: 'paper' };
+  for (const t of pendingShadowTrades()) {
+    t.status = 'CANCELLED'; t.closedAt = Date.now(); t.closeReason = 'Cancelled by kill switch';
+    t.netPnl = 0; t.grossPnl = 0; t.fees = 0; closed++;
+  }
+  for (const t of openShadowTrades()) {
+    try {
+      const candles = await marketData.getCandles(t.symbol, '1', 5, { testnet: settings.testnet, ttlMs: 0 });
+      const last = candles[candles.length - 1];
+      executor.closeTrade(t, last ? last.close : t.fillPrice, Date.now(), 'Closed by kill switch', shadowSettings);
+      closed++;
+    } catch (e) { errors.push(`MARCI ${t.symbol}: ${e.message}`); }
+  }
+
   persistTrades();
+  persistShadowTrades();
   return { ok: errors.length === 0, closed, errors };
 }
 
@@ -461,8 +593,8 @@ function clearHalt() {
   return { ok: true };
 }
 
-function summary() {
-  const closed = closedTrades();
+function summarizeTradeList(list) {
+  const closed = list.filter((t) => t.status === 'CLOSED');
   const wins = closed.filter((t) => num(t.netPnl) > 0);
   const losses = closed.filter((t) => num(t.netPnl) < 0);
   const grossWin = wins.reduce((a, t) => a + num(t.netPnl), 0);
@@ -499,11 +631,14 @@ function summary() {
     expectancy: closed.length ? net / closed.length : null,
     maxDrawdown: maxDd,
     consecLosses,
-    open: openTrades().length,
-    pending: pendingTrades().length,
-    expired: trades.filter((t) => t.status === 'EXPIRED').length,
+    open: list.filter((t) => t.status === 'OPEN').length,
+    pending: list.filter((t) => t.status === 'PENDING').length,
+    expired: list.filter((t) => t.status === 'EXPIRED').length,
   };
 }
+
+function summary() { return summarizeTradeList(trades); }
+function shadowSummary() { return summarizeTradeList(shadowTrades); }
 
 function getState() {
   const settings = settingsMod.effective();
@@ -514,6 +649,7 @@ function getState() {
     tradingEnabled: settings.tradingEnabled,
     apiKeySet: bybit.keySet(),
     summary: summary(),
+    shadowSummary: shadowSummary(),
   };
 }
 
@@ -521,6 +657,19 @@ function getTrades({ status, limit = 200 } = {}) {
   let list = trades;
   if (status) list = list.filter((t) => t.status === status);
   return list.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+}
+
+function getShadowTrades({ status, limit = 200 } = {}) {
+  let list = shadowTrades;
+  if (status) list = list.filter((t) => t.status === status);
+  return list.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
+}
+
+function resetShadowTrades() {
+  shadowTrades = [];
+  persistShadowTrades();
+  logger.warn('engine', 'MARCI shadow trade history cleared by operator');
+  return { ok: true };
 }
 
 function resetTrades() {
@@ -533,11 +682,13 @@ function resetTrades() {
 function clearLastSignals() {
   state.lastSignals = [];
   state.funnel = {};
+  state.shadowFunnel = {};
   logger.warn('engine', 'Live signal list cleared by operator');
   return { ok: true };
 }
 
 module.exports = {
   start, stop, shouldAutoResume, scanOnce, panicClose, releaseKillSwitch, clearHalt,
-  getState, getTrades, resetTrades, clearLastSignals, summary, state,
+  getState, getTrades, getShadowTrades, resetTrades, resetShadowTrades, clearLastSignals,
+  summary, shadowSummary, state,
 };

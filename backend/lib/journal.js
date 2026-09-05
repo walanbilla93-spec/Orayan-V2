@@ -58,6 +58,7 @@ function compactSignalForJournal(s) {
     } : null,
     components: s.components ? { ...s.components } : null,
     locationResearch: s.locationResearch ? { ...s.locationResearch } : null,
+    marciShadow: s.marciShadow ? { ...s.marciShadow } : null,
   };
 }
 
@@ -207,6 +208,16 @@ const TRADE_COLUMNS = [
   { label: 'timeframe', get: (t) => t.timeframe },
   { label: 'engine', get: (t) => t.engine || '' },
   { label: 'entryPath', get: (t) => t.entryPath || '' },
+  { label: 'researchEngine', get: (t) => t.researchEngine || '' },
+  { label: 'sourceSignalId', get: (t) => t.sourceSignalId || '' },
+  { label: 'sourceScore', get: (t) => t.sourceScore },
+  { label: 'marciShadowVersion', get: (t) => t.marciShadow?.version },
+  { label: 'marciIndependentScore', get: (t) => t.marciShadow?.independentScore },
+  { label: 'marciRizzySequence', get: (t) => t.marciShadow?.rizzySequence },
+  { label: 'marciProjectedTarget', get: (t) => t.marciShadow?.projectedTarget },
+  { label: 'marciTargetR', get: (t) => t.marciShadow?.targetR },
+  { label: 'marciBbZ', get: (t) => t.marciShadow?.bbZ },
+  { label: 'marciTrendLocation', get: (t) => t.marciShadow?.trendLocation },
   // LOCATION_RESEARCH_V1 — frozen at signal creation and copied into the trade unchanged.
   { label: 'researchVersion', get: (t) => t.locationResearch?.version },
   { label: 'impulseMethod', get: (t) => t.locationResearch?.impulseMethod },
@@ -293,6 +304,17 @@ const SIGNAL_COLUMNS = [
   { label: 'rizzyAnchor1Ts', get: (s) => s.locationResearch?.rizzyAnchor1Ts },
   { label: 'rizzyAnchor2Price', get: (s) => s.locationResearch?.rizzyAnchor2Price },
   { label: 'rizzyAnchor2Ts', get: (s) => s.locationResearch?.rizzyAnchor2Ts },
+  // Parallel MARCI_SHADOW_V1 assessment of this exact same source signal.
+  { label: 'marciShadowVersion', get: (s) => s.marciShadow?.version },
+  { label: 'marciShadowPassed', get: (s) => s.marciShadow?.passed },
+  { label: 'marciShadowFailed', get: (s) => (s.marciShadow?.failed || []).join('|') },
+  { label: 'marciIndependentScore', get: (s) => s.marciShadow?.independentScore },
+  { label: 'marciSourceScore', get: (s) => s.marciShadow?.sourceScore },
+  { label: 'marciRizzySequence', get: (s) => s.marciShadow?.rizzySequence },
+  { label: 'marciProjectedTarget', get: (s) => s.marciShadow?.projectedTarget },
+  { label: 'marciTargetR', get: (s) => s.marciShadow?.targetR },
+  { label: 'marciBbZ', get: (s) => s.marciShadow?.bbZ },
+  { label: 'marciTrendLocation', get: (s) => s.marciShadow?.trendLocation },
   { label: 'passed', get: (s) => s.gates?.passed },
   { label: 'failedGates', get: (s) => (s.gates?.failed || []).join('|') },
   // Score factors. The score is multiplicative (BASE 50 x factors) — see signals_trend.js.
