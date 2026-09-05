@@ -122,7 +122,7 @@ const routes = {
   'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); engine.clearLastSignals(); return { ok: true }; },
 
   'POST /api/control/start': async () => engine.start(),
-  'POST /api/control/stop': async () => engine.stop(),
+  'POST /api/control/stop': async () => engine.stop({ reason: 'OPERATOR_STOP', preserveDesired: false }),
   'POST /api/control/scan': async () => { await engine.scanOnce(); return { ok: true }; },
   'POST /api/control/panic': async () => engine.panicClose(),
   'POST /api/control/release-kill': async () => engine.releaseKillSwitch(),
