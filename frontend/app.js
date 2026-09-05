@@ -144,6 +144,12 @@ function renderStatus(s) {
   const notes = [];
   let danger = false;
 
+  if (!s.running) {
+    const why = s.stopReason ? ` Reason: ${s.stopReason}.` : '';
+    const when = s.stoppedAt ? ` Stopped ${fmtTime(s.stoppedAt)} UTC.` : '';
+    notes.push(`Engine is STOPPED.${why}${when}`);
+    danger = true;
+  }
   if (s.killSwitch) { notes.push('Kill switch is engaged — no new orders will be placed.'); danger = true; }
   if (s.haltedUntil && Date.now() < s.haltedUntil) {
     notes.push(`Circuit breaker halted trading: ${s.haltReason} Resumes ${fmtTime(s.haltedUntil)} UTC.`);
