@@ -501,14 +501,15 @@ function renderShadow() {
   const exp = $('#shadowExperiment');
   if (exp) {
     exp.innerHTML = [
-      ['Engine', 'MARCI_SHADOW_V1'],
-      ['Signal source', 'Same Orayan signals'],
-      ['BTC veto', 'Bypassed in shadow only'],
+      ['Engine', 'MARCI_INDEPENDENT_V2'],
+      ['Signal source', 'Own Little-Rizzy scanner'],
+      ['BTC veto', 'Bypassed — BTC recorded only'],
       ['Rizzy sequence', '1–2 only'],
       ['Target', 'Full measured move D'],
-      ['Invalidation', 'Trendline candle close + hard SL'],
+      ['Invalidation', 'Trendline close + independent hard SL'],
       ['Execution', 'Paper only'],
       ['Same-symbol overlap', 'Allowed vs Orayan'],
+      ['After invalidation', 'Counterfactual TP/SL tracked'],
       ['Last scan assessed', state.status?.shadowFunnel?.assessed ?? 0],
       ['Last scan eligible', state.status?.shadowFunnel?.passed ?? 0],
       ['Last scan queued', state.status?.shadowFunnel?.placed ?? 0],
@@ -521,16 +522,16 @@ function renderShadow() {
   if (!list.length) { el.innerHTML = '<div class="empty">No shadow trades yet.</div>'; return; }
   el.innerHTML = `
     <div class="rows">
-      <div class="row row-trade row-head">
+      <div class="row row-shadow-trade row-head">
         <div>Created (LK)</div><div>Engine</div><div>Symbol</div><div>Side</div><div>Status</div>
-        <div>Net USDT</div><div>R</div><div>D target R</div><div>Closed</div>
+        <div>Net USDT</div><div>R</div><div>D target R</div><div>CF outcome</div><div>Closed</div>
       </div>
       ${list.map((t) => {
         const isOpen = t.status === 'OPEN';
         const pnl = isOpen ? t.unrealisedPnl : t.netPnl;
         const rr = isOpen ? t.unrealisedRR : t.realisedRR;
         return `
-        <div class="row row-trade">
+        <div class="row row-shadow-trade">
           <div class="faint" data-label="Created (LK)">${fmtDate(t.createdAt)}</div>
           <div class="dim" data-label="Engine">MARCI</div>
           <div class="sym" data-label="Symbol">${esc(t.symbol)}</div>
@@ -538,7 +539,8 @@ function renderShadow() {
           <div data-label="Status"><span class="pill ${t.status === 'OPEN' ? 'open' : t.status === 'PENDING' ? 'pending' : ''}">${esc(t.status)}</span></div>
           <div class="${sgn(pnl)}" data-label="Net USDT">${pnl == null ? '—' : fmtUsd(pnl)}</div>
           <div class="${sgn(rr)}" data-label="R">${rr == null ? '—' : fmt(rr, 2)}</div>
-          <div class="dim" data-label="D target R">${fmt(t.marciShadow?.targetR, 2)}</div>
+          <div class="dim" data-label="D target R">${fmt(t.marciShadow?.targetR ?? t.marciIndependent?.targetR, 2)}</div>
+          <div class="dim" data-label="CF outcome">${esc(t.marciCounterfactual?.tracking ? 'TRACKING' : (t.marciCounterfactual?.outcome || '—'))}</div>
           <div class="faint" data-label="Closed">${t.closedAt ? fmtDate(t.closedAt) : '—'}</div>
         </div>`;
       }).join('')}

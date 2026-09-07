@@ -322,6 +322,7 @@ body::before {
 
 .row-signal { grid-template-columns: 1.1fr 1.1fr 0.55fr 0.5fr 0.55fr 0.55fr 1.0fr 1.3fr; }
 .row-trade  { grid-template-columns: 1.15fr 0.75fr 1.1fr 0.55fr 0.7fr 0.55fr 0.85fr 0.9fr 1.0fr; }
+.row-shadow-trade { grid-template-columns: 1.05fr 0.7fr 1fr 0.5fr 0.65fr 0.55fr 0.6fr 0.75fr 0.85fr 0.95fr; }
 .row-pos    { grid-template-columns: 1.2fr 0.6fr 0.7fr 0.9fr 0.9fr 0.9fr 0.9fr; }
 
 .row-clickable { cursor: pointer; }
@@ -488,7 +489,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outl
 
 @media (max-width: 1000px) {
   .grid-2 { grid-template-columns: 1fr; }
-  .row-signal, .row-trade, .row-pos { grid-template-columns: 1fr 1fr 1fr; }
+  .row-signal, .row-trade, .row-shadow-trade, .row-pos { grid-template-columns: 1fr 1fr 1fr; }
   .row-head { display: none; }
   .row > *:nth-child(n+7) { display: none; }
   /* Column headers are hidden above, so every remaining cell gets its own inline label —
