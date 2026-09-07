@@ -3,7 +3,9 @@
 /**
  * MARCI_SHADOW_V1
  * ----------------
- * Research-only execution layer fed by the SAME Orayan signal source.
+ * Legacy V1 assessment helpers + shared trendline invalidation utility.
+ * MARCI_INDEPENDENT_V2 now owns signal discovery; trendlineAt()/invalidation() remain here so
+ * both legacy V1 trades and V2 independent trades can be managed safely after deployment.
  *
  * It deliberately does not claim to reproduce Marci Silfrain's discretionary method exactly.
  * The parts we can make deterministic from the current 15m data are:
@@ -103,11 +105,14 @@ function buildShadowSignal(signal, assessment) {
 }
 
 function trendlineAt(trade, ts) {
+  // V2 owns its own geometry. Prefer the frozen independent-signal anchors; fall back to the
+  // V1 locationResearch anchors so legacy shadow trades remain manageable after deployment.
+  const mi = trade?.marciIndependent;
   const lr = trade?.locationResearch;
-  const a1p = num(lr?.rizzyAnchor1Price, NaN);
-  const a2p = num(lr?.rizzyAnchor2Price, NaN);
-  const a1t = num(lr?.rizzyAnchor1Ts, NaN);
-  const a2t = num(lr?.rizzyAnchor2Ts, NaN);
+  const a1p = num(mi?.anchor1Price ?? lr?.rizzyAnchor1Price, NaN);
+  const a2p = num(mi?.anchor2Price ?? lr?.rizzyAnchor2Price, NaN);
+  const a1t = num(mi?.anchor1Ts ?? lr?.rizzyAnchor1Ts, NaN);
+  const a2t = num(mi?.anchor2Ts ?? lr?.rizzyAnchor2Ts, NaN);
   if (![a1p, a2p, a1t, a2t, ts].every(Number.isFinite) || a2t <= a1t) return null;
   const slopePerMs = (a2p - a1p) / (a2t - a1t);
   return a1p + slopePerMs * (ts - a1t);

@@ -27,6 +27,7 @@ function compactSignalForJournal(s) {
   if (!s || s.kind === 'bos_event') return s;
   return {
     kind: s.kind || 'signal_scan',
+    signalSource: s.signalSource || null,
     scanId: s.scanId ?? null,
     scanAt: s.scanAt ?? null,
     id: s.id,
@@ -59,6 +60,7 @@ function compactSignalForJournal(s) {
     components: s.components ? { ...s.components } : null,
     locationResearch: s.locationResearch ? { ...s.locationResearch } : null,
     marciShadow: s.marciShadow ? { ...s.marciShadow } : null,
+    marciIndependent: s.marciIndependent ? { ...s.marciIndependent } : null,
   };
 }
 
@@ -209,6 +211,7 @@ const TRADE_COLUMNS = [
   { label: 'engine', get: (t) => t.engine || '' },
   { label: 'entryPath', get: (t) => t.entryPath || '' },
   { label: 'researchEngine', get: (t) => t.researchEngine || '' },
+  { label: 'signalSource', get: (t) => t.signalSource || '' },
   { label: 'sourceSignalId', get: (t) => t.sourceSignalId || '' },
   { label: 'sourceScore', get: (t) => t.sourceScore },
   { label: 'marciShadowVersion', get: (t) => t.marciShadow?.version },
@@ -218,6 +221,21 @@ const TRADE_COLUMNS = [
   { label: 'marciTargetR', get: (t) => t.marciShadow?.targetR },
   { label: 'marciBbZ', get: (t) => t.marciShadow?.bbZ },
   { label: 'marciTrendLocation', get: (t) => t.marciShadow?.trendLocation },
+  { label: 'marciPatternKey', get: (t) => t.marciPatternKey || t.marciIndependent?.patternKey || '' },
+  { label: 'marciSignalMethod', get: (t) => t.marciIndependent?.signalMethod },
+  { label: 'marciEntryMethod', get: (t) => t.marciIndependent?.entryMethod },
+  { label: 'marciHardStopMethod', get: (t) => t.marciIndependent?.hardStopMethod },
+  { label: 'marciInvalidationMethod', get: (t) => t.marciIndependent?.invalidationMethod },
+  { label: 'marciPriorityScore', get: (t) => t.marciIndependent?.priorityScore },
+  { label: 'marciD', get: (t) => t.marciIndependent?.d },
+  { label: 'marciDAtr', get: (t) => t.marciIndependent?.dAtr },
+  { label: 'marciTrendlineAtExit', get: (t) => t.marciTrendlineAtExit },
+  { label: 'postInvalidationTracking', get: (t) => t.marciCounterfactual?.tracking },
+  { label: 'postInvalidationMfeR', get: (t) => t.marciCounterfactual?.postInvalidationMfeR },
+  { label: 'postInvalidationMaeR', get: (t) => t.marciCounterfactual?.postInvalidationMaeR },
+  { label: 'counterfactualOutcome', get: (t) => t.marciCounterfactual?.outcome },
+  { label: 'counterfactualOriginalPlanWouldWin', get: (t) => t.marciCounterfactual?.originalPlanWouldWin },
+  { label: 'counterfactualResolvedAt', get: (t) => t.marciCounterfactual?.resolvedAt },
   // LOCATION_RESEARCH_V1 — frozen at signal creation and copied into the trade unchanged.
   { label: 'researchVersion', get: (t) => t.locationResearch?.version },
   { label: 'impulseMethod', get: (t) => t.locationResearch?.impulseMethod },
@@ -257,6 +275,7 @@ const SIGNAL_COLUMNS = [
   { label: 'scanAt', get: (s) => s.scanAt },
   { label: 'scanAtIso', get: (s) => new Date(s.scanAt).toISOString() },
   { label: 'kind', get: (s) => s.kind || 'signal_scan' },
+  { label: 'signalSource', get: (s) => s.signalSource || ((s.kind === 'marci_signal') ? 'MARCI_INDEPENDENT_V2' : 'ORAYAN') },
   { label: 'id', get: (s) => s.id },
   { label: 'symbol', get: (s) => s.symbol },
   { label: 'side', get: (s) => s.side },
@@ -304,7 +323,7 @@ const SIGNAL_COLUMNS = [
   { label: 'rizzyAnchor1Ts', get: (s) => s.locationResearch?.rizzyAnchor1Ts },
   { label: 'rizzyAnchor2Price', get: (s) => s.locationResearch?.rizzyAnchor2Price },
   { label: 'rizzyAnchor2Ts', get: (s) => s.locationResearch?.rizzyAnchor2Ts },
-  // Parallel MARCI_SHADOW_V1 assessment of this exact same source signal.
+  // MARCI research fields. V2 rows are independently generated and no longer depend on Orayan signals.
   { label: 'marciShadowVersion', get: (s) => s.marciShadow?.version },
   { label: 'marciShadowPassed', get: (s) => s.marciShadow?.passed },
   { label: 'marciShadowFailed', get: (s) => (s.marciShadow?.failed || []).join('|') },
@@ -315,6 +334,18 @@ const SIGNAL_COLUMNS = [
   { label: 'marciTargetR', get: (s) => s.marciShadow?.targetR },
   { label: 'marciBbZ', get: (s) => s.marciShadow?.bbZ },
   { label: 'marciTrendLocation', get: (s) => s.marciShadow?.trendLocation },
+  { label: 'marciPatternKey', get: (s) => s.marciIndependent?.patternKey || s.marciShadow?.patternKey },
+  { label: 'marciSignalMethod', get: (s) => s.marciIndependent?.signalMethod },
+  { label: 'marciEntryMethod', get: (s) => s.marciIndependent?.entryMethod },
+  { label: 'marciHardStopMethod', get: (s) => s.marciIndependent?.hardStopMethod },
+  { label: 'marciInvalidationMethod', get: (s) => s.marciIndependent?.invalidationMethod },
+  { label: 'marciPriorityScore', get: (s) => s.marciIndependent?.priorityScore || s.marciShadow?.priorityScore },
+  { label: 'marciD', get: (s) => s.marciIndependent?.d },
+  { label: 'marciDAtr', get: (s) => s.marciIndependent?.dAtr },
+  { label: 'marciEma21', get: (s) => s.marciIndependent?.ema21 },
+  { label: 'marciEma55', get: (s) => s.marciIndependent?.ema55 },
+  { label: 'marciEma21SlopePct', get: (s) => s.marciIndependent?.ema21SlopePct },
+  { label: 'marciBbPercentB', get: (s) => s.marciIndependent?.bbPercentB },
   { label: 'passed', get: (s) => s.gates?.passed },
   { label: 'failedGates', get: (s) => (s.gates?.failed || []).join('|') },
   // Score factors. The score is multiplicative (BASE 50 x factors) — see signals_trend.js.
