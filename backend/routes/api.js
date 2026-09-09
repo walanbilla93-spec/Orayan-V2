@@ -97,6 +97,21 @@ const routes = {
     };
   },
 
+
+  'GET /api/shadow/trades': async ({ query }) => {
+    const trades = await withFloatingPnl(
+      engine.getShadowTrades({ status: query.status || null, limit: num(query.limit, 200) }),
+    );
+    const openFloat = trades
+      .filter((t) => t.status === 'OPEN' && Number.isFinite(Number(t.unrealisedPnl)))
+      .reduce((a, t) => a + Number(t.unrealisedPnl), 0);
+    return {
+      trades,
+      summary: engine.shadowSummary(),
+      openUnrealisedPnl: openFloat,
+    };
+  },
+
   'GET /api/logs': async ({ query }) => ({
     logs: logger.tail(num(query.after, 0), num(query.limit, 300)),
   }),
@@ -112,6 +127,14 @@ const routes = {
     return { __file: true, body, contentType, filename: `orayan2_trades_${Date.now()}.${format}` };
   },
 
+
+  'GET /api/journal/shadow/export': async ({ query }) => {
+    const format = query.format === 'csv' ? 'csv' : 'json';
+    const trades = engine.getShadowTrades({ status: query.status || null, limit: num(query.limit, 100000) });
+    const { body, contentType } = journal.exportTrades(trades, format);
+    return { __file: true, body, contentType, filename: `orayan2_marci_shadow_${Date.now()}.${format}` };
+  },
+
   'GET /api/journal/signals/export': async ({ query }) => {
     const format = query.format === 'csv' ? 'csv' : 'json';
     const signals = journal.getSignalHistory({ limit: num(query.limit, 20000) });
@@ -125,21 +148,31 @@ const routes = {
     const { body, contentType } = journal.exportResearchRows(journal.getResearchEnvironment(), format);
     return { __file:true, body, contentType, filename:`orayan2_environment_${Date.now()}.${format}` };
   },
+
   'GET /api/journal/research/events/export': async ({ query }) => {
     const format = query.format === 'json' ? 'json' : 'csv';
     const { body, contentType } = journal.exportResearchRows(journal.getResearchEvents(), format);
     return { __file:true, body, contentType, filename:`orayan2_research_events_${Date.now()}.${format}` };
   },
+
   'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); engine.clearLastSignals(); return { ok: true }; },
 
   'POST /api/control/start': async () => engine.start(),
-  'POST /api/control/stop': async () => engine.stop(),
+  'POST /api/control/stop': async () => engine.stop({ reason: 'OPERATOR_STOP', preserveDesired: false }),
   'POST /api/control/scan': async () => { await engine.scanOnce(); return { ok: true }; },
   'POST /api/control/panic': async () => engine.panicClose(),
   'POST /api/control/release-kill': async () => engine.releaseKillSwitch(),
   'POST /api/control/clear-halt': async () => engine.clearHalt(),
   'POST /api/control/reset-trades': async () => engine.resetTrades(),
   'POST /api/journal/trades/clear': async () => engine.resetTrades(),
+  'POST /api/journal/shadow/clear': async () => engine.resetShadowTrades(),
+  'POST /api/research/reset-all': async () => {
+    journal.clearSignalHistory();
+    engine.clearLastSignals();
+    engine.resetTrades();
+    engine.resetShadowTrades();
+    return { ok: true };
+  },
   'POST /api/control/clear-cache': async () => { marketData.clearCaches(); return { ok: true }; },
 
   'GET /api/account': async () => {
