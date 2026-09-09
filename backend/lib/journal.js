@@ -2,6 +2,7 @@
 
 const store = require('./store');
 const logger = require('./logger');
+const researchJournal = require('./researchJournal');
 
 /*
  * SIGNAL HISTORY
@@ -120,6 +121,7 @@ function recordSignals(signals, scanMeta) {
     scanId: scanMeta.scanId,
     scanAt: scanMeta.scanAt,
   }));
+  researchJournal.record(signals, scanMeta);
   signalHistory.push(...stamped);
   trim();
   scheduleFlush();
@@ -386,4 +388,11 @@ function exportSignals(signals, format) {
 module.exports = {
   recordSignals, getSignalHistory, clearSignalHistory, recordBosEvent, flush,
   exportTrades, exportSignals,
+  getResearchEnvironment: researchJournal.getSnapshots,
+  getResearchEvents: researchJournal.getEvents,
+  exportResearchRows: (rows, format) => {
+    if (format !== 'csv') return {body:JSON.stringify(rows),contentType:'application/json; charset=utf-8'};
+    const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
+    return {body:toCsv(rows,keys.map(k=>({label:k,get:r=>r[k]}))),contentType:'text/csv; charset=utf-8'};
+  },
 };
