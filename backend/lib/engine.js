@@ -341,6 +341,15 @@ async function scanOnce() {
     const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
     const instruments = await marketData.getInstruments({ testnet: settings.testnet });
     const btcRegime = await getBtcRegime(settings);
+    const scanAt = Date.now();
+    const scanId = uid('scan');
+    const marketObservations = [];
+    try {
+      const btcCandles = await marketData.getCandles('BTCUSDT', settings.timeframe, 200, { testnet: settings.testnet });
+      marketObservations.push(journal.buildMarketObservation('BTCUSDT', btcCandles));
+    } catch (e) {
+      logger.debug('engine', 'BTC market research observation unavailable', { error: e.message });
+    }
 
     const funnel = { evaluated: 0, noSignal: 0, gated: {}, passed: 0, sized: 0, placed: 0, dual: false };
     const candidates = [];
@@ -369,6 +378,7 @@ async function scanOnce() {
       let candles;
       try {
         candles = await marketData.getCandles(symbol, settings.timeframe, 200, { testnet: settings.testnet });
+        marketObservations.push(journal.buildMarketObservation(symbol, candles));
       } catch (e) {
         logger.debug('engine', `No candles for ${symbol}`, { error: e.message });
         continue;
@@ -487,6 +497,16 @@ async function scanOnce() {
       }
     }
 
+    // Observational only: one immutable cross-sectional snapshot per completed signal bar.
+    // No value produced here is read by signal builders, gates, sizing, ranking or execution.
+    const marketSnapshot = journal.captureMarketSnapshot(marketObservations, {
+      scanId, scanAt, timeframe: settings.timeframe,
+      expectedUniverseCount: state.universe.length,
+      btcRegime: btcRegime?.regime || null,
+    });
+    const marketSnapshotId = marketSnapshot?.marketSnapshotId || null;
+    for (const signal of journalSignals) signal.marketSnapshotId = marketSnapshotId;
+
     // Best-first: the slot limit means ranking decides what actually gets traded.
     candidates.sort((a, b) => b.score - a.score);
 
@@ -497,7 +517,7 @@ async function scanOnce() {
 
     // Persisted independently of the 100-row UI snapshot above — this is the full record used
     // for journal export and gate-tuning analysis across many scans, not just the latest one.
-    journal.recordSignals(journalSignals, { scanId: uid('scan'), scanAt: Date.now() });
+    journal.recordSignals(journalSignals, { scanId, scanAt, marketSnapshotId });
 
     const blockReason = !settings.tradingEnabled ? 'Trading is switched off'
       : state.killSwitch ? 'Kill switch is engaged'
@@ -535,6 +555,7 @@ async function scanOnce() {
         funnel.sized++;
 
         const trade = executor.createPendingOrder({ signal, sizing, settings });
+        trade.marketSnapshotId = signal.marketSnapshotId || marketSnapshotId;
 
         if (settings.mode === 'live') {
           try {
@@ -570,6 +591,7 @@ async function scanOnce() {
         if (!sizing.ok) continue;
 
         const trade = executor.createPendingOrder({ signal, sizing, settings: shadowSettings });
+        trade.marketSnapshotId = signal.marketSnapshotId || marketSnapshotId;
         trade.engine = 'MARCI_SHADOW';
         trade.researchEngine = marciIndependent.VERSION;
         trade.sourceSignalId = signal.id;

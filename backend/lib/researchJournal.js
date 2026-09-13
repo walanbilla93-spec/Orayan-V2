@@ -1,8 +1,9 @@
 'use strict';
 const store = require('./store');
-const VERSION = 'CROSS_SECTIONAL_V1';
-const MAX_SNAPSHOTS = 2016; // 7 days at 5-minute cadence
-const MAX_EVENTS = 10000;
+const VERSION = 'MARKET_ENVIRONMENT_RESEARCH_V1';
+const RETENTION_MS = 8 * 86400000;
+const MAX_SNAPSHOTS = 2500;
+const MAX_EVENTS = 20000;
 let snapshots = store.read('researchEnvironmentV1', []);
 let events = store.read('researchEventsV1', []);
 if (!Array.isArray(snapshots)) snapshots = [];
@@ -10,6 +11,8 @@ if (!Array.isArray(events)) events = [];
 snapshots = snapshots.slice(-MAX_SNAPSHOTS);
 events = events.slice(-MAX_EVENTS);
 let timer = null, dirty = false;
+const lastEventSignature = new Map(events.filter(e => e?.candidateKey && e?.signature)
+  .map(e => [e.candidateKey, e.signature]));
 function flush() {
   if (timer) { clearTimeout(timer); timer = null; }
   if (!dirty) return;
@@ -19,86 +22,155 @@ function flush() {
 }
 function schedule() {
   dirty = true;
-  if (timer) return;
-  timer = setTimeout(flush, 3000);
-  if (timer.unref) timer.unref();
+  if (!timer) {
+    timer = setTimeout(flush, 3000);
+    if (timer.unref) timer.unref();
+  }
 }
 function finite(v) { return typeof v === 'number' && Number.isFinite(v) ? v : null; }
-function project(s) {
-  const m = s.marciIndependent || {};
-  const l = s.locationResearch || {};
+function round(v, digits = 8) {
+  if (!Number.isFinite(v)) return null;
+  const p = 10 ** digits;
+  return Math.round(v * p) / p;
+}
+function mean(xs) { return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; }
+function median(xs) {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+function stddev(xs) {
+  if (xs.length < 2) return null;
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((sum, x) => sum + (x - m) ** 2, 0) / xs.length);
+}
+function pct(n, d) { return d ? 100 * n / d : null; }
+function sign(v) { return v > 1e-12 ? 1 : v < -1e-12 ? -1 : 0; }
+function ema(values, period) {
+  if (!values.length) return null;
+  const a = 2 / (period + 1);
+  let out = values[0];
+  for (let i = 1; i < values.length; i++) out = a * values[i] + (1 - a) * out;
+  return out;
+}
+function ret(closes, bars) {
+  const base = closes[closes.length - 1 - bars];
+  return closes.length > bars && base > 0 ? closes[closes.length - 1] / base - 1 : null;
+}
+function observation(symbol, candles) {
+  if (!symbol || !Array.isArray(candles)) return null;
+  const clean = candles.filter(c => Number.isFinite(Number(c?.close)))
+    .map(c => ({ ts:Number(c.ts), close:Number(c.close) }));
+  if (clean.length < 3) return null;
+  const closes = clean.map(c => c.close), returns = [];
+  for (let i = Math.max(1, closes.length - 20); i < closes.length; i++) {
+    if (closes[i - 1] > 0) returns.push(closes[i] / closes[i - 1] - 1);
+  }
+  const last = clean[clean.length - 1], e21 = ema(closes.slice(-80), 21), e55 = ema(closes.slice(-120), 55);
   return {
-    id:s.id, symbol:s.symbol, side:s.side, signalSource:s.signalSource || 'ORAYAN',
-    score:finite(s.score), rr:finite(s.rr), entry:finite(s.entry),
-    sl:finite(s.sl), tp:finite(s.tp), slDistPct:finite(s.slDistPct),
-    passed:s.gates?.passed ?? null, failedGates:s.gates?.failed || [],
-    btcRegime:s.btcRegime, structureEvent:s.structureEvent,
-    structureTrend:s.structureTrend, timeframe:s.timeframe,
-    locationBucket:l.locationBucket, retracementDepthEntry:finite(l.retracementDepthEntry),
-    bbZ:finite(l.bbZ), trendLegNumber:finite(l.trendLegNumber),
-    rizzySequence:l.rizzySequence, marciPatternKey:m.patternKey,
-    marciRizzySequence:m.rizzySequence, marciTargetR:finite(m.targetR),
-    marciDAtr:finite(m.dAtr), marciEma21SlopePct:finite(m.ema21SlopePct),
-    marciBbZ:finite(m.bbZ), marciBbPercentB:finite(m.bbPercentB),
-    marciTrendLocation:m.trendLocation,
-    turnover24h:finite(s.market?.turnover24h), spreadPct:finite(s.market?.spreadPct),
-    fundingRate:finite(s.market?.fundingRate), volRatio:finite(s.market?.volRatio)
+    symbol, barOpenAt:last.ts, close:last.close, r1:ret(closes, 1),
+    previousReturn:closes[closes.length - 3] > 0 ? closes[closes.length - 2] / closes[closes.length - 3] - 1 : null,
+    r3:ret(closes, 3), r12:ret(closes, 12), realisedVol20:stddev(returns),
+    trend:last.close > e21 && e21 > e55 ? 1 : last.close < e21 && e21 < e55 ? -1 : 0,
   };
 }
-function record(signals, meta) {
-  if (!Array.isArray(signals) || !signals.length) return;
-  const at = meta.scanAt;
-  const bucket = Math.floor(at / 300000) * 300000;
-  // One observation per symbol/side/source per five-minute bucket.
-  // This is an evaluation journal, not a trade or execution ledger.
-  const latest = new Map();
-  for (const s of signals) {
-    if (!s || !s.symbol || !s.side) continue;
-    const p = project(s);
-    latest.set([p.signalSource,p.symbol,p.side].join('|'), p);
-  }
-  const rows = [...latest.values()];
-  const orayan = rows.filter(r => r.signalSource === 'ORAYAN');
-  const counts = {BUY:0, SELL:0};
-  for (const r of orayan) if (r.side in counts) counts[r.side]++;
-  const n = counts.BUY + counts.SELL;
-  const previous = snapshots[snapshots.length-1];
+function volatilityBucket(value) {
+  const history = snapshots.slice(-192).map(s => finite(s.medianRealisedVol20)).filter(v => v !== null);
+  if (value === null || history.length < 12) return 'WARMUP';
+  const base = median(history);
+  if (!(base > 0)) return 'UNKNOWN';
+  return value >= base * 1.5 ? 'HIGH' : value <= base * 0.67 ? 'LOW' : 'NORMAL';
+}
+function captureMarketSnapshot(observations, meta = {}) {
+  const rows = (Array.isArray(observations) ? observations : []).filter(Boolean);
+  const allAlts = rows.filter(r => r.symbol !== 'BTCUSDT');
+  if (!allAlts.length) return null;
+  const barOpenAt = Math.max(...allAlts.map(r => r.barOpenAt).filter(Number.isFinite));
+  if (!Number.isFinite(barOpenAt)) return null;
+  // Never mix a stale symbol candle into a newer completed-bar cross-section.
+  const alts = allAlts.filter(r => r.barOpenAt === barOpenAt);
+  const btc = rows.find(r => r.symbol === 'BTCUSDT' && r.barOpenAt === barOpenAt) || null;
+  const old = snapshots.find(s => s.barOpenAt === barOpenAt && s.timeframe === meta.timeframe);
+  if (old) return old;
+  const valid = alts.filter(r => finite(r.r1) !== null);
+  const prior = valid.filter(r => finite(r.previousReturn) !== null);
+  const positive = valid.filter(r => r.r1 > 0).length, negative = valid.filter(r => r.r1 < 0).length;
+  const currentBreadth = pct(positive - negative, valid.length);
+  const previousBreadth = pct(
+    prior.filter(r => r.previousReturn > 0).length - prior.filter(r => r.previousReturn < 0).length,
+    prior.length);
+  const r1s = valid.map(r => r.r1), absMean = mean(r1s.map(Math.abs));
+  const persistence = prior.filter(r => sign(r.r1) && sign(r.r1) === sign(r.previousReturn)).length;
+  const reversals = prior.filter(r => sign(r.r1) && sign(r.previousReturn) && sign(r.r1) !== sign(r.previousReturn)).length;
+  const btcDirection = sign(btc?.r1 || 0), alignable = btcDirection ? valid.filter(r => sign(r.r1)) : [];
+  const medianVol = median(valid.map(r => finite(r.realisedVol20)).filter(v => v !== null));
+  const shockZ = btc && finite(btc.realisedVol20) > 0 ? btc.r1 / btc.realisedVol20 : null;
+  const shock = shockZ === null ? 'UNKNOWN' : Math.abs(shockZ) >= 3
+    ? (shockZ > 0 ? 'UP_EXTREME' : 'DOWN_EXTREME') : Math.abs(shockZ) >= 2
+      ? (shockZ > 0 ? 'UP_SHOCK' : 'DOWN_SHOCK') : 'NORMAL';
+  const id = `mes_${meta.timeframe || 'na'}_${barOpenAt}`;
   const snapshot = {
-    version:VERSION, at:bucket, observedAt:at, scanId:meta.scanId,
-    universeCount:new Set(orayan.map(r=>r.symbol)).size,
-    candidateCount:n, buyCount:counts.BUY, sellCount:counts.SELL,
-    buyPct:n ? counts.BUY/n*100 : null, sellPct:n ? counts.SELL/n*100 : null,
-    directionalBreadth:n ? (counts.BUY-counts.SELL)/n*100 : null,
-    // Candidate breadth is NOT independently measured market breadth.
-    breadthDefinition:'ORAYAN_CANDIDATE_DIRECTION_SHARE',
-    // Missing raw market series must remain null, not fabricated.
-    breadthMomentum:null, trendCoherence:null, dispersion:null,
-    btcAltAlignment:null, marketReversalRate:null, environmentBucket:null,
-    btcRegime:orayan[0]?.btcRegime || null
+    version:VERSION, id, marketSnapshotId:id, barOpenAt,
+    barOpenIso:new Date(barOpenAt).toISOString(), observedAt:meta.scanAt || Date.now(),
+    timeframe:meta.timeframe || null, expectedUniverseCount:meta.expectedUniverseCount || null,
+    universeCount:alts.length, coveragePct:pct(alts.length, meta.expectedUniverseCount || alts.length),
+    positiveCount:positive, negativeCount:negative,
+    marketBreadthUpPct:pct(positive, valid.length), marketBreadthDownPct:pct(negative, valid.length),
+    directionalBreadth:currentBreadth,
+    breadthMomentum:currentBreadth === null || previousBreadth === null ? null : currentBreadth - previousBreadth,
+    trendUpPct:pct(valid.filter(r => r.trend > 0).length, valid.length),
+    trendDownPct:pct(valid.filter(r => r.trend < 0).length, valid.length),
+    crossSectionalDispersion:round(stddev(r1s)),
+    directionalCoherence:round(absMean > 0 ? Math.abs(mean(r1s)) / absMean : null),
+    directionalPersistencePct:pct(persistence, prior.length),
+    btcAltAlignmentPct:alignable.length ? pct(alignable.filter(r => sign(r.r1) === btcDirection).length, alignable.length) : null,
+    reversalFailureRatePct:pct(reversals, prior.length),
+    medianRealisedVol20:round(medianVol), volatilityState:volatilityBucket(medianVol),
+    btcRegime:meta.btcRegime || null, btcReturn1:round(btc?.r1), btcReturn3:round(btc?.r3),
+    btcRealisedVol20:round(btc?.realisedVol20), btcShockZ:round(shockZ, 4), btcShockState:shock,
+    symbolStateEncoding:'JSON_ARRAY_[symbol,close,r1,previousReturn,r3,r12,realisedVol20,trend]',
+    symbolReturnState:JSON.stringify(alts.map(r => [r.symbol, round(r.close), round(r.r1),
+      round(r.previousReturn), round(r.r3), round(r.r12), round(r.realisedVol20), r.trend])),
   };
-  if (previous && previous.at === bucket) snapshots[snapshots.length-1] = snapshot;
-  else snapshots.push(snapshot);
-  snapshots = snapshots.filter(x => x.at >= bucket - 7*86400000).slice(-MAX_SNAPSHOTS);
-  // Preserve one first-seen event per pattern/side and meaningful state change.
-  // Never suppress a passed candidate or a change in gate result.
-  const existing = new Map();
-  for (let i=0;i<events.length;i++) if (events[i].environmentAt === bucket) existing.set(events[i].key,i);
-  for (const r of rows) {
-    const key = [r.signalSource,r.symbol,r.side,r.marciPatternKey || '',bucket].join('|');
-    const oldIndex = existing.get(key);
-    const old = oldIndex === undefined ? null : events[oldIndex];
-    const signature = JSON.stringify([r.passed,r.failedGates,r.structureEvent,r.locationBucket]);
-    if (old && old.signature === signature && !r.passed) continue;
-    const alignment = snapshot.directionalBreadth === null ? null :
-      (r.side === 'BUY' ? snapshot.directionalBreadth : -snapshot.directionalBreadth);
-    const event = {version:VERSION,key,at,scanId:meta.scanId,environmentAt:bucket,
-      tradeBreadthAlignment:alignment,signature,...r};
-    if (old && old.signature === signature) events[oldIndex] = event;
-    else { events.push(event); existing.set(key,events.length-1); }
+  snapshots.push(snapshot);
+  snapshots = snapshots.filter(x => x.barOpenAt >= barOpenAt - RETENTION_MS).slice(-MAX_SNAPSHOTS);
+  schedule();
+  return snapshot;
+}
+function project(s) {
+  const m = s.marciIndependent || {}, l = s.locationResearch || {};
+  return {
+    id:s.id, marketSnapshotId:s.marketSnapshotId || null, symbol:s.symbol, side:s.side,
+    signalSource:s.signalSource || 'ORAYAN', score:finite(s.score), rr:finite(s.rr),
+    entry:finite(s.entry), sl:finite(s.sl), tp:finite(s.tp), passed:s.gates?.passed ?? null,
+    failedGates:s.gates?.failed || [], btcRegime:s.btcRegime,
+    structureEvent:s.structureEvent, structureTrend:s.structureTrend, timeframe:s.timeframe,
+    locationBucket:l.locationBucket, retracementDepthEntry:finite(l.retracementDepthEntry),
+    bbZ:finite(l.bbZ), trendLegNumber:finite(l.trendLegNumber), rizzySequence:l.rizzySequence,
+    marciPatternKey:m.patternKey, marciRizzySequence:m.rizzySequence,
+    marciTargetR:finite(m.targetR), marciDAtr:finite(m.dAtr),
+    turnover24h:finite(s.market?.turnover24h), spreadPct:finite(s.market?.spreadPct),
+  };
+}
+function recordEvents(signals, meta = {}) {
+  const at = meta.scanAt || Date.now();
+  for (const signal of Array.isArray(signals) ? signals : []) {
+    if (!signal?.symbol || !signal?.side) continue;
+    const row = project(signal);
+    const candidateKey = [row.signalSource, row.symbol, row.side, row.marciPatternKey || ''].join('|');
+    const signature = JSON.stringify([row.passed, row.failedGates, row.structureEvent, row.locationBucket]);
+    if (!row.passed && lastEventSignature.get(candidateKey) === signature) continue;
+    lastEventSignature.set(candidateKey, signature);
+    events.push({ version:VERSION, key:`${candidateKey}|${at}`, candidateKey, signature, at,
+      scanId:meta.scanId || null, marketSnapshotId:row.marketSnapshotId || meta.marketSnapshotId || null, ...row });
   }
-  events = events.filter(x => x.at >= at - 7*86400000).slice(-MAX_EVENTS);
+  events = events.filter(x => x.at >= at - RETENTION_MS).slice(-MAX_EVENTS);
   schedule();
 }
-function getSnapshots() { return snapshots.slice(); }
-function getEvents() { return events.slice(); }
-module.exports = {record,getSnapshots,getEvents,flush,VERSION};
+function clear() {
+  snapshots = []; events = []; lastEventSignature.clear(); dirty = true; flush();
+}
+module.exports = {
+  VERSION, observation, captureMarketSnapshot, recordEvents,
+  getSnapshots:() => snapshots.slice(), getEvents:() => events.slice(), clear, flush,
+};

@@ -31,6 +31,7 @@ function compactSignalForJournal(s) {
     signalSource: s.signalSource || null,
     scanId: s.scanId ?? null,
     scanAt: s.scanAt ?? null,
+    marketSnapshotId: s.marketSnapshotId ?? null,
     id: s.id,
     createdAt: s.createdAt,
     symbol: s.symbol,
@@ -121,7 +122,7 @@ function recordSignals(signals, scanMeta) {
     scanId: scanMeta.scanId,
     scanAt: scanMeta.scanAt,
   }));
-  researchJournal.record(signals, scanMeta);
+  researchJournal.recordEvents(stamped, scanMeta);
   signalHistory.push(...stamped);
   trim();
   scheduleFlush();
@@ -181,6 +182,7 @@ function toCsv(rows, columns) {
 }
 
 const TRADE_COLUMNS = [
+  { label: 'marketSnapshotId', get: (t) => t.marketSnapshotId || '' },
   { label: 'id', get: (t) => t.id },
   { label: 'signalId', get: (t) => t.signalId },
   { label: 'symbol', get: (t) => t.symbol },
@@ -273,6 +275,7 @@ const TRADE_COLUMNS = [
 ];
 
 const SIGNAL_COLUMNS = [
+  { label: 'marketSnapshotId', get: (s) => s.marketSnapshotId || '' },
   { label: 'scanId', get: (s) => s.scanId },
   { label: 'scanAt', get: (s) => s.scanAt },
   { label: 'scanAtIso', get: (s) => new Date(s.scanAt).toISOString() },
@@ -390,6 +393,9 @@ module.exports = {
   exportTrades, exportSignals,
   getResearchEnvironment: researchJournal.getSnapshots,
   getResearchEvents: researchJournal.getEvents,
+  captureMarketSnapshot: researchJournal.captureMarketSnapshot,
+  buildMarketObservation: researchJournal.observation,
+  clearResearch: researchJournal.clear,
   exportResearchRows: (rows, format) => {
     if (format !== 'csv') return {body:JSON.stringify(rows),contentType:'application/json; charset=utf-8'};
     const keys = [...new Set(rows.flatMap(r => Object.keys(r)))];
