@@ -168,6 +168,7 @@ const routes = {
   'POST /api/journal/shadow/clear': async () => engine.resetShadowTrades(),
   'POST /api/research/reset-all': async () => {
     journal.clearSignalHistory();
+    journal.clearResearch();
     engine.clearLastSignals();
     engine.resetTrades();
     engine.resetShadowTrades();
