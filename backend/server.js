@@ -3,6 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { pipeline } = require('stream/promises');
 const { routes } = require('./routes/api');
 const logger = require('./lib/logger');
 const engine = require('./lib/engine');
@@ -94,6 +95,19 @@ const server = http.createServer(async (req, res) => {
       const body = req.method === 'POST' ? await readBody(req) : {};
       const query = Object.fromEntries(url.searchParams.entries());
       const result = await handler({ body, query, req });
+
+      if (result && result.__files) {
+        res.writeHead(200, {
+          'Content-Type': result.contentType,
+          'Content-Disposition': `attachment; filename="${result.filename}"`,
+          'Cache-Control': 'no-store',
+          'Access-Control-Allow-Origin': '*',
+        });
+        for (const file of result.files) {
+          await pipeline(fs.createReadStream(file), res, {end:false});
+        }
+        return res.end();
+      }
 
       // Routes that need to return a downloadable file (journal export) signal it with this
       // shape instead of a plain object, so they are not forced through JSON.stringify.
