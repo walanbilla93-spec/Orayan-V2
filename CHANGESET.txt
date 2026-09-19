@@ -1,0 +1,28 @@
+New Orayan deployment patch — changed files across both coding rounds
+Baseline: Orayan-V2-main (3).zip
+Latest: New-Orayan-instrumentation-ui-compact-signals-v3.zip
+
+ADDED (3)
+ADD backend/lib/researchCapture.js
+ADD backend/test/instrumentation.test.js
+ADD docs/PROSPECTIVE-RESEARCH-V2.md
+
+MODIFIED (14)
+MODIFY .dockerignore
+MODIFY .gitignore
+MODIFY Dockerfile
+MODIFY README.md
+MODIFY backend/lib/engine.js
+MODIFY backend/lib/journal.js
+MODIFY backend/lib/marketData.js
+MODIFY backend/lib/researchJournal.js
+MODIFY backend/lib/store.js
+MODIFY backend/package.json
+MODIFY backend/routes/api.js
+MODIFY backend/server.js
+MODIFY frontend/app.js
+MODIFY frontend/index.html
+
+DELETED (0)
+
+Deployment note: overlay ZIP contents onto the deployed repository root. DELETE entries must be removed manually if any are listed.

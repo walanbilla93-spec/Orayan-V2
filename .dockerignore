@@ -2,6 +2,7 @@ node_modules
 backend/data/*.json
 backend/data/*.tmp
 backend/data/*.corrupt.*
+backend/data/research-v2/
 .git
 .env
 *.log

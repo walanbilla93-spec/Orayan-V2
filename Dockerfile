@@ -1,11 +1,10 @@
-# No npm dependencies exist in this project (Node built-ins only), so this image is
-# just "copy the files onto a Node runtime" — no build stage, no node_modules layer.
 FROM node:20-alpine
 
 WORKDIR /app
 
 COPY backend ./backend
 COPY frontend ./frontend
+RUN cd backend && npm install --omit=dev --no-audit --no-fund
 
 # Settings and trade history persist here — mounted as a volume in docker-compose.yml
 # so a container rebuild never throws away trade history or pinned settings.

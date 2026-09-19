@@ -194,3 +194,7 @@ to the exchange order, so they remain active on Bybit whether or not this app is
 
 The server binds all interfaces and has **no authentication**. Do not expose it to the internet.
 Run it locally, or behind a VPN or an authenticating reverse proxy.
+
+# Prospective strategy research
+
+The research-only candidate and Bybit liquidation capture is documented in [docs/PROSPECTIVE-RESEARCH-V2.md](docs/PROSPECTIVE-RESEARCH-V2.md). It writes shared New Orayan and Marci records into the persistent `backend/data/research-v2` directory when the engine is running.
