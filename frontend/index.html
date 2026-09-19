@@ -113,14 +113,12 @@
       <div class="panel">
         <div class="panel-head">
           <h2>Last scan</h2>
-          <p class="panel-sub">Every setup found, whether or not it passed. Click one to see its gate verdicts and score breakdown. The download covers every scan since the server started, not just what's shown below.</p>
+          <p class="panel-sub">Every setup found in the last scan. Click one to see its gate verdicts and score breakdown. The signal journal download records meaningful changes for up to 48 hours.</p>
           <div class="panel-actions">
-            <button class="btn btn-ghost" id="btnExportSignalsCsv">Download journal (CSV)</button>
+            <button class="btn btn-ghost" id="btnExportSignalsCsv">Download signal events (CSV)</button>
             <button class="btn btn-ghost" id="btnExportSignalsJson">JSON</button>
-            <button class="btn btn-ghost" id="btnExportEnvironmentCsv" title="One cross-sectional market snapshot per completed signal bar">Environment CSV</button>
-            <button class="btn btn-ghost" id="btnExportEnvironmentJson" title="One cross-sectional market snapshot per completed signal bar">Environment JSON</button>
-            <button class="btn btn-ghost" id="btnExportResearchEventsCsv" title="Compact candidate/event journal joined by marketSnapshotId">Research events CSV</button>
-            <button class="btn btn-ghost" id="btnExportResearchEventsJson" title="Compact candidate/event journal joined by marketSnapshotId">Events JSON</button>
+            <button class="btn btn-ghost" id="btnExportProspectiveResearch">Download prospective research (JSONL)</button>
+            <button class="btn btn-ghost" id="btnExportResearchEvents">Download research events (CSV)</button>
             <button class="btn btn-danger" id="btnClearSignals" title="Wipe signal journal and live list">Clear signals</button>
           </div>
         </div>

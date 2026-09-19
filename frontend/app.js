@@ -799,10 +799,8 @@ function init() {
   $('#btnExportTradesJson').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=json'));
   $('#btnExportSignalsCsv').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=csv'));
   $('#btnExportSignalsJson').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=json'));
-  $('#btnExportEnvironmentCsv').addEventListener('click', () => downloadFrom('/api/journal/research/environment/export?format=csv'));
-  $('#btnExportEnvironmentJson').addEventListener('click', () => downloadFrom('/api/journal/research/environment/export?format=json'));
-  $('#btnExportResearchEventsCsv').addEventListener('click', () => downloadFrom('/api/journal/research/events/export?format=csv'));
-  $('#btnExportResearchEventsJson').addEventListener('click', () => downloadFrom('/api/journal/research/events/export?format=json'));
+  $('#btnExportProspectiveResearch').addEventListener('click', () => downloadFrom('/api/journal/research/prospective/export'));
+  $('#btnExportResearchEvents').addEventListener('click', () => downloadFrom('/api/journal/research/events/export?format=csv'));
   $('#btnExportShadowCsv').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=csv'));
   $('#btnExportShadowJson').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=json'));
   $('#btnClearShadow').addEventListener('click', async () => {
