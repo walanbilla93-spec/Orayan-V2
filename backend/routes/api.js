@@ -6,6 +6,7 @@ const logger = require('../lib/logger');
 const bybit = require('../lib/bybit');
 const marketData = require('../lib/marketData');
 const journal = require('../lib/journal');
+const researchCapture = require('../lib/researchCapture');
 const executor = require('../lib/executor');
 const { GATE_ORDER } = require('../lib/gates');
 const { num } = require('../lib/util');
@@ -137,9 +138,17 @@ const routes = {
 
   'GET /api/journal/signals/export': async ({ query }) => {
     const format = query.format === 'csv' ? 'csv' : 'json';
-    const signals = journal.getSignalHistory({ limit: num(query.limit, 20000) });
-    const { body, contentType } = journal.exportSignals(signals, format);
-    return { __file: true, body, contentType, filename: `orayan2_signals_${Date.now()}.${format}` };
+    const legacy = query.schema === 'legacy';
+    const signals = journal.getSignalHistory({ limit: num(query.limit, 50000), legacy });
+    const { body, contentType } = journal.exportSignals(signals, format, { legacy });
+    return { __file: true, body, contentType, filename: `orayan2_${legacy ? 'signals_legacy' : 'signal_events_compact_v2'}_${Date.now()}.${format}` };
+  },
+
+  'GET /api/journal/research/prospective/export': async ({ query }) => {
+    const date = query.date || 'all';
+    const files = researchCapture.exportFiles(date);
+    return { __files:true, files, contentType:'application/x-ndjson; charset=utf-8',
+      filename:`orayan2_prospective_research_${date}.jsonl` };
   },
 
 
