@@ -14,6 +14,7 @@ const journal = require('./journal');
 const locationResearch = require('./locationResearch');
 const marciShadow = require('./marciShadow');
 const marciIndependent = require('./marciIndependent');
+const researchCapture = require('./researchCapture');
 const { num, uid } = require('./util');
 
 const state = {
@@ -150,6 +151,8 @@ async function manageOpenTrades(settings) {
     const r = await executor.syncLiveTrades(trades, settings);
     if (r.changed) changed = true;
     for (const t of trades) {
+      if (beforeStatus.get(t.id) && beforeStatus.get(t.id) !== t.status)
+        researchCapture.outcome(t.signalId, t.status, t);
       if (t.status === 'CLOSED' && beforeStatus.get(t.id) !== 'CLOSED') {
         try { recordLockout(t, settings); } catch (e) {
           logger.warn('engine', `post-live-sync record failed on ${t.symbol}`, { error: e.message });
@@ -164,6 +167,7 @@ async function manageOpenTrades(settings) {
       const before = t.status;
       const did = await executor.stepPaperTrade(t, settings);
       if (did) changed = true;
+      if (before !== t.status) researchCapture.outcome(t.signalId, t.status, t);
       if (before !== 'CLOSED' && t.status === 'CLOSED') recordLockout(t, settings);
     } catch (e) {
       logger.error('engine', `Error advancing trade on ${t.symbol}`, { error: e.message });
@@ -182,6 +186,7 @@ async function manageShadowTrades(settings) {
 
   for (const t of active) {
     try {
+      const statusBefore = t.status;
       const tfMs = Math.max(60000, num(settings.timeframe, 15) * 60000);
 
       // A resting Marci order must be cancelled if ANY completed signal-timeframe candle since
@@ -206,12 +211,14 @@ async function manageShadowTrades(settings) {
           t.netPnl = 0; t.grossPnl = 0; t.fees = 0;
           t.marciTrendlineAtExit = inv.line;
           changed = true;
+          researchCapture.outcome(t.signalId, t.status, t, { reason:t.closeReason });
           continue;
         }
       }
 
       const did = await executor.stepPaperTrade(t, paperSettings);
       if (did) changed = true;
+      if (statusBefore !== t.status) researchCapture.outcome(t.signalId, t.status, t);
       if (!['PENDING', 'OPEN'].includes(t.status)) continue;
 
       // Marci-style structural invalidation is a CANDLE-CLOSE rule, not a wick rule. Hard SL
@@ -249,6 +256,7 @@ async function manageShadowTrades(settings) {
       }
       t.marciTrendlineAtExit = inv.line;
       changed = true;
+      researchCapture.outcome(t.signalId, t.status, t, { reason:t.closeReason });
     } catch (e) {
       logger.error('engine', `Error advancing MARCI shadow trade on ${t.symbol}`, { error: e.message });
     }
@@ -338,12 +346,16 @@ async function scanOnce() {
       await buildUniverse(settings);
     }
     const tickers = await marketData.getTickers({ testnet: settings.testnet });
+    try { researchCapture.watch(state.universe, settings.testnet); }
+    catch (e) { logger.warn('research', 'Liquidation watch unavailable', { error:e.message }); }
+    const tickerResearch = researchCapture.tickerDynamics(tickers, Date.now());
     const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
     const instruments = await marketData.getInstruments({ testnet: settings.testnet });
     const btcRegime = await getBtcRegime(settings);
     const scanAt = Date.now();
     const scanId = uid('scan');
     const marketObservations = [];
+    const researchCandles = new Map();
     try {
       const btcCandles = await marketData.getCandles('BTCUSDT', settings.timeframe, 200, { testnet: settings.testnet });
       marketObservations.push(journal.buildMarketObservation('BTCUSDT', btcCandles));
@@ -357,6 +369,7 @@ async function scanOnce() {
     const shadowFunnel = { assessed: 0, passed: 0, placed: 0, rejected: {}, source: marciIndependent.VERSION };
     const signalsForUi = [];
     const journalSignals = [];
+    const orderResolved = new Set();
 
     const cb = risk.checkCircuitBreakers({ settings, state, closedTrades: closedTrades() });
     if (cb.halted && !state.haltedUntil) {
@@ -378,6 +391,7 @@ async function scanOnce() {
       let candles;
       try {
         candles = await marketData.getCandles(symbol, settings.timeframe, 200, { testnet: settings.testnet });
+        researchCandles.set(symbol, candles);
         marketObservations.push(journal.buildMarketObservation(symbol, candles));
       } catch (e) {
         logger.debug('engine', `No candles for ${symbol}`, { error: e.message });
@@ -506,6 +520,17 @@ async function scanOnce() {
     });
     const marketSnapshotId = marketSnapshot?.marketSnapshotId || null;
     for (const signal of journalSignals) signal.marketSnapshotId = marketSnapshotId;
+    const btcObservation = marketObservations.find(x => x?.symbol === 'BTCUSDT');
+    const r12s = marketObservations.filter(x => x?.symbol !== 'BTCUSDT' && Number.isFinite(x?.r12))
+      .map(x => Math.log1p(x.r12)).sort((a,b) => a-b);
+    const universeResearch = { r12Median:r12s.length ? r12s[Math.floor(r12s.length/2)] : null };
+    for (const signal of journalSignals) {
+      try { researchCapture.birth(signal, { scanId, scanAt, ticker:tickerBySymbol.get(signal.symbol),
+        candles:researchCandles.get(signal.symbol) || [], settings, snapshot:marketSnapshot,
+        btc:{r12:btcObservation?.r12 == null ? null : Math.log1p(btcObservation.r12)}, universe:universeResearch,
+        tickerDynamic:tickerResearch.get(signal.symbol) }); }
+      catch (e) { logger.warn('research', 'Birth capture failed', { error:e.message, symbol:signal.symbol }); }
+    }
 
     // Best-first: the slot limit means ranking decides what actually gets traded.
     candidates.sort((a, b) => b.score - a.score);
@@ -548,6 +573,8 @@ async function scanOnce() {
         const instrument = instruments.get(signal.symbol);
         const sizing = risk.sizePosition({ entry: signal.entry, sl: signal.sl, settings, instrument });
         if (!sizing.ok) {
+          researchCapture.outcome(signal.id, 'NO_ORDER', null, { reason:sizing.reason });
+          orderResolved.add(signal.id);
           funnel.gated[sizing.reason] = (funnel.gated[sizing.reason] || 0) + 1;
           logger.debug('engine', `Cannot size ${signal.symbol}: ${sizing.reason}`, { detail: sizing.detail });
           continue;
@@ -556,17 +583,22 @@ async function scanOnce() {
 
         const trade = executor.createPendingOrder({ signal, sizing, settings });
         trade.marketSnapshotId = signal.marketSnapshotId || marketSnapshotId;
+        researchCapture.outcome(signal.id, 'ORDER_INTENT', trade, { mode:settings.mode });
 
         if (settings.mode === 'live') {
           try {
             await executor.placeLiveOrder({ trade, settings, instrument });
           } catch (e) {
+            researchCapture.outcome(signal.id, 'ORDER_REJECTED', trade, { reason:e.message });
+            orderResolved.add(signal.id);
             logger.error('engine', `Live order rejected for ${signal.symbol}`, { error: e.message });
             continue;
           }
         }
 
         trades.push(trade);
+        researchCapture.outcome(signal.id, 'ORDER_ACK', trade, { mode:settings.mode });
+        orderResolved.add(signal.id);
         funnel.placed++;
         logger.info('engine',
           `${settings.mode === 'live' ? 'Live' : 'Paper'} order queued: ${signal.symbol} ${signal.side} score ${signal.score} qty ${sizing.qty}`);
@@ -588,7 +620,8 @@ async function scanOnce() {
         const instrument = instruments.get(signal.symbol);
         const shadowSettings = { ...settings, mode: 'paper' };
         const sizing = risk.sizePosition({ entry: signal.entry, sl: signal.sl, settings: shadowSettings, instrument });
-        if (!sizing.ok) continue;
+        if (!sizing.ok) { researchCapture.outcome(signal.id, 'NO_ORDER', null, {reason:sizing.reason}); orderResolved.add(signal.id); continue; }
+        researchCapture.outcome(signal.id, 'ORDER_INTENT', null, { mode:'paper' });
 
         const trade = executor.createPendingOrder({ signal, sizing, settings: shadowSettings });
         trade.marketSnapshotId = signal.marketSnapshotId || marketSnapshotId;
@@ -601,10 +634,19 @@ async function scanOnce() {
         trade.marciIndependent = signal.marciIndependent ? { ...signal.marciIndependent } : null;
         trade.marciShadow = signal.marciShadow ? { ...signal.marciShadow } : null;
         shadowTrades.push(trade);
+        researchCapture.outcome(signal.id, 'ORDER_ACK', trade, { mode:'paper' });
+        orderResolved.add(signal.id);
         shadowFunnel.placed++;
         logger.info('engine', `MARCI independent queued: ${signal.symbol} ${signal.side} Rizzy ${signal.marciIndependent?.sequence} D-target R ${Number(signal.rr).toFixed(2)}`);
       }
       persistShadowTrades();
+    }
+
+    for (const signal of journalSignals) {
+      if (signal.gates?.passed && !orderResolved.has(signal.id)
+        && signal.marciShadow?.passed !== false)
+        researchCapture.outcome(signal.id, 'NO_ORDER', null,
+          {reason:blockReason || (!settings.tradingEnabled || state.killSwitch ? 'TRADING_DISABLED_OR_KILL_SWITCH' : 'PORTFOLIO_OR_SLOT_LIMIT')});
     }
 
     state.shadowFunnel = shadowFunnel;
@@ -663,6 +705,7 @@ async function start({ source = 'OPERATOR' } = {}) {
 }
 
 function stop({ reason = 'OPERATOR_STOP', preserveDesired = false } = {}) {
+  researchCapture.stop();
   const now = Date.now();
   state.running = false;
   state.stoppedAt = now;

@@ -87,14 +87,21 @@ async function getTickers({ testnet, ttlMs = 60000 } = {}) {
       const mid = bid && ask ? (bid + ask) / 2 : num(t.lastPrice);
       return {
         symbol: t.symbol,
+        observedAt: Date.now(),
         lastPrice: num(t.lastPrice),
         markPrice: num(t.markPrice) || num(t.lastPrice),
+        indexPrice: num(t.indexPrice) || null,
         bid,
         ask,
+        bidSize: num(t.bid1Size) || null,
+        askSize: num(t.ask1Size) || null,
         spreadPct: mid ? ((ask - bid) / mid) * 100 : null,
         turnover24h: num(t.turnover24h),
         volume24h: num(t.volume24h),
         fundingRate: num(t.fundingRate),
+        nextFundingTime: num(t.nextFundingTime) || null,
+        openInterest: num(t.openInterest) || null,
+        openInterestValue: num(t.openInterestValue) || null,
         change24hPct: num(t.price24hPcnt) * 100,
       };
     });

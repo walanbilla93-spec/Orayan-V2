@@ -31,12 +31,12 @@ function read(name, dflt) {
 }
 
 /** Write via temp file + rename so a crash mid-write can't truncate the real file. */
-function write(name, value) {
+function write(name, value, pretty = true) {
   ensureDir();
   const p = filePath(name);
   const tmp = `${p}.tmp`;
   try {
-    fs.writeFileSync(tmp, JSON.stringify(value, null, 2));
+    fs.writeFileSync(tmp, pretty ? JSON.stringify(value, null, 2) : JSON.stringify(value));
     fs.renameSync(tmp, p);
     return true;
   } catch (e) {

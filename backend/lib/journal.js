@@ -4,17 +4,11 @@ const store = require('./store');
 const logger = require('./logger');
 const researchJournal = require('./researchJournal');
 
-/*
- * SIGNAL HISTORY
- *
- * `engine.state.lastSignals` is overwritten every scan — by design, it's "what the dashboard
- * shows right now", not a log. But gate-tuning analysis (which is most of what this operator
- * does with exported data) needs to see what was rejected and why across many scans, not just
- * the most recent one. So every scan's signals are appended here, independently of what the UI
- * happens to be showing.
- */
-
+// V1 is read only after upgrade. Keep it available through ?schema=legacy.
 const MAX_SIGNAL_HISTORY = 20000;
+const COMPACT_VERSION = 'SIGNAL_EVENTS_COMPACT_V2';
+const RETENTION_MS = 48 * 60 * 60 * 1000;
+const MAX_COMPACT_EVENTS = 50000;
 
 /**
  * Keep the research journal deliberately compact. The engine signal object contains several
@@ -74,6 +68,18 @@ signalHistory = signalHistory.map(compactSignalForJournal);
 if (signalHistory.length > MAX_SIGNAL_HISTORY) {
   signalHistory = signalHistory.slice(-MAX_SIGNAL_HISTORY);
 }
+let signalEvents = store.read('signalEventsCompactV2', []);
+if (!Array.isArray(signalEvents)) signalEvents = [];
+signalEvents = signalEvents.filter(x => x?.version === COMPACT_VERSION).slice(-MAX_COMPACT_EVENTS);
+const lastByKey = new Map();
+for (const row of signalEvents) if (row.candidateKey && ['DETECTED','STATE_CHANGE','EXPIRED'].includes(row.event)) lastByKey.set(row.candidateKey, row);
+const lastSeenAt = new Map([...lastByKey].map(([key, row]) => [key, row.at]));
+const lastOutcomeByKey = new Map();
+for (const row of signalEvents) if (row.candidateKey && row.changed === 'lifecycle') lastOutcomeByKey.set(row.candidateKey, row);
+let currentCandidates = new Map();
+for (const row of signalEvents) if (row.candidateId && row.candidateKey && row.event !== 'BOS_OUTCOME')
+  currentCandidates.set(row.candidateId, {key:row.candidateKey, at:row.at,
+    s:{symbol:row.symbol,side:row.side,signalSource:row.engine === 'MARCI' ? 'MARCI' : 'ORAYAN'}});
 
 /*
  * WRITE BATCHING
@@ -96,7 +102,7 @@ function scheduleFlush() {
     flushTimer = null;
     if (!dirty) return;
     dirty = false;
-    store.write('signalHistory', signalHistory);
+    store.write('signalEventsCompactV2', signalEvents, false);
   }, 3000);
   if (flushTimer.unref) flushTimer.unref();
 }
@@ -106,37 +112,116 @@ function flush() {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   if (!dirty) return;
   dirty = false;
-  store.write('signalHistory', signalHistory);
+  store.write('signalEventsCompactV2', signalEvents, false);
 }
 
 function trim() {
-  if (signalHistory.length > MAX_SIGNAL_HISTORY) {
-    signalHistory.splice(0, signalHistory.length - MAX_SIGNAL_HISTORY);
+  const cutoff = Date.now() - RETENTION_MS;
+  signalEvents = signalEvents.filter(x => x.at >= cutoff).slice(-MAX_COMPACT_EVENTS);
+  for (const [key, row] of lastByKey) if ((lastSeenAt.get(key) || row.at) < cutoff) {
+    lastByKey.delete(key); lastSeenAt.delete(key); lastOutcomeByKey.delete(key);
   }
 }
+trim();
 
+function engineName(s) { return s.signalSource?.startsWith('MARCI') || s.kind === 'marci_signal' ? 'MARCI' : 'NEW_ORAYAN'; }
+function candidateKey(s) {
+  const identity = s.marciIndependent?.patternKey || [s.engine || s.entryPath || '', s.structureEvent || ''].join(':');
+  return [engineName(s), s.symbol, s.side, identity].join('|');
+}
+function gateSummary(s) { return [...new Set(s.gates?.failed || [])].sort().join('|'); }
+function classification(s) {
+  return [s.locationResearch?.locationBucket || '', s.locationResearch?.rizzySequence || '',
+    s.marciIndependent?.patternKey || '', Number.isFinite(s.score) ? Math.floor(s.score / 10) * 10 : ''].join('|');
+}
+function eventRow(s, scanMeta, event, changed) {
+  return { version:COMPACT_VERSION, at:scanMeta.scanAt, scanId:scanMeta.scanId || null,
+    marketSnapshotId:s.marketSnapshotId || scanMeta.marketSnapshotId || null,
+    engine:engineName(s), engineVariant:s.engine || null, candidateKey:candidateKey(s), candidateId:s.id,
+    symbol:s.symbol, side:s.side, event, state:s.gates?.passed ? 'PASSED' : 'REJECTED',
+    score:s.score ?? null, passed:s.gates?.passed ?? null, failedGates:gateSummary(s),
+    entryMode:s.entryPath || null, entry:s.entry ?? null, sl:s.sl ?? null, tp:s.tp ?? null,
+    researchClass:classification(s), changed:changed || null, reason:null };
+}
 function recordSignals(signals, scanMeta) {
-  if (!signals || !signals.length) return;
-  const stamped = signals.map((s) => compactSignalForJournal({
-    ...s,
-    scanId: scanMeta.scanId,
-    scanAt: scanMeta.scanAt,
-  }));
+  const stamped = (signals || []).map(s => ({ ...s, marketSnapshotId:s.marketSnapshotId || scanMeta.marketSnapshotId }));
   researchJournal.recordEvents(stamped, scanMeta);
-  signalHistory.push(...stamped);
+  for (const [id, candidate] of currentCandidates) if (scanMeta.scanAt - candidate.at > RETENTION_MS) currentCandidates.delete(id);
+  const seen = new Set();
+  for (const s of stamped) {
+    if (!s?.id || !s.symbol || !s.side) continue;
+    const key = candidateKey(s), previous = lastByKey.get(key);
+    currentCandidates.set(s.id, { key, at:scanMeta.scanAt, marketSnapshotId:s.marketSnapshotId,
+      s:{symbol:s.symbol,side:s.side,signalSource:s.signalSource,score:s.score,
+        entryPath:s.entryPath,entry:s.entry,sl:s.sl,tp:s.tp} });
+    lastSeenAt.set(key, scanMeta.scanAt);
+    seen.add(key);
+    const changes = [];
+    if (!previous || previous.event === 'EXPIRED') changes.push('birth');
+    else {
+      if (previous.passed !== (s.gates?.passed ?? null) || previous.failedGates !== gateSummary(s)) changes.push('gates');
+      if (previous.entryMode !== (s.entryPath || null)) changes.push('entryMode');
+      if (previous.researchClass !== classification(s)) changes.push('researchClass');
+    }
+    if (!changes.length) continue;
+    const row = eventRow(s, scanMeta, changes.includes('birth') ? 'DETECTED' : 'STATE_CHANGE', changes.join('|'));
+    signalEvents.push(row);
+    lastByKey.set(key, row);
+  }
+  // A missing setup is expired only after sustained absence, avoiding scan-to-scan flapping.
+  for (const [key, previous] of lastByKey) {
+    if (!seen.has(key) && previous.event !== 'EXPIRED' && scanMeta.scanAt - (lastSeenAt.get(key) || previous.at) >= 30 * 60000) {
+      const row = { ...previous, at:scanMeta.scanAt, scanId:scanMeta.scanId, event:'EXPIRED',
+        state:'EXPIRED', changed:'absent_30m', reason:'SETUP_NOT_DETECTED', score:null };
+      signalEvents.push(row); lastByKey.set(key, row);
+    }
+  }
   trim();
   scheduleFlush();
 }
 
-function getSignalHistory({ limit = 5000 } = {}) {
-  return signalHistory.slice(-limit);
+function recordSignalOutcome(candidateId, event, trade, detail = {}) {
+  let match = currentCandidates.get(candidateId);
+  if (!match) {
+    const old = signalEvents.findLast(row => row.candidateId === candidateId && row.candidateKey);
+    if (old) match = {key:old.candidateKey, s:{symbol:old.symbol,side:old.side,
+      signalSource:old.engine === 'MARCI' ? 'MARCI' : 'ORAYAN'}};
+  }
+  if (!match && !trade) return;
+  if (event === 'NO_ORDER' && match) {
+    const prior = lastOutcomeByKey.get(match.key);
+    if (prior?.event === event && prior.reason === String(detail.reason || '').slice(0, 160)) return;
+  }
+  const previous = match ? lastByKey.get(match.key) : null;
+  const at = Date.now();
+  const row = { ...(previous || {}), version:COMPACT_VERSION, at, scanId:null,
+    marketSnapshotId:trade?.marketSnapshotId || match?.marketSnapshotId || previous?.marketSnapshotId || null,
+    engine:match ? engineName(match.s) : (trade?.researchEngine?.startsWith('MARCI') ? 'MARCI' : 'NEW_ORAYAN'),
+    candidateKey:match?.key || previous?.candidateKey || null, candidateId,
+    symbol:match?.s.symbol || trade?.symbol, side:match?.s.side || trade?.side,
+    event, state:trade?.status || event, score:match?.s.score ?? previous?.score ?? null,
+    tradeId:trade?.id || null, exchangeOrderId:trade?.exchangeOrderId || null,
+    entryMode:match?.s.entryPath || trade?.entryPath || previous?.entryMode || null,
+    orderMode:detail.mode || trade?.mode || null,
+    entry:trade?.plannedEntry ?? match?.s.entry ?? previous?.entry ?? null,
+    sl:trade?.sl ?? match?.s.sl ?? previous?.sl ?? null,
+    tp:trade?.tp ?? match?.s.tp ?? previous?.tp ?? null,
+    changed:'lifecycle', reason:String(detail.reason || '').slice(0, 160) || null };
+  signalEvents.push(row);
+  if (row.candidateKey) lastOutcomeByKey.set(row.candidateKey, row);
+  trim(); scheduleFlush();
+}
+
+function getSignalHistory({ limit = 5000, legacy = false } = {}) {
+  return (legacy ? signalHistory : signalEvents).slice(-limit);
 }
 
 function clearSignalHistory() {
-  signalHistory = [];
+  signalHistory = []; signalEvents = []; lastByKey.clear(); lastSeenAt.clear(); lastOutcomeByKey.clear(); currentCandidates.clear();
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   dirty = false;
   store.write('signalHistory', signalHistory);
+  store.write('signalEventsCompactV2', signalEvents, false);
   logger.warn('journal', 'Signal history cleared by operator');
 }
 
@@ -161,7 +246,10 @@ function recordBosEvent(ev) {
     bosOutcome: ev.outcome,
     bosBarsChecked: ev.barsChecked,
   };
-  signalHistory.push(row);
+  signalEvents.push({version:COMPACT_VERSION, at:row.scanAt, event:'BOS_OUTCOME', state:row.bosOutcome,
+    engine:'NEW_ORAYAN', candidateId:row.id, candidateKey:`BOS|${row.id}`, symbol:row.symbol,
+    side:row.side, reason:row.bosOutcome, marketSnapshotId:null, bosLevel:row.bosLevel,
+    bosBreakTs:row.bosBreakTs, bosBarsChecked:row.bosBarsChecked});
   trim();
   scheduleFlush();
 }
@@ -274,7 +362,7 @@ const TRADE_COLUMNS = [
   { label: 'exchangeOrderId', get: (t) => t.exchangeOrderId },
 ];
 
-const SIGNAL_COLUMNS = [
+const LEGACY_SIGNAL_COLUMNS = [
   { label: 'marketSnapshotId', get: (s) => s.marketSnapshotId || '' },
   { label: 'scanId', get: (s) => s.scanId },
   { label: 'scanAt', get: (s) => s.scanAt },
@@ -378,18 +466,24 @@ const SIGNAL_COLUMNS = [
   { label: 'bosBarsChecked', get: (s) => s.bosBarsChecked },
 ];
 
+const SIGNAL_COLUMNS = ['version','at','scanId','marketSnapshotId','engine','engineVariant',
+  'candidateKey','candidateId','symbol','side','event','state','score','passed','failedGates',
+  'entryMode','orderMode','entry','sl','tp','researchClass','changed','reason','tradeId','exchangeOrderId',
+  'bosLevel','bosBreakTs','bosBarsChecked'].map(label => ({ label, get:s => s[label] }));
+
 function exportTrades(trades, format) {
   if (format === 'csv') return { body: toCsv(trades, TRADE_COLUMNS), contentType: 'text/csv; charset=utf-8', ext: 'csv' };
   return { body: JSON.stringify({ exportedAt: Date.now(), count: trades.length, trades }, null, 2), contentType: 'application/json; charset=utf-8', ext: 'json' };
 }
 
-function exportSignals(signals, format) {
-  if (format === 'csv') return { body: toCsv(signals, SIGNAL_COLUMNS), contentType: 'text/csv; charset=utf-8', ext: 'csv' };
-  return { body: JSON.stringify({ exportedAt: Date.now(), count: signals.length, signals }, null, 2), contentType: 'application/json; charset=utf-8', ext: 'json' };
+function exportSignals(signals, format, { legacy = false } = {}) {
+  if (format === 'csv') return { body: toCsv(signals, legacy ? LEGACY_SIGNAL_COLUMNS : SIGNAL_COLUMNS), contentType: 'text/csv; charset=utf-8', ext: 'csv' };
+  return { body: JSON.stringify({ schema:legacy ? 'SIGNAL_SCAN_LEGACY_V1' : COMPACT_VERSION,
+    exportedAt: Date.now(), count: signals.length, signals }), contentType: 'application/json; charset=utf-8', ext: 'json' };
 }
 
 module.exports = {
-  recordSignals, getSignalHistory, clearSignalHistory, recordBosEvent, flush,
+  recordSignals, recordSignalOutcome, getSignalHistory, clearSignalHistory, recordBosEvent, flush,
   exportTrades, exportSignals,
   getResearchEnvironment: researchJournal.getSnapshots,
   getResearchEvents: researchJournal.getEvents,

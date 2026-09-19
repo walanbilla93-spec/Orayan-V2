@@ -157,9 +157,10 @@ function recordEvents(signals, meta = {}) {
   for (const signal of Array.isArray(signals) ? signals : []) {
     if (!signal?.symbol || !signal?.side) continue;
     const row = project(signal);
-    const candidateKey = [row.signalSource, row.symbol, row.side, row.marciPatternKey || ''].join('|');
-    const signature = JSON.stringify([row.passed, row.failedGates, row.structureEvent, row.locationBucket]);
-    if (!row.passed && lastEventSignature.get(candidateKey) === signature) continue;
+    const candidateKey = [row.signalSource, signal.engine || '', row.symbol, row.side, row.marciPatternKey || row.structureEvent || ''].join('|');
+    const signature = JSON.stringify([row.passed, [...row.failedGates].sort(), row.structureEvent,
+      row.locationBucket, signal.entryPath || null]);
+    if (lastEventSignature.get(candidateKey) === signature) continue;
     lastEventSignature.set(candidateKey, signature);
     events.push({ version:VERSION, key:`${candidateKey}|${at}`, candidateKey, signature, at,
       scanId:meta.scanId || null, marketSnapshotId:row.marketSnapshotId || meta.marketSnapshotId || null, ...row });
