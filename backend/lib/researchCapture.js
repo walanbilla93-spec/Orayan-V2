@@ -6,8 +6,15 @@ const path = require('path');
 const store = require('./store');
 const logger = require('./logger');
 const journal = require('./journal');
+const crypto = require('crypto');
 const VERSION = 'PROSPECTIVE_BIRTH_V2';
+const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V3';
 const dir = path.join(store.DATA_DIR, 'research-v2');
+const RETENTION_MS = 48 * 60 * 60 * 1000;
+const lastCandidate = new Map();
+const lastOutcome = new Map();
+const candidateKeysById = new Map();
+let lastPruneAt = 0;
 const liquidations = new Map();
 const seenLiquidation = new Map();
 const priorTickers = new Map();
@@ -22,10 +29,52 @@ const sd = xs => xs.length > 1 ? Math.sqrt(avg(xs.map(x => (x - avg(xs)) ** 2)))
 function append(kind, row, at = Date.now()) {
   try {
     fs.mkdirSync(dir, { recursive:true });
-    const day = new Date(at).toISOString().slice(0, 10);
-    fs.appendFileSync(path.join(dir, `${kind}-${day}.jsonl`), JSON.stringify({recordType:kind,...row}) + '\n');
+    const stamp = new Date(at).toISOString().slice(0, kind === 'compact' ? 13 : 10).replace('T','-');
+    fs.appendFileSync(path.join(dir, `${kind}-${stamp}.jsonl`), JSON.stringify({recordType:kind,...row}) + '\n');
+    if (at - lastPruneAt > 60 * 60000) { lastPruneAt = at; prune(at); }
   } catch (e) { logger.warn('research', `Could not append ${kind}`, { error:e.message }); }
 }
+function prune(now = Date.now()) {
+  if (!fs.existsSync(dir)) return;
+  const cutoff = now - RETENTION_MS;
+  for (const name of fs.readdirSync(dir)) {
+    const match = /^(compact|births|outcomes|liquidations|coverage)-(\d{4}-\d{2}-\d{2})(?:-(\d{2}))?\.jsonl$/.exec(name);
+    if (!match) continue;
+    const end = Date.parse(`${match[2]}T${match[3]||'00'}:00:00Z`) + (match[3] ? 3600000 : 86400000);
+    if (end < cutoff) { try { fs.unlinkSync(path.join(dir,name)); } catch (_) {} }
+  }
+  for (const [key, value] of lastCandidate) if (value.at < cutoff) lastCandidate.delete(key);
+  for (const [key, value] of lastOutcome) if (value.at < cutoff) lastOutcome.delete(key);
+  for (const [key, value] of candidateKeysById) if (value.at < cutoff) candidateKeysById.delete(key);
+}
+function keyFor(signal) {
+  const engine = signal.signalSource?.startsWith('MARCI') ? 'MARCI' : 'NEW_ORAYAN';
+  const identity = signal.marciIndependent?.patternKey || [signal.engine || signal.entryPath || '',signal.structureEvent || ''].join(':');
+  return [engine,signal.symbol,signal.side,identity].join('|');
+}
+function digest(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,16); }
+function geometryBucket(value) { return value > 0 ? Math.round(200*Math.log(value)) : null; }
+function compactFiles(date = 'all') {
+  if (date !== 'all' && (!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !Number.isFinite(Date.parse(`${date}T00:00:00Z`)) ||
+      new Date(`${date}T00:00:00Z`).toISOString().slice(0,10) !== date)) throw new Error('Invalid UTC date');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter(name => /^compact-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/.test(name) && (date === 'all' || name.startsWith(`compact-${date}-`)))
+    .sort().map(name => path.join(dir,name));
+}
+// Restore the small semantic index after restart, so a restart does not re-emit every setup.
+try {
+  prune(Date.now());
+  for (const file of compactFiles()) for (const line of fs.readFileSync(file,'utf8').split('\n')) {
+    if (!line) continue;
+    const row = JSON.parse(line);
+    if (row.kind === 'candidate_birth' || row.kind === 'candidate_update') lastCandidate.set(row.candidateKey,
+      {at:row.at,signature:row.signature,episodeId:row.episodeId});
+    if (row.candidateId && row.candidateKey) candidateKeysById.set(row.candidateId,
+      {key:row.candidateKey,episodeId:row.episodeId,at:row.at,engine:row.engine});
+    if (row.kind === 'order_outcome') lastOutcome.set(`${row.candidateId}|${row.event}|${row.tradeId||''}`,{at:row.at,signature:row.signature});
+  }
+} catch (e) { logger.warn('research','Could not restore compact research index',{error:e.message}); }
 function cleanOld(now) {
   for (const [symbol, rows] of liquidations) {
     const kept = rows.filter(x => x.timestamp >= now - 60 * 60000);
@@ -48,7 +97,8 @@ function ingest(message, receivedAt = Date.now()) {
       testnet:testnetMode };
     if (!liquidations.has(symbol)) liquidations.set(symbol, []);
     liquidations.get(symbol).push(row);
-    append('liquidations', row, receivedAt);
+    // Raw 500 ms stream stays in the bounded in-memory window. Candidate rows retain
+    // compact rolling aggregates; the public stream is not duplicated on disk.
   }
   cleanOld(receivedAt);
 }
@@ -212,16 +262,84 @@ function birth(signal, context) {
       testnet:!!settings.testnet, status:'LINK_ONLY' },
     utcHour:new Date(scanAt).getUTCHours(), utcDayOfWeek:new Date(scanAt).getUTCDay(),
     orderIntent:null, orderAck:null, fill:null };
-  append('births',row,scanAt);
+  const candidateKey = keyFor(signal);
+  const passed = !!signal.gates?.passed && signal.marciShadow?.passed !== false;
+  const compact = {version:COMPACT_VERSION, at:scanAt, capturedAt:row.capturedAt,
+    candidateKey, candidateId:signal.id, signalTime:row.signalTime, scanId,
+    marketSnapshotId:row.marketSnapshotId, engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',
+    engineVariant:row.engineVariant, signalSource:row.signalSource,
+    symbol:row.symbol, side:row.side, passed, failedGates:[...new Set([...(signal.gates?.failed||[]),...(signal.marciShadow?.failed||[])])].sort(),
+    entryModeDecision:row.entryModeDecision, score:row.score,
+    plannedEntry:entry, plannedSl:sl, plannedTp:tp, grossTargetR:row.grossTargetR,
+    availableTargetRAfterFees:row.availableTargetRAfterFees,
+    estimatedRoundTripCostR:row.costs.estimatedRoundTripCostR, assumedStopSlipR:row.costs.assumedStopSlipR,
+    btcRegime:row.btcRegime, breadth:row.breadth, breadthMomentum:row.breadthMomentum,
+    trendParticipationUpPct:row.trendParticipationUpPct, trendParticipationDownPct:row.trendParticipationDownPct,
+    crossSectionalDispersion:row.crossSectionalDispersion, directionalCoherence:row.directionalCoherence,
+    btcReturn1:row.btcReturn1, btcReturn3:row.btcReturn3, btcVol20:row.btcVol20, btcShockZ:row.btcShockZ,
+    trendMomentum:row.trendMomentum, structureEvent:row.structureEvent, structureTrend:row.structureTrend,
+    locationBucket:signal.locationResearch?.locationBucket||null,
+    retracementDepthEntry:signal.locationResearch?.retracementDepthEntry??null,
+    trendLegNumber:signal.locationResearch?.trendLegNumber??null,
+    rizzySequence:signal.locationResearch?.rizzySequence??signal.marciIndependent?.sequence??null,
+    marciPatternKey:signal.marciIndependent?.patternKey||null,
+    marciTrendStrength:signal.marciIndependent?.trendStrength??null,
+    market:row.market,
+    orderFlow:{coverage:'TOP_OF_BOOK_ONLY',bidAskSizeImbalance:row.market.topOfBookImbalance,
+      takerBuyNotional1m:null,takerSellNotional1m:null},
+    liquidations:row.liquidations,
+    minutePathRef:{symbol:signal.symbol,fromMs:row.minutePath.fromMs,interval:'1',testnet:!!settings.testnet} };
+  // Price and fast market features change every scan. A setup update is material only when
+  // gate/entry state or the planned geometry changes, not when a ticker twitches.
+  const signature = digest([passed,compact.failedGates,compact.entryModeDecision,
+    geometryBucket(entry),geometryBucket(sl),geometryBucket(tp),compact.locationBucket,compact.rizzySequence]);
+  const previous = lastCandidate.get(candidateKey);
+  const continuing = previous && scanAt - previous.at <= 30*60000;
+  const episodeId = continuing ? previous.episodeId : digest([candidateKey,scanAt]);
+  candidateKeysById.set(signal.id,{key:candidateKey,episodeId,at:scanAt,
+    engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN'});
+  if (continuing && previous.signature === signature) { previous.at=scanAt; return; }
+  compact.kind = continuing ? 'candidate_update' : 'candidate_birth';
+  compact.episodeId = episodeId;
+  compact.signature = signature;
+  compact.eventId = digest([candidateKey,compact.kind,signature,scanAt]);
+  lastCandidate.set(candidateKey,{at:scanAt,signature,episodeId});
+  const update = continuing ? {version:COMPACT_VERSION,kind:compact.kind,eventId:compact.eventId,
+    at:scanAt,candidateKey,episodeId,candidateId:signal.id,scanId,marketSnapshotId:compact.marketSnapshotId,
+    engine:compact.engine,symbol:compact.symbol,side:compact.side,signature,
+    passed,failedGates:compact.failedGates,entryModeDecision:compact.entryModeDecision,
+    plannedEntry:entry,plannedSl:sl,plannedTp:tp,
+    grossTargetR:compact.grossTargetR,availableTargetRAfterFees:compact.availableTargetRAfterFees,
+    locationBucket:compact.locationBucket,rizzySequence:compact.rizzySequence} : compact;
+  append('compact',update,scanAt);
 }
 function outcome(candidateId, event, trade, detail={}) {
   try { journal.recordSignalOutcome(candidateId, event, trade, detail); }
   catch (e) { logger.warn('research', 'Could not record compact signal outcome', {error:e.message}); }
-  append('outcomes',{version:VERSION,kind:'order_outcome',candidateId,event,at:Date.now(),
-    tradeId:trade?.id||null,exchangeOrderId:trade?.exchangeOrderId||null,status:trade?.status||null,
-    intendedEntry:trade?.plannedEntry??null,filledAt:trade?.filledAt??null,fillPrice:trade?.fillPrice??null,...detail});
+  const at=Date.now(), tradeId=trade?.id||null;
+  const match=candidateKeysById.get(candidateId);
+  const row={version:COMPACT_VERSION,kind:'order_outcome',candidateId,
+    candidateKey:match?.key||(trade?.symbol&&trade?.side?keyFor(trade):null),
+    episodeId:match?.episodeId||null,engine:match?.engine||
+      (trade?.researchEngine?.startsWith('MARCI')?'MARCI':'NEW_ORAYAN'),
+    symbol:trade?.symbol||null,side:trade?.side||null,event,at,
+    tradeId,exchangeOrderId:trade?.exchangeOrderId||null,status:trade?.status||null,
+    marketSnapshotId:trade?.marketSnapshotId||null, intendedEntry:trade?.plannedEntry??null,
+    filledAt:trade?.filledAt??null,fillPrice:trade?.fillPrice??null,
+    closedAt:trade?.closedAt??null,exitPrice:trade?.exitPrice??null,
+    realisedRR:trade?.realisedRR??null,netPnl:trade?.netPnl??null,
+    reason:String(detail.reason||'').slice(0,160)||null,mode:detail.mode||trade?.mode||null};
+  row.signature=digest([row.event,row.tradeId,row.exchangeOrderId,row.status,row.filledAt,
+    row.fillPrice,row.closedAt,row.exitPrice,row.realisedRR,row.reason,row.mode]);
+  const key=`${candidateId}|${event}|${tradeId||''}`;
+  if (lastOutcome.get(key)?.signature === row.signature) return;
+  row.eventId=digest([key,row.signature,at]);
+  lastOutcome.set(key,{at,signature:row.signature});
+  append('compact',row,at);
 }
-function exportFiles(date = 'all') {
+function exportFiles(date = 'all', raw = false) {
+  prune(Date.now());
+  if (!raw) return compactFiles(date);
   if (date !== 'all' && (!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
       !Number.isFinite(Date.parse(`${date}T00:00:00Z`)) ||
       new Date(`${date}T00:00:00Z`).toISOString().slice(0,10) !== date))
@@ -232,4 +350,4 @@ function exportFiles(date = 'all') {
     .sort((a,b) => a.slice(-16).localeCompare(b.slice(-16)) || a.localeCompare(b))
     .map(name => path.join(dir, name));
 }
-module.exports={VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,exportFiles};
+module.exports={VERSION,COMPACT_VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,exportFiles,prune};

@@ -358,7 +358,6 @@ const TRADE_COLUMNS = [
   { label: 'rizzyAnchor1Ts', get: (t) => t.locationResearch?.rizzyAnchor1Ts },
   { label: 'rizzyAnchor2Price', get: (t) => t.locationResearch?.rizzyAnchor2Price },
   { label: 'rizzyAnchor2Ts', get: (t) => t.locationResearch?.rizzyAnchor2Ts },
-  { label: 'createdAtIso', get: (t) => t.createdAtIso || (t.createdAt ? new Date(t.createdAt).toISOString() : '') },
   { label: 'exchangeOrderId', get: (t) => t.exchangeOrderId },
 ];
 
