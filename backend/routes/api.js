@@ -146,9 +146,10 @@ const routes = {
 
   'GET /api/journal/research/prospective/export': async ({ query }) => {
     const date = query.date || 'all';
-    const files = researchCapture.exportFiles(date);
+    const raw = query.raw === '1';
+    const files = researchCapture.exportFiles(date,raw);
     return { __files:true, files, contentType:'application/x-ndjson; charset=utf-8',
-      filename:`orayan2_prospective_research_${date}.jsonl` };
+      filename:`orayan2_${raw ? 'legacy_research_diagnostics' : 'prospective_compact_v3'}_${date}.jsonl` };
   },
 
 
