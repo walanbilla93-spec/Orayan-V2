@@ -149,7 +149,7 @@ const routes = {
     const raw = query.raw === '1';
     const files = researchCapture.exportFiles(date,raw);
     return { __files:true, files, contentType:'application/x-ndjson; charset=utf-8',
-      filename:`orayan2_${raw ? 'legacy_research_diagnostics' : 'prospective_compact_v3'}_${date}.jsonl` };
+      filename:`orayan2_${raw ? 'legacy_research_diagnostics' : 'prospective_compact_v4'}_${date}.jsonl` };
   },
 
 
