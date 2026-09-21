@@ -354,6 +354,7 @@ async function scanOnce() {
     const btcRegime = await getBtcRegime(settings);
     const scanAt = Date.now();
     const scanId = uid('scan');
+    const researchConfigHash = researchCapture.settingsHash(settings);
     const marketObservations = [];
     const researchCandles = new Map();
     try {
@@ -517,6 +518,7 @@ async function scanOnce() {
       scanId, scanAt, timeframe: settings.timeframe,
       expectedUniverseCount: state.universe.length,
       btcRegime: btcRegime?.regime || null,
+      configHash: researchConfigHash,
     });
     const marketSnapshotId = marketSnapshot?.marketSnapshotId || null;
     for (const signal of journalSignals) signal.marketSnapshotId = marketSnapshotId;
@@ -542,7 +544,7 @@ async function scanOnce() {
 
     // Persisted independently of the 100-row UI snapshot above — this is the full record used
     // for journal export and gate-tuning analysis across many scans, not just the latest one.
-    journal.recordSignals(journalSignals, { scanId, scanAt, marketSnapshotId });
+    journal.recordSignals(journalSignals, { scanId, scanAt, marketSnapshotId, configHash:researchConfigHash });
 
     const blockReason = !settings.tradingEnabled ? 'Trading is switched off'
       : state.killSwitch ? 'Kill switch is engaged'

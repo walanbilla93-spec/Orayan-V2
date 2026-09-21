@@ -8,7 +8,7 @@ const logger = require('./logger');
 const journal = require('./journal');
 const crypto = require('crypto');
 const VERSION = 'PROSPECTIVE_BIRTH_V2';
-const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V3';
+const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V4';
 const dir = path.join(store.DATA_DIR, 'research-v2');
 const RETENTION_MS = 48 * 60 * 60 * 1000;
 const lastCandidate = new Map();
@@ -18,6 +18,11 @@ let lastPruneAt = 0;
 const liquidations = new Map();
 const seenLiquidation = new Map();
 const priorTickers = new Map();
+const pendingForward = new Map();
+const resolvedForward = new Set();
+const flowCache = new Map();
+const flowLabelled = new Set();
+let forwardTimer = null, forwardResolving = false;
 let socket, reconnect, heartbeat, subscribed = new Set(), wanted = new Set(), testnetMode = null;
 let confirmed = new Set(), pendingBatches = new Map(), requestNumber = 0;
 let connectedAt = null, lastMessageAt = null, gapSince = Date.now();
@@ -46,6 +51,12 @@ function prune(now = Date.now()) {
   for (const [key, value] of lastCandidate) if (value.at < cutoff) lastCandidate.delete(key);
   for (const [key, value] of lastOutcome) if (value.at < cutoff) lastOutcome.delete(key);
   for (const [key, value] of candidateKeysById) if (value.at < cutoff) candidateKeysById.delete(key);
+  for (const [key, value] of pendingForward) if (value.at < cutoff) pendingForward.delete(key);
+  for (const key of [...resolvedForward]) {
+    const row = restoredBirths.get(key);
+    if (row && row.at < cutoff) resolvedForward.delete(key);
+  }
+  for (const [symbol, value] of flowCache) if (value.at < now - 5*60000) flowCache.delete(symbol);
 }
 function keyFor(signal) {
   const engine = signal.signalSource?.startsWith('MARCI') ? 'MARCI' : 'NEW_ORAYAN';
@@ -53,6 +64,32 @@ function keyFor(signal) {
   return [engine,signal.symbol,signal.side,identity].join('|');
 }
 function digest(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,16); }
+function stable(value) {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === 'object') return Object.keys(value).sort().reduce((o,k) => {
+    if (value[k] !== undefined && typeof value[k] !== 'function') o[k] = stable(value[k]);
+    return o;
+  }, {});
+  return value;
+}
+function settingsHash(settings) {
+  // Settings contain no API credentials; hash the effective runtime configuration so research
+  // cohorts can prove they came from the same frozen setup without repeating the whole object.
+  return digest(stable(settings || {}));
+}
+async function researchGet(pathname, params, testnet) {
+  // Deliberately bypass the strategy/executor Bybit request queue. Research telemetry must never
+  // delay candles, order placement or trade management. This is public, low-rate, best-effort I/O.
+  const url=new URL(pathname,testnet?'https://api-testnet.bybit.com':'https://api.bybit.com');
+  for (const [k,v] of Object.entries(params||{})) if (v!==undefined&&v!==null&&v!=='') url.searchParams.set(k,String(v));
+  const ctrl=new AbortController(), timer=setTimeout(()=>ctrl.abort(),7000);
+  try {
+    const res=await fetch(url,{signal:ctrl.signal});
+    const json=await res.json();
+    if (!res.ok || json.retCode!==0) throw new Error(`Bybit research ${pathname} failed: ${json.retMsg||res.status}`);
+    return json.result;
+  } finally { clearTimeout(timer); }
+}
 function geometryBucket(value) { return value > 0 ? Math.round(200*Math.log(value)) : null; }
 function compactFiles(date = 'all') {
   if (date !== 'all' && (!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
@@ -63,6 +100,7 @@ function compactFiles(date = 'all') {
     .sort().map(name => path.join(dir,name));
 }
 // Restore the small semantic index after restart, so a restart does not re-emit every setup.
+const restoredBirths = new Map();
 try {
   prune(Date.now());
   for (const file of compactFiles()) for (const line of fs.readFileSync(file,'utf8').split('\n')) {
@@ -71,9 +109,14 @@ try {
     if (row.kind === 'candidate_birth' || row.kind === 'candidate_update') lastCandidate.set(row.candidateKey,
       {at:row.at,signature:row.signature,episodeId:row.episodeId});
     if (row.candidateId && row.candidateKey) candidateKeysById.set(row.candidateId,
-      {key:row.candidateKey,episodeId:row.episodeId,at:row.at,engine:row.engine});
+      {key:row.candidateKey,episodeId:row.episodeId,at:row.at,engine:row.engine,configHash:row.configHash||null});
+    if (row.kind === 'candidate_birth' && row.episodeId) restoredBirths.set(row.episodeId,row);
+    if (row.kind === 'forward_label' && row.episodeId) resolvedForward.add(row.episodeId);
+    if (row.kind === 'order_flow_label' && row.candidateId) flowLabelled.add(row.candidateId);
     if (row.kind === 'order_outcome') lastOutcome.set(`${row.candidateId}|${row.event}|${row.tradeId||''}`,{at:row.at,signature:row.signature});
   }
+  for (const [episodeId,row] of restoredBirths) if (!resolvedForward.has(episodeId) && Date.now()-row.at < RETENTION_MS)
+    pendingForward.set(episodeId,row);
 } catch (e) { logger.warn('research','Could not restore compact research index',{error:e.message}); }
 function cleanOld(now) {
   for (const [symbol, rows] of liquidations) {
@@ -147,6 +190,7 @@ function connect() {
   });
 }
 function watch(symbols, testnet) {
+  startForwardResolver();
   const next = new Set([...symbols, 'BTCUSDT'].filter(s => /^[A-Z0-9]+USDT$/.test(s)));
   if (testnetMode !== null && testnetMode !== !!testnet) stop();
   testnetMode = !!testnet; wanted = next;
@@ -154,8 +198,9 @@ function watch(symbols, testnet) {
 }
 function stop() {
   if (reconnect) clearTimeout(reconnect);
+  if (forwardTimer) clearInterval(forwardTimer);
   if (heartbeat) clearInterval(heartbeat);
-  reconnect = heartbeat = null; wanted = new Set();
+  reconnect = heartbeat = forwardTimer = null; wanted = new Set();
   if (socket) { const old = socket; socket = null; old.removeAllListeners('close'); old.close(); }
   connectedAt = null; gapSince = Date.now(); subscribed = new Set(); confirmed = new Set(); pendingBatches = new Map();
 }
@@ -216,6 +261,150 @@ function tickerDynamics(tickers, at) {
   }
   return out;
 }
+
+async function recentTradeFlow(symbol, observedForAt, testnet) {
+  const bucket = Math.floor(observedForAt / 10000) * 10000;
+  const cacheKey = `${symbol}|${bucket}|${testnet ? 1 : 0}`;
+  const hit = flowCache.get(cacheKey);
+  if (hit) return hit.promise;
+  const promise = (async () => {
+    const res = await researchGet('/v5/market/recent-trade', {
+      category:'linear', symbol, limit:1000,
+    }, testnet);
+    const start = observedForAt - 60000;
+    const rows = (res?.list || []).map(x => ({
+      at:n(x.time), side:String(x.side || ''), size:n(x.size), price:n(x.price),
+    })).filter(x => x.at !== null && x.at <= observedForAt && x.at > start && x.size > 0 && x.price > 0);
+    let buy=0, sell=0;
+    for (const x of rows) {
+      const notional=x.size*x.price;
+      if (x.side === 'Buy') buy += notional;
+      else if (x.side === 'Sell') sell += notional;
+    }
+    const total=buy+sell;
+    const times=rows.map(x=>x.at);
+    return {status:'OK',source:'Bybit /v5/market/recent-trade',windowMs:60000,
+      takerBuyNotional1m:r(buy),takerSellNotional1m:r(sell),
+      takerImbalance1m:r(total>0?(buy-sell)/total:null),tradeCount1m:rows.length,
+      oldestTradeAt:times.length?Math.min(...times):null,newestTradeAt:times.length?Math.max(...times):null};
+  })();
+  flowCache.set(cacheKey,{at:Date.now(),promise});
+  return promise;
+}
+function scheduleOrderFlowLabel(compact) {
+  if (!compact?.candidateId || flowLabelled.has(compact.candidateId)) return;
+  flowLabelled.add(compact.candidateId);
+  recentTradeFlow(compact.symbol, compact.at, !!compact.minutePathRef?.testnet).then(flow => {
+    const row={version:COMPACT_VERSION,kind:'order_flow_label',eventId:digest(['flow',compact.candidateId,compact.at]),
+      at:Date.now(),observedForAt:compact.at,candidateKey:compact.candidateKey,episodeId:compact.episodeId,
+      candidateId:compact.candidateId,engine:compact.engine,symbol:compact.symbol,side:compact.side,
+      configHash:compact.configHash||null,...flow};
+    append('compact',row,row.at);
+  }).catch(e => {
+    logger.warn('research','Recent public-trade capture unavailable',{symbol:compact.symbol,error:e.message});
+    flowLabelled.delete(compact.candidateId); // allow a later retry on a fresh birth id
+  });
+}
+function directionalReturn(reference, close, side) {
+  if (!(reference > 0) || !(close > 0)) return null;
+  const raw=close/reference-1;
+  return r((side === 'SELL' ? -1 : 1) * raw);
+}
+function computeForwardLabel(birth, bars) {
+  const start = Math.ceil(Number(birth.at)/60000)*60000; // exclude partial birth minute to prevent pre-birth contamination
+  const usable=(bars||[]).filter(x => x.ts >= start && x.ts < birth.at + 61*60000);
+  const ref=n(birth.market?.markPrice), entry=n(birth.plannedEntry), sl=n(birth.plannedSl), tp=n(birth.plannedTp);
+  const risk=entry!==null&&sl!==null?Math.abs(entry-sl):null;
+  const atr=n(birth.trendMomentum?.atr14), dir=birth.side === 'SELL' ? -1 : 1;
+  const closeAt = mins => {
+    const cutoff=birth.at + mins*60000;
+    const rows=usable.filter(x => x.ts+60000 <= cutoff);
+    return rows.length ? rows.at(-1).close : null;
+  };
+  let mfePx=null, maePx=null;
+  if (ref>0 && usable.length) {
+    if (dir>0) { mfePx=Math.max(...usable.map(x=>x.high))-ref; maePx=ref-Math.min(...usable.map(x=>x.low)); }
+    else { mfePx=ref-Math.min(...usable.map(x=>x.low)); maePx=Math.max(...usable.map(x=>x.high))-ref; }
+  }
+  let touchIndex=-1, touchAt=null;
+  if (entry>0) {
+    touchIndex=usable.findIndex(x => x.low <= entry && x.high >= entry);
+    if (touchIndex>=0) touchAt=usable[touchIndex].ts;
+  }
+  let outcome=touchIndex>=0?'NEITHER':'ENTRY_NOT_TOUCHED', resolvedAt=null, sameMinuteAmbiguity=false;
+  let entryTouchBarAmbiguous=false, touchBarTpHit=false, touchBarSlHit=false;
+  let postEntryMfeR=null, postEntryMaeR=null;
+  if (touchIndex>=0 && risk>0) {
+    const touchBar=usable[touchIndex];
+    touchBarTpHit=tp>0 ? (dir>0 ? touchBar.high>=tp : touchBar.low<=tp) : false;
+    touchBarSlHit=sl>0 ? (dir>0 ? touchBar.low<=sl : touchBar.high>=sl) : false;
+    entryTouchBarAmbiguous=touchBarTpHit || touchBarSlHit;
+    const after=usable.slice(touchIndex+1); // exclude touch minute: OHLC cannot order entry vs extremes within that bar
+    if (entryTouchBarAmbiguous) { outcome='ENTRY_TOUCH_BAR_AMBIGUOUS'; sameMinuteAmbiguity=true; }
+    else for (const x of after) {
+      const tpHit=tp>0 ? (dir>0 ? x.high>=tp : x.low<=tp) : false;
+      const slHit=sl>0 ? (dir>0 ? x.low<=sl : x.high>=sl) : false;
+      if (tpHit || slHit) {
+        resolvedAt=x.ts;
+        if (tpHit && slHit) { sameMinuteAmbiguity=true; outcome='BOTH_SAME_MINUTE_STOP_FIRST'; }
+        else outcome=tpHit?'TP_FIRST':'SL_FIRST';
+        break;
+      }
+    }
+    if (after.length) {
+      let maxFav=0,maxAdv=0;
+      if (dir>0) { maxFav=Math.max(...after.map(x=>x.high-entry)); maxAdv=Math.max(...after.map(x=>entry-x.low)); }
+      else { maxFav=Math.max(...after.map(x=>entry-x.low)); maxAdv=Math.max(...after.map(x=>x.high-entry)); }
+      postEntryMfeR=r(maxFav/risk); postEntryMaeR=r(maxAdv/risk);
+    }
+  }
+  const bid=n(birth.market?.bid),ask=n(birth.market?.ask),mid=bid>0&&ask>0?(bid+ask)/2:ref;
+  const marketableAtBirth=entry>0 ? (birth.side==='BUY' ? (ask>0?entry>=ask:null) : (bid>0?entry<=bid:null)) : null;
+  return {version:COMPACT_VERSION,kind:'forward_label',at:Date.now(),evaluatedFromAt:start,
+    partialBirthMinuteExcluded:true,source:'Bybit /v5/market/kline 1m',candidateKey:birth.candidateKey,
+    episodeId:birth.episodeId,candidateId:birth.candidateId,engine:birth.engine,symbol:birth.symbol,side:birth.side,
+    configHash:birth.configHash||null,birthAt:birth.at,birthMarkPrice:ref,
+    directionalReturn15m:directionalReturn(ref,closeAt(15),birth.side),
+    directionalReturn30m:directionalReturn(ref,closeAt(30),birth.side),
+    directionalReturn60m:directionalReturn(ref,closeAt(60),birth.side),
+    mfe60mR:r(risk>0&&mfePx!==null?mfePx/risk:null),mae60mR:r(risk>0&&maePx!==null?maePx/risk:null),
+    mfe60mAtr:r(atr>0&&mfePx!==null?mfePx/atr:null),mae60mAtr:r(atr>0&&maePx!==null?maePx/atr:null),
+    plannedEntryTouched:touchIndex>=0,plannedEntryTouchAt:touchAt,
+    entryTouchedWithin15m:touchAt!==null?touchAt < birth.at+15*60000:false,
+    entryTouchedWithin30m:touchAt!==null?touchAt < birth.at+30*60000:false,
+    entryTouchedWithin60m:touchAt!==null?touchAt < birth.at+60*60000:false,
+    plannedTpSlOutcome:outcome,plannedTpSlResolvedAt:resolvedAt,sameMinuteAmbiguity,
+    entryTouchBarAmbiguous,touchBarTpHit,touchBarSlHit,touchBarExcludedFromPostEntryExcursions:true,
+    postEntryMfeR,postEntryMaeR,marketableAtBirth,
+    entryDistanceBpsFromMid:r(entry>0&&mid>0?10000*Math.abs(entry-mid)/mid:null),
+    fillAuditMethod:'1M_OHLC_PRICE_CROSS_ONLY_NOT_QUEUE_OR_SPREAD_GUARANTEE',barsEvaluated:usable.length};
+}
+async function resolveDueForwardLabels(limit=8) {
+  if (forwardResolving) return;
+  forwardResolving=true;
+  try {
+    const now=Date.now();
+    const due=[...pendingForward.values()].filter(x => now >= x.at + 62*60000).sort((a,b)=>a.at-b.at).slice(0,limit);
+    for (const birth of due) {
+      try {
+        const start=Math.ceil(birth.at/60000)*60000;
+        const end=birth.at+61*60000;
+        const res=await researchGet('/v5/market/kline',{category:'linear',symbol:birth.symbol,interval:'1',start,end,limit:1000},!!birth.minutePathRef?.testnet);
+        const bars=(res?.list||[]).map(x=>({ts:n(x[0]),open:n(x[1]),high:n(x[2]),low:n(x[3]),close:n(x[4])}))
+          .filter(x=>x.ts!==null&&x.high!==null&&x.low!==null&&x.close!==null).sort((a,b)=>a.ts-b.ts);
+        const row=computeForwardLabel(birth,bars);
+        row.eventId=digest(['forward',birth.episodeId,birth.at]);
+        append('compact',row,row.at);
+        resolvedForward.add(birth.episodeId); pendingForward.delete(birth.episodeId);
+      } catch (e) { logger.warn('research','Forward label resolution failed',{symbol:birth.symbol,error:e.message}); }
+    }
+  } finally { forwardResolving=false; }
+}
+function startForwardResolver() {
+  if (forwardTimer) return;
+  forwardTimer=setInterval(() => resolveDueForwardLabels().catch(e => logger.warn('research','Forward resolver error',{error:e.message})),30000);
+  if (forwardTimer.unref) forwardTimer.unref();
+}
 function birth(signal, context) {
   const {scanId, scanAt, ticker, candles, settings, snapshot, btc, universe, tickerDynamic} = context;
   const entry=n(signal.entry), sl=n(signal.sl), tp=n(signal.tp), price=n(ticker?.markPrice);
@@ -224,8 +413,10 @@ function birth(signal, context) {
   const roundTripCost=entry>0&&risk>0? (entry*(n(settings.makerFeePct)||0)+Math.abs(tp||entry)*(n(settings.takerFeePct)||0))/(100*risk):null;
   const slipR=entry>0&&risk>0?entry*(n(settings.slSlipBps)||0)/(10000*risk):null;
   const engine=signal.signalSource?.startsWith('MARCI')?'Marci':'New Orayan';
+  const configHash=settingsHash(settings);
+  const capturedAt=Date.now();
   const row={ version:VERSION, kind:'candidate_birth', candidateId:signal.id, scanId, signalTime:n(signal.createdAt)||scanAt,
-    capturedAt:Date.now(), engine, engineVariant:signal.engine||null, signalSource:signal.signalSource||null,
+    capturedAt, configHash, captureLagMs:capturedAt-scanAt, signalToCaptureLagMs:capturedAt-(n(signal.createdAt)||scanAt), engine, engineVariant:signal.engine||null, signalSource:signal.signalSource||null,
     symbol:signal.symbol, side:signal.side, plannedEntry:entry, plannedSl:sl, plannedTp:tp,
     entryModeDecision:signal.gates?.passed && signal.marciShadow?.passed !== false
       ? (signal.entryPath||'ORIGINAL_PULLBACK'):'NO_TRADE',
@@ -264,7 +455,8 @@ function birth(signal, context) {
     orderIntent:null, orderAck:null, fill:null };
   const candidateKey = keyFor(signal);
   const passed = !!signal.gates?.passed && signal.marciShadow?.passed !== false;
-  const compact = {version:COMPACT_VERSION, at:scanAt, capturedAt:row.capturedAt,
+  const compact = {version:COMPACT_VERSION, at:scanAt, capturedAt:row.capturedAt, configHash,
+    captureLagMs:row.captureLagMs, signalToCaptureLagMs:row.signalToCaptureLagMs,
     candidateKey, candidateId:signal.id, signalTime:row.signalTime, scanId,
     marketSnapshotId:row.marketSnapshotId, engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',
     engineVariant:row.engineVariant, signalSource:row.signalSource,
@@ -285,8 +477,8 @@ function birth(signal, context) {
     marciPatternKey:signal.marciIndependent?.patternKey||null,
     marciTrendStrength:signal.marciIndependent?.trendStrength??null,
     market:row.market,
-    orderFlow:{coverage:'TOP_OF_BOOK_ONLY',bidAskSizeImbalance:row.market.topOfBookImbalance,
-      takerBuyNotional1m:null,takerSellNotional1m:null},
+    orderFlow:{coverage:'ASYNC_PUBLIC_TRADE_LABEL',bidAskSizeImbalance:row.market.topOfBookImbalance,
+      takerBuyNotional1m:null,takerSellNotional1m:null,takerFlowJoinKey:signal.id},
     liquidations:row.liquidations,
     minutePathRef:{symbol:signal.symbol,fromMs:row.minutePath.fromMs,interval:'1',testnet:!!settings.testnet} };
   // Price and fast market features change every scan. A setup update is material only when
@@ -297,7 +489,7 @@ function birth(signal, context) {
   const continuing = previous && scanAt - previous.at <= 30*60000;
   const episodeId = continuing ? previous.episodeId : digest([candidateKey,scanAt]);
   candidateKeysById.set(signal.id,{key:candidateKey,episodeId,at:scanAt,
-    engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN'});
+    engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',configHash});
   if (continuing && previous.signature === signature) { previous.at=scanAt; return; }
   compact.kind = continuing ? 'candidate_update' : 'candidate_birth';
   compact.episodeId = episodeId;
@@ -306,12 +498,17 @@ function birth(signal, context) {
   lastCandidate.set(candidateKey,{at:scanAt,signature,episodeId});
   const update = continuing ? {version:COMPACT_VERSION,kind:compact.kind,eventId:compact.eventId,
     at:scanAt,candidateKey,episodeId,candidateId:signal.id,scanId,marketSnapshotId:compact.marketSnapshotId,
-    engine:compact.engine,symbol:compact.symbol,side:compact.side,signature,
+    engine:compact.engine,symbol:compact.symbol,side:compact.side,signature,configHash,
+    captureLagMs:compact.captureLagMs,signalToCaptureLagMs:compact.signalToCaptureLagMs,
     passed,failedGates:compact.failedGates,entryModeDecision:compact.entryModeDecision,
     plannedEntry:entry,plannedSl:sl,plannedTp:tp,
     grossTargetR:compact.grossTargetR,availableTargetRAfterFees:compact.availableTargetRAfterFees,
     locationBucket:compact.locationBucket,rizzySequence:compact.rizzySequence} : compact;
   append('compact',update,scanAt);
+  if (compact.kind === 'candidate_birth') {
+    pendingForward.set(episodeId,compact);
+    scheduleOrderFlowLabel(compact);
+  }
 }
 function outcome(candidateId, event, trade, detail={}) {
   try { journal.recordSignalOutcome(candidateId, event, trade, detail); }
@@ -322,6 +519,7 @@ function outcome(candidateId, event, trade, detail={}) {
     candidateKey:match?.key||(trade?.symbol&&trade?.side?keyFor(trade):null),
     episodeId:match?.episodeId||null,engine:match?.engine||
       (trade?.researchEngine?.startsWith('MARCI')?'MARCI':'NEW_ORAYAN'),
+    configHash:match?.configHash||null,
     symbol:trade?.symbol||null,side:trade?.side||null,event,at,
     tradeId,exchangeOrderId:trade?.exchangeOrderId||null,status:trade?.status||null,
     marketSnapshotId:trade?.marketSnapshotId||null, intendedEntry:trade?.plannedEntry??null,
@@ -350,4 +548,5 @@ function exportFiles(date = 'all', raw = false) {
     .sort((a,b) => a.slice(-16).localeCompare(b.slice(-16)) || a.localeCompare(b))
     .map(name => path.join(dir, name));
 }
-module.exports={VERSION,COMPACT_VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,exportFiles,prune};
+module.exports={VERSION,COMPACT_VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,
+  settingsHash,computeForwardLabel,resolveDueForwardLabels,exportFiles,prune};

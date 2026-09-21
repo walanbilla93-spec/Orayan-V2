@@ -1,15 +1,18 @@
 'use strict';
 const store = require('./store');
 const VERSION = 'MARKET_ENVIRONMENT_RESEARCH_V1';
-const RETENTION_MS = 8 * 86400000;
+// Research events are needed for rejected-candidate counterfactual work. Keep a time-based
+// window large enough for multi-day analysis; the old 20k hard cap discarded ~7h in <2 days.
+const RETENTION_MS = 4 * 86400000; // 96h, safely above the requested 72h minimum
 const MAX_SNAPSHOTS = 2500;
-const MAX_EVENTS = 20000;
+const MAX_EVENTS = 100000; // safety ceiling; time retention is the primary policy
 let snapshots = store.read('researchEnvironmentV1', []);
 let events = store.read('researchEventsV1', []);
 if (!Array.isArray(snapshots)) snapshots = [];
 if (!Array.isArray(events)) events = [];
-snapshots = snapshots.slice(-MAX_SNAPSHOTS);
-events = events.slice(-MAX_EVENTS);
+const bootNow = Date.now();
+snapshots = snapshots.filter(x => Number(x?.barOpenAt || x?.observedAt || 0) >= bootNow - RETENTION_MS).slice(-MAX_SNAPSHOTS);
+events = events.filter(x => Number(x?.at || 0) >= bootNow - RETENTION_MS).slice(-MAX_EVENTS);
 let timer = null, dirty = false;
 const lastEventSignature = new Map(events.filter(e => e?.candidateKey && e?.signature)
   .map(e => [e.candidateKey, e.signature]));
@@ -110,7 +113,7 @@ function captureMarketSnapshot(observations, meta = {}) {
       ? (shockZ > 0 ? 'UP_SHOCK' : 'DOWN_SHOCK') : 'NORMAL';
   const id = `mes_${meta.timeframe || 'na'}_${barOpenAt}`;
   const snapshot = {
-    version:VERSION, id, marketSnapshotId:id, barOpenAt,
+    version:VERSION, id, marketSnapshotId:id, barOpenAt, configHash:meta.configHash || null,
     barOpenIso:new Date(barOpenAt).toISOString(), observedAt:meta.scanAt || Date.now(),
     timeframe:meta.timeframe || null, expectedUniverseCount:meta.expectedUniverseCount || null,
     universeCount:alts.length, coveragePct:pct(alts.length, meta.expectedUniverseCount || alts.length),
@@ -163,7 +166,8 @@ function recordEvents(signals, meta = {}) {
     if (lastEventSignature.get(candidateKey) === signature) continue;
     lastEventSignature.set(candidateKey, signature);
     events.push({ version:VERSION, key:`${candidateKey}|${at}`, candidateKey, signature, at,
-      scanId:meta.scanId || null, marketSnapshotId:row.marketSnapshotId || meta.marketSnapshotId || null, ...row });
+      scanId:meta.scanId || null, marketSnapshotId:row.marketSnapshotId || meta.marketSnapshotId || null,
+      configHash:meta.configHash || null, ...row });
   }
   events = events.filter(x => x.at >= at - RETENTION_MS).slice(-MAX_EVENTS);
   schedule();
