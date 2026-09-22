@@ -800,6 +800,7 @@ function init() {
   $('#btnExportSignalsCsv').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=csv'));
   $('#btnExportSignalsJson').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=json'));
   $('#btnExportProspectiveResearch').addEventListener('click', () => downloadFrom('/api/journal/research/prospective/export'));
+  $('#btnExportSupplementResearch').addEventListener('click', () => downloadFrom('/api/journal/research/supplement/export'));
   $('#btnExportLegacyResearch').addEventListener('click', () => downloadFrom('/api/journal/research/prospective/export?raw=1'));
   $('#btnExportResearchEvents').addEventListener('click', () => downloadFrom('/api/journal/research/events/export?format=csv'));
   $('#btnExportShadowCsv').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=csv'));
