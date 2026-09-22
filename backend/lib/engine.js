@@ -15,6 +15,7 @@ const locationResearch = require('./locationResearch');
 const marciShadow = require('./marciShadow');
 const marciIndependent = require('./marciIndependent');
 const researchCapture = require('./researchCapture');
+const researchSupplement = require('./researchSupplement');
 const { num, uid } = require('./util');
 
 const state = {
@@ -44,6 +45,7 @@ const state = {
 
 let trades = store.read('trades', []);
 let shadowTrades = store.read('marciShadowTrades', []);
+let lastStopRecoveryBackfillAt = 0;
 let timer = null;
 
 // Persist the operator's run intent separately from process memory. A deploy/container restart
@@ -338,6 +340,13 @@ async function scanOnce() {
   const settings = settingsMod.effective();
 
   try {
+    if (Date.now()-lastStopRecoveryBackfillAt >= 3600000) {
+      lastStopRecoveryBackfillAt = Date.now();
+      for (const trade of closedTrades()) {
+        try { researchSupplement.observeStop(trade,researchCapture.candidateLink(trade.signalId)||{}); }
+        catch (e) { logger.warn('research','Stop recovery restore failed',{error:e.message}); }
+      }
+    }
     await manageOpenTrades(settings);
     await manageShadowTrades(settings);
     await manageMarciCounterfactuals(settings);
@@ -357,6 +366,7 @@ async function scanOnce() {
     const researchConfigHash = researchCapture.settingsHash(settings);
     const marketObservations = [];
     const researchCandles = new Map();
+    const structureObservations = [];
     try {
       const btcCandles = await marketData.getCandles('BTCUSDT', settings.timeframe, 200, { testnet: settings.testnet });
       marketObservations.push(journal.buildMarketObservation('BTCUSDT', btcCandles));
@@ -393,6 +403,7 @@ async function scanOnce() {
       try {
         candles = await marketData.getCandles(symbol, settings.timeframe, 200, { testnet: settings.testnet });
         researchCandles.set(symbol, candles);
+        structureObservations.push({symbol,candles,ticker,tickerDynamic:tickerResearch.get(symbol)});
         marketObservations.push(journal.buildMarketObservation(symbol, candles));
       } catch (e) {
         logger.debug('engine', `No candles for ${symbol}`, { error: e.message });
@@ -533,6 +544,11 @@ async function scanOnce() {
         tickerDynamic:tickerResearch.get(signal.symbol) }); }
       catch (e) { logger.warn('research', 'Birth capture failed', { error:e.message, symbol:signal.symbol }); }
     }
+    for (const observation of structureObservations) {
+      try { researchSupplement.observeStructure({...observation,settings,scanAt,
+        configHash:researchConfigHash,marketSnapshotId,marketSnapshot,signals:journalSignals}); }
+      catch (e) { logger.warn('research','Structure capture failed',{symbol:observation.symbol,error:e.message}); }
+    }
 
     // Best-first: the slot limit means ranking decides what actually gets traded.
     candidates.sort((a, b) => b.score - a.score);
@@ -584,7 +600,14 @@ async function scanOnce() {
         funnel.sized++;
 
         const trade = executor.createPendingOrder({ signal, sizing, settings });
+        const candidateLink = researchCapture.candidateLink(signal.id);
         trade.marketSnapshotId = signal.marketSnapshotId || marketSnapshotId;
+        trade.configHash = researchConfigHash;
+        trade.candidateKey = candidateLink?.key || null;
+        trade.episodeId = candidateLink?.episodeId || null;
+        trade.atrAtBirth = signal.atr ?? null;
+        trade.structureBreakLevel = signal.retestLevel ?? signal.levels?.brokenLevel ?? null;
+        trade.testnet = !!settings.testnet;
         researchCapture.outcome(signal.id, 'ORDER_INTENT', trade, { mode:settings.mode });
 
         if (settings.mode === 'live') {

@@ -7,6 +7,7 @@ const store = require('./store');
 const logger = require('./logger');
 const journal = require('./journal');
 const crypto = require('crypto');
+const retraceShadow = require('./retraceShadow');
 const VERSION = 'PROSPECTIVE_BIRTH_V2';
 const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V4';
 const dir = path.join(store.DATA_DIR, 'research-v2');
@@ -25,7 +26,8 @@ const flowLabelled = new Set();
 let forwardTimer = null, forwardResolving = false;
 let socket, reconnect, heartbeat, subscribed = new Set(), wanted = new Set(), testnetMode = null;
 let confirmed = new Set(), pendingBatches = new Map(), requestNumber = 0;
-let connectedAt = null, lastMessageAt = null, gapSince = Date.now();
+let confirmedAt = new Map();
+let connectedAt = null, lastMessageAt = null, lastSocketMessageAt = null, gapSince = Date.now();
 
 const n = v => { const x = Number(v); return v == null || v === '' || !Number.isFinite(x) ? null : x; };
 const r = v => v == null || !Number.isFinite(v) ? null : Math.round(v * 1e8) / 1e8;
@@ -109,7 +111,8 @@ try {
     if (row.kind === 'candidate_birth' || row.kind === 'candidate_update') lastCandidate.set(row.candidateKey,
       {at:row.at,signature:row.signature,episodeId:row.episodeId});
     if (row.candidateId && row.candidateKey) candidateKeysById.set(row.candidateId,
-      {key:row.candidateKey,episodeId:row.episodeId,at:row.at,engine:row.engine,configHash:row.configHash||null});
+      {key:row.candidateKey,episodeId:row.episodeId,at:row.at,engine:row.engine,configHash:row.configHash||null,
+        retraceStateShadow:row.retraceStateShadow||null});
     if (row.kind === 'candidate_birth' && row.episodeId) restoredBirths.set(row.episodeId,row);
     if (row.kind === 'forward_label' && row.episodeId) resolvedForward.add(row.episodeId);
     if (row.kind === 'order_flow_label' && row.candidateId) flowLabelled.add(row.candidateId);
@@ -120,11 +123,47 @@ try {
 } catch (e) { logger.warn('research','Could not restore compact research index',{error:e.message}); }
 function cleanOld(now) {
   for (const [symbol, rows] of liquidations) {
-    const kept = rows.filter(x => x.timestamp >= now - 60 * 60000);
+    // The 60m forward structure label still needs the five minutes before the break.
+    const kept = rows.filter(x => x.timestamp >= now - 90 * 60000);
     if (kept.length) liquidations.set(symbol, kept); else liquidations.delete(symbol);
   }
   for (const [key, at] of seenLiquidation) if (at < now - 60000) seenLiquidation.delete(key);
 }
+// A null window means the live stream did not continuously cover that interval. Bybit's
+// liquidation side is the liquidated position side: Sell liquidates a long, Buy a short.
+function liquidationWindows(symbol, breakTs, asOf = Date.now()) {
+  const continuous = connectedAt !== null && socket?.readyState === 1 && lastSocketMessageAt !== null
+    && asOf-lastSocketMessageAt<=60000 && confirmed.has(symbol)
+    && confirmedAt.get(symbol) <= breakTs - 5*60000;
+  const preCovered = continuous && asOf>=breakTs && asOf-breakTs<=80*60000;
+  const postCovered = continuous && asOf>=breakTs+5*60000 && asOf-breakTs<=80*60000;
+  const rows = (liquidations.get(symbol) || []).filter(x => x.receivedAt <= asOf);
+  const window = (from, to, covered) => {
+    if (!covered) return null;
+    return liquidationWindowTotals(rows,breakTs,from,to);
+  };
+  const pre5=window(-5*60000,0,preCovered),pre1=window(-60000,0,preCovered);
+  const post1=window(0,60000,postCovered),post5=window(0,5*60000,postCovered);
+  const baseline=[];
+  if (preCovered && confirmedAt.get(symbol)<=breakTs-50*60000 && asOf-breakTs<=30*60000) for (let i=0;i<45;i++) {
+    const end=breakTs-(i+5)*60000;
+    baseline.push(rows.filter(x=>x.timestamp>=end-60000&&x.timestamp<end).reduce((a,x)=>a+x.notional,0));
+  }
+  const sigma=sd(baseline);
+  return {coverage:pre5&&post5?'FULL':pre5?'PRE_ONLY':'GAP_OR_WARMUP',pre5,pre1,post1,post5,
+    baselineMean1m:baseline.length?roundOrNull(avg(baseline)):null,
+    baselineSd1m:sigma>0?r(sigma):null,
+    intensityZ:pre5&&post5&&sigma>0?r((post5.totalNotional/5-avg(baseline))/sigma):null,
+    sideMeaning:'Sell=long liquidation; Buy=short liquidation',source:'in_memory_Bybit_allLiquidation'};
+}
+function roundOrNull(x) { return x==null?null:r(x); }
+function liquidationWindowTotals(rows,breakTs,from,to) {
+  const selected=(rows||[]).filter(x=>x.timestamp >= breakTs+from && x.timestamp < breakTs+to);
+  const long=selected.filter(x=>x.side==='Sell').reduce((a,x)=>a+x.notional,0);
+  const short=selected.filter(x=>x.side==='Buy').reduce((a,x)=>a+x.notional,0);
+  return {longNotional:r(long),shortNotional:r(short),totalNotional:r(long+short)};
+}
+function candidateLink(candidateId) { return candidateKeysById.get(candidateId) || null; }
 function ingest(message, receivedAt = Date.now()) {
   if (!message?.topic?.startsWith('allLiquidation.') || !Array.isArray(message.data)) return;
   lastMessageAt = receivedAt;
@@ -156,7 +195,7 @@ function subscribe(symbols) {
       socket.send(JSON.stringify({ op, req_id, args:batch.map(s => `allLiquidation.${s}`) }));
     }
   }
-  for (const s of removed) { subscribed.delete(s); confirmed.delete(s); }
+  for (const s of removed) { subscribed.delete(s); confirmed.delete(s); confirmedAt.delete(s); }
   for (const s of missing) subscribed.add(s);
 }
 function connect() {
@@ -166,16 +205,17 @@ function connect() {
   const url = testnetMode ? 'wss://stream-testnet.bybit.com/v5/public/linear' : 'wss://stream.bybit.com/v5/public/linear';
   try { socket = new WS(url); } catch (e) { logger.warn('research', 'Liquidation socket failed', { error:e.message }); socket = null; return; }
   socket.on('open', () => {
-    connectedAt = Date.now(); gapSince = null; subscribed = new Set(); confirmed = new Set(); pendingBatches = new Map(); subscribe(wanted);
+    connectedAt = Date.now(); lastSocketMessageAt=connectedAt; gapSince = null; subscribed = new Set(); confirmed = new Set(); confirmedAt = new Map(); pendingBatches = new Map(); subscribe(wanted);
     heartbeat = setInterval(() => { if (socket?.readyState === 1) socket.send(JSON.stringify({ op:'ping' })); }, 20000);
     if (heartbeat.unref) heartbeat.unref();
   });
   socket.on('message', raw => { try {
+    lastSocketMessageAt=Date.now();
     const msg = JSON.parse(String(raw));
     const pending = pendingBatches.get(msg.req_id);
     if (pending && msg.op === pending.op) {
       pendingBatches.delete(msg.req_id);
-      if (msg.success === true && pending.op === 'subscribe') for (const s of pending.batch) confirmed.add(s);
+      if (msg.success === true && pending.op === 'subscribe') for (const s of pending.batch) { confirmed.add(s); confirmedAt.set(s,Date.now()); }
       if (msg.success !== true) logger.warn('research', 'Liquidation subscription rejected', { req_id:msg.req_id, ret_msg:msg.ret_msg });
     }
     ingest(msg);
@@ -183,7 +223,7 @@ function connect() {
   socket.on('error', e => logger.warn('research', 'Liquidation stream error', { error:e.message }));
   socket.on('close', () => {
     if (heartbeat) clearInterval(heartbeat);
-    heartbeat = null; socket = null; subscribed = new Set(); confirmed = new Set(); pendingBatches = new Map(); connectedAt = null; gapSince = Date.now();
+    heartbeat = null; socket = null; subscribed = new Set(); confirmed = new Set(); confirmedAt = new Map(); pendingBatches = new Map(); connectedAt = null; lastSocketMessageAt=null; gapSince = Date.now();
     append('coverage', { version:VERSION, event:'stream_disconnected', at:gapSince, testnet:testnetMode });
     reconnect = setTimeout(connect, 5000);
     if (reconnect.unref) reconnect.unref();
@@ -202,7 +242,7 @@ function stop() {
   if (heartbeat) clearInterval(heartbeat);
   reconnect = heartbeat = forwardTimer = null; wanted = new Set();
   if (socket) { const old = socket; socket = null; old.removeAllListeners('close'); old.close(); }
-  connectedAt = null; gapSince = Date.now(); subscribed = new Set(); confirmed = new Set(); pendingBatches = new Map();
+  connectedAt = null; lastSocketMessageAt=null; gapSince = Date.now(); subscribed = new Set(); confirmed = new Set(); confirmedAt = new Map(); pendingBatches = new Map();
 }
 function liquidationFeatures(symbol, at, price, turnover24h) {
   const covered = connectedAt !== null && (!gapSince || gapSince > at) && confirmed.has(symbol);
@@ -402,7 +442,10 @@ async function resolveDueForwardLabels(limit=8) {
 }
 function startForwardResolver() {
   if (forwardTimer) return;
-  forwardTimer=setInterval(() => resolveDueForwardLabels().catch(e => logger.warn('research','Forward resolver error',{error:e.message})),30000);
+  forwardTimer=setInterval(() => {
+    resolveDueForwardLabels().catch(e => logger.warn('research','Forward resolver error',{error:e.message}));
+    require('./researchSupplement').resolveDue().catch(e => logger.warn('research','Supplement resolver error',{error:e.message}));
+  },30000);
   if (forwardTimer.unref) forwardTimer.unref();
 }
 function birth(signal, context) {
@@ -481,15 +524,18 @@ function birth(signal, context) {
       takerBuyNotional1m:null,takerSellNotional1m:null,takerFlowJoinKey:signal.id},
     liquidations:row.liquidations,
     minutePathRef:{symbol:signal.symbol,fromMs:row.minutePath.fromMs,interval:'1',testnet:!!settings.testnet} };
+  if (compact.engine === 'NEW_ORAYAN') compact.retraceStateShadow=retraceShadow.classify(compact);
   // Price and fast market features change every scan. A setup update is material only when
   // gate/entry state or the planned geometry changes, not when a ticker twitches.
   const signature = digest([passed,compact.failedGates,compact.entryModeDecision,
-    geometryBucket(entry),geometryBucket(sl),geometryBucket(tp),compact.locationBucket,compact.rizzySequence]);
+    geometryBucket(entry),geometryBucket(sl),geometryBucket(tp),compact.locationBucket,compact.rizzySequence,
+    compact.retraceStateShadow?.state]);
   const previous = lastCandidate.get(candidateKey);
   const continuing = previous && scanAt - previous.at <= 30*60000;
   const episodeId = continuing ? previous.episodeId : digest([candidateKey,scanAt]);
   candidateKeysById.set(signal.id,{key:candidateKey,episodeId,at:scanAt,
-    engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',configHash});
+    engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',configHash,
+    retraceStateShadow:compact.retraceStateShadow||null});
   if (continuing && previous.signature === signature) { previous.at=scanAt; return; }
   compact.kind = continuing ? 'candidate_update' : 'candidate_birth';
   compact.episodeId = episodeId;
@@ -503,7 +549,8 @@ function birth(signal, context) {
     passed,failedGates:compact.failedGates,entryModeDecision:compact.entryModeDecision,
     plannedEntry:entry,plannedSl:sl,plannedTp:tp,
     grossTargetR:compact.grossTargetR,availableTargetRAfterFees:compact.availableTargetRAfterFees,
-    locationBucket:compact.locationBucket,rizzySequence:compact.rizzySequence} : compact;
+    locationBucket:compact.locationBucket,rizzySequence:compact.rizzySequence,
+    retraceStateShadow:compact.retraceStateShadow||null} : compact;
   append('compact',update,scanAt);
   if (compact.kind === 'candidate_birth') {
     pendingForward.set(episodeId,compact);
@@ -527,9 +574,15 @@ function outcome(candidateId, event, trade, detail={}) {
     closedAt:trade?.closedAt??null,exitPrice:trade?.exitPrice??null,
     realisedRR:trade?.realisedRR??null,netPnl:trade?.netPnl??null,
     reason:String(detail.reason||'').slice(0,160)||null,mode:detail.mode||trade?.mode||null};
+  if (event === 'ORDER_INTENT' && match?.engine === 'NEW_ORAYAN')
+    row.retraceStateShadow=match.retraceStateShadow||null;
   row.signature=digest([row.event,row.tradeId,row.exchangeOrderId,row.status,row.filledAt,
     row.fillPrice,row.closedAt,row.exitPrice,row.realisedRR,row.reason,row.mode]);
   const key=`${candidateId}|${event}|${tradeId||''}`;
+  if (event === 'CLOSED' && trade?.engine !== 'MARCI_SHADOW') {
+    try { require('./researchSupplement').observeStop(trade,{...match,marketSnapshotId:row.marketSnapshotId}); }
+    catch (e) { logger.warn('research','Stop research capture failed',{error:e.message}); }
+  }
   if (lastOutcome.get(key)?.signature === row.signature) return;
   row.eventId=digest([key,row.signature,at]);
   lastOutcome.set(key,{at,signature:row.signature});
@@ -549,4 +602,5 @@ function exportFiles(date = 'all', raw = false) {
     .map(name => path.join(dir, name));
 }
 module.exports={VERSION,COMPACT_VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,
-  settingsHash,computeForwardLabel,resolveDueForwardLabels,exportFiles,prune};
+  settingsHash,computeForwardLabel,resolveDueForwardLabels,exportFiles,prune,
+  liquidationWindows,liquidationWindowTotals,candidateLink,researchGet};
