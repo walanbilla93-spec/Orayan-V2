@@ -152,6 +152,14 @@ const routes = {
       filename:`orayan2_${raw ? 'legacy_research_diagnostics' : 'prospective_compact_v4'}_${date}.jsonl` };
   },
 
+  'GET /api/journal/research/supplement/export': async ({ query }) => {
+    const supplement=require('../lib/researchSupplement');
+    supplement.prune();
+    const files = supplement.files(query.date || 'all');
+    return { __files:true, files, contentType:'application/x-ndjson; charset=utf-8',
+      filename:`orayan2_structure_stop_research_v1_${query.date || 'all'}.jsonl` };
+  },
+
 
   'GET /api/journal/research/environment/export': async ({ query }) => {
     const format = query.format === 'json' ? 'json' : 'csv';
