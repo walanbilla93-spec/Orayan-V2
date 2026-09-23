@@ -16,6 +16,7 @@ const marciShadow = require('./marciShadow');
 const marciIndependent = require('./marciIndependent');
 const researchCapture = require('./researchCapture');
 const researchSupplement = require('./researchSupplement');
+const earlyEntryShadow = require('./earlyEntryShadow');
 const { num, uid } = require('./util');
 
 const state = {
@@ -357,6 +358,7 @@ async function scanOnce() {
     const tickers = await marketData.getTickers({ testnet: settings.testnet });
     try { researchCapture.watch(state.universe, settings.testnet); }
     catch (e) { logger.warn('research', 'Liquidation watch unavailable', { error:e.message }); }
+    earlyEntryShadow.start();
     const tickerResearch = researchCapture.tickerDynamics(tickers, Date.now());
     const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
     const instruments = await marketData.getInstruments({ testnet: settings.testnet });
@@ -543,6 +545,11 @@ async function scanOnce() {
         btc:{r12:btcObservation?.r12 == null ? null : Math.log1p(btcObservation.r12)}, universe:universeResearch,
         tickerDynamic:tickerResearch.get(signal.symbol) }); }
       catch (e) { logger.warn('research', 'Birth capture failed', { error:e.message, symbol:signal.symbol }); }
+      // Shadow-only sidecar. Its return value is deliberately ignored and cannot affect any
+      // candidate, gate, rank, size, portfolio limit, or order path below.
+      try { earlyEntryShadow.observeCandidate(signal,{scanAt,settings,snapshot:marketSnapshot,
+        configHash:researchConfigHash,instrument:instruments.get(signal.symbol)||null}); }
+      catch (e) { logger.warn('research','Early-entry shadow capture failed',{error:e.message,symbol:signal.symbol}); }
     }
     for (const observation of structureObservations) {
       try { researchSupplement.observeStructure({...observation,settings,scanAt,
@@ -731,6 +738,7 @@ async function start({ source = 'OPERATOR' } = {}) {
 
 function stop({ reason = 'OPERATOR_STOP', preserveDesired = false } = {}) {
   researchCapture.stop();
+  earlyEntryShadow.stop();
   const now = Date.now();
   state.running = false;
   state.stoppedAt = now;

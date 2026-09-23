@@ -118,10 +118,17 @@ try {
   for (const file of restoreFiles) for (const line of fs.readFileSync(file,'utf8').split('\n')) {
     if (!line) continue;
     const row = JSON.parse(line);
-    if (row.kind === 'candidate_birth' || row.kind === 'candidate_update') lastCandidate.set(row.candidateKey,
-      {at:row.at,signature:row.signature,episodeId:row.episodeId});
+    if (row.kind === 'candidate_birth' || row.kind === 'candidate_update') {
+      const prior=lastCandidate.get(row.candidateKey);
+      lastCandidate.set(row.candidateKey,
+        {at:row.at,signature:row.signature,episodeId:row.episodeId,
+          originAt:row.kind==='candidate_birth'?row.at:(prior?.originAt??row.episodeOriginAt??row.at),
+          originBtcRegime:row.kind==='candidate_birth'?(row.btcRegime||null):(prior?.originBtcRegime??row.originBtcRegime??null)});
+    }
     if (row.candidateId && row.candidateKey) candidateKeysById.set(row.candidateId,
-      {key:row.candidateKey,episodeId:row.episodeId,at:row.at,engine:row.engine,configHash:row.configHash||null,
+      {key:row.candidateKey,episodeId:row.episodeId,at:row.at,originAt:row.episodeOriginAt??row.at,
+        originBtcRegime:row.originBtcRegime??row.btcRegime??null,isBirth:row.kind==='candidate_birth',
+        engine:row.engine,configHash:row.configHash||null,
         retraceStateShadow:row.retraceStateShadow||null});
     if (row.kind === 'candidate_birth' && row.episodeId) restoredBirths.set(row.episodeId,row);
     if (row.kind === 'forward_label' && row.episodeId) resolvedForward.add(row.episodeId);
@@ -543,15 +550,21 @@ function birth(signal, context) {
   const previous = lastCandidate.get(candidateKey);
   const continuing = previous && scanAt - previous.at <= 30*60000;
   const episodeId = continuing ? previous.episodeId : digest([candidateKey,scanAt]);
-  candidateKeysById.set(signal.id,{key:candidateKey,episodeId,at:scanAt,
+  const originAt=continuing?(previous.originAt??previous.at):scanAt;
+  const originBtcRegime=continuing?(previous.originBtcRegime??row.btcRegime??null):(row.btcRegime??null);
+  candidateKeysById.set(signal.id,{key:candidateKey,episodeId,at:scanAt,originAt,originBtcRegime,
+    isBirth:!continuing,
     engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',configHash,
     retraceStateShadow:compact.retraceStateShadow||null});
   if (continuing && previous.signature === signature) { previous.at=scanAt; return; }
   compact.kind = continuing ? 'candidate_update' : 'candidate_birth';
   compact.episodeId = episodeId;
+  compact.episodeOriginAt = originAt;
+  compact.episodeAgeMs = Math.max(0,scanAt-originAt);
+  compact.originBtcRegime = originBtcRegime;
   compact.signature = signature;
   compact.eventId = digest([candidateKey,compact.kind,signature,scanAt]);
-  lastCandidate.set(candidateKey,{at:scanAt,signature,episodeId});
+  lastCandidate.set(candidateKey,{at:scanAt,signature,episodeId,originAt,originBtcRegime});
   const update = continuing ? {version:COMPACT_VERSION,kind:compact.kind,eventId:compact.eventId,
     at:scanAt,candidateKey,episodeId,candidateId:signal.id,scanId,marketSnapshotId:compact.marketSnapshotId,
     engine:compact.engine,symbol:compact.symbol,side:compact.side,signature,configHash,
