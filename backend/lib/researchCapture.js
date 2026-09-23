@@ -105,7 +105,17 @@ function compactFiles(date = 'all') {
 const restoredBirths = new Map();
 try {
   prune(Date.now());
-  for (const file of compactFiles()) for (const line of fs.readFileSync(file,'utf8').split('\n')) {
+  // Only recent compact rows are needed to rebuild the live semantic index. Candidate
+  // continuity is 30m and forward labels mature after ~62m. Re-reading the entire 48h
+  // prospective archive on every container restart temporarily materialises tens of MB of
+  // JSON strings/arrays and was enough to tip small Northflank containers into heap OOM.
+  // Keep the full files on disk for export; restore only the last 3h into process memory.
+  const restoreCutoff = Date.now() - 3*3600000;
+  const restoreFiles = compactFiles().filter(file => {
+    const m=/compact-(\d{4}-\d{2}-\d{2})-(\d{2})\.jsonl$/.exec(file);
+    return !m || Date.parse(`${m[1]}T${m[2]}:00:00Z`)+3600000 >= restoreCutoff;
+  });
+  for (const file of restoreFiles) for (const line of fs.readFileSync(file,'utf8').split('\n')) {
     if (!line) continue;
     const row = JSON.parse(line);
     if (row.kind === 'candidate_birth' || row.kind === 'candidate_update') lastCandidate.set(row.candidateKey,

@@ -20,8 +20,10 @@ function flush() {
   if (timer) { clearTimeout(timer); timer = null; }
   if (!dirty) return;
   dirty = false;
-  store.write('researchEnvironmentV1', snapshots);
-  store.write('researchEventsV1', events);
+  // Minified persistence materially lowers the temporary JSON string allocated during flush.
+  // These files are machine research stores; pretty printing only increases heap pressure.
+  store.write('researchEnvironmentV1', snapshots, false);
+  store.write('researchEventsV1', events, false);
 }
 function schedule() {
   dirty = true;

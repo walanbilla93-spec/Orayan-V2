@@ -62,11 +62,17 @@ function compactSignalForJournal(s) {
 
 // Compact legacy/full rows immediately on process start as well. This matters after an upgrade:
 // otherwise an already-large persisted journal can OOM before enough new compact rows replace it.
-let signalHistory = store.read('signalHistory', []);
-if (!Array.isArray(signalHistory)) signalHistory = [];
-signalHistory = signalHistory.map(compactSignalForJournal);
-if (signalHistory.length > MAX_SIGNAL_HISTORY) {
-  signalHistory = signalHistory.slice(-MAX_SIGNAL_HISTORY);
+// Legacy signalHistory is export-only. Do NOT eagerly load its potentially large JSON file
+// into the trading process: the compact V2 journal is authoritative for current operation and
+// retaining both copies can push small containers over the V8 heap limit during scan-time
+// serialisation. Load/compact the legacy file only when somebody explicitly requests it.
+let signalHistory = null;
+function legacySignalHistory() {
+  if (Array.isArray(signalHistory)) return signalHistory;
+  let rows = store.read('signalHistory', []);
+  if (!Array.isArray(rows)) rows = [];
+  signalHistory = rows.map(compactSignalForJournal).slice(-MAX_SIGNAL_HISTORY);
+  return signalHistory;
 }
 let signalEvents = store.read('signalEventsCompactV2', []);
 if (!Array.isArray(signalEvents)) signalEvents = [];
@@ -213,7 +219,7 @@ function recordSignalOutcome(candidateId, event, trade, detail = {}) {
 }
 
 function getSignalHistory({ limit = 5000, legacy = false } = {}) {
-  return (legacy ? signalHistory : signalEvents).slice(-limit);
+  return (legacy ? legacySignalHistory() : signalEvents).slice(-limit);
 }
 
 function clearSignalHistory() {
