@@ -10,6 +10,9 @@ RUN cd backend && npm install --omit=dev --no-audit --no-fund
 # so a container rebuild never throws away trade history or pinned settings.
 RUN mkdir -p /app/backend/data
 
+# Give V8 modest headroom above its conservative container auto-limit. The runtime
+# still stays well below a 512 MiB service once the research journals are memory-bounded.
+ENV NODE_OPTIONS=--max-old-space-size=352
 ENV PORT=8080
 EXPOSE 8080
 
