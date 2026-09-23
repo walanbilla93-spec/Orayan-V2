@@ -160,6 +160,15 @@ const routes = {
       filename:`orayan2_structure_stop_research_v1_${query.date || 'all'}.jsonl` };
   },
 
+  'GET /api/journal/research/early-entry/export': async ({ query }) => {
+    const early=require('../lib/earlyEntryShadow');
+    early.prune();
+    const date=query.date||'all';
+    const files=early.files(date);
+    return {__files:true,files,contentType:'application/x-ndjson; charset=utf-8',
+      filename:`orayan2_early_entry_shadow_v1_${date}.jsonl`};
+  },
+
 
   'GET /api/journal/research/environment/export': async ({ query }) => {
     const format = query.format === 'json' ? 'json' : 'csv';
