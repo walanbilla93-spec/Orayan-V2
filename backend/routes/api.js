@@ -139,6 +139,11 @@ const routes = {
   'GET /api/journal/signals/export': async ({ query }) => {
     const format = query.format === 'csv' ? 'csv' : 'json';
     const legacy = query.schema === 'legacy';
+    if(!legacy){
+      const {stream,contentType}=journal.exportSignalsStream(format,num(query.limit,50000));
+      return {__stream:true,stream,contentType,
+        filename:`orayan2_signal_events_compact_v2_${Date.now()}.${format}`};
+    }
     const signals = journal.getSignalHistory({ limit: num(query.limit, 50000), legacy });
     const { body, contentType } = journal.exportSignals(signals, format, { legacy });
     return { __file: true, body, contentType, filename: `orayan2_${legacy ? 'signals_legacy' : 'signal_events_compact_v2'}_${Date.now()}.${format}` };
@@ -172,14 +177,14 @@ const routes = {
 
   'GET /api/journal/research/environment/export': async ({ query }) => {
     const format = query.format === 'json' ? 'json' : 'csv';
-    const { body, contentType } = journal.exportResearchRows(journal.getResearchEnvironment(), format);
-    return { __file:true, body, contentType, filename:`orayan2_environment_${Date.now()}.${format}` };
+    const { stream, contentType } = journal.streamResearchEnvironment(format);
+    return { __stream:true, stream, contentType, filename:`orayan2_environment_${Date.now()}.${format}` };
   },
 
   'GET /api/journal/research/events/export': async ({ query }) => {
     const format = query.format === 'json' ? 'json' : 'csv';
-    const { body, contentType } = journal.exportResearchRows(journal.getResearchEvents(), format);
-    return { __file:true, body, contentType, filename:`orayan2_research_events_${Date.now()}.${format}` };
+    const { stream, contentType } = journal.streamResearchEvents(format);
+    return { __stream:true, stream, contentType, filename:`orayan2_research_events_${Date.now()}.${format}` };
   },
 
   'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); engine.clearLastSignals(); return { ok: true }; },
