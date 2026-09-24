@@ -96,6 +96,16 @@ const server = http.createServer(async (req, res) => {
       const query = Object.fromEntries(url.searchParams.entries());
       const result = await handler({ body, query, req });
 
+      if (result && result.__stream) {
+        res.writeHead(200, {
+          'Content-Type': result.contentType,
+          'Content-Disposition': `attachment; filename="${result.filename}"`,
+          'Cache-Control': 'no-store',
+          'Access-Control-Allow-Origin': '*',
+        });
+        await pipeline(result.stream,res);
+        return;
+      }
       if (result && result.__files) {
         res.writeHead(200, {
           'Content-Type': result.contentType,
@@ -124,6 +134,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, result, { 'Access-Control-Allow-Origin': '*' });
     } catch (e) {
       logger.error('http', `${key} failed`, { error: e.message });
+      if(res.headersSent){res.destroy(e);return;}
       return send(res, 500, { error: e.message }, { 'Access-Control-Allow-Origin': '*' });
     }
   }
