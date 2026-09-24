@@ -1,5 +1,6 @@
 'use strict';
 
+const {Readable}=require('stream');
 const store = require('./store');
 const logger = require('./logger');
 const researchJournal = require('./researchJournal');
@@ -486,12 +487,31 @@ function exportSignals(signals, format, { legacy = false } = {}) {
   return { body: JSON.stringify({ schema:legacy ? 'SIGNAL_SCAN_LEGACY_V1' : COMPACT_VERSION,
     exportedAt: Date.now(), count: signals.length, signals }), contentType: 'application/json; charset=utf-8', ext: 'json' };
 }
+function exportSignalsStream(format,limit=50000) {
+  const end=signalEvents.length,start=Math.max(0,end-limit),count=end-start;
+  async function* chunks(){
+    if(format==='csv'){
+      yield SIGNAL_COLUMNS.map(c=>c.label).join(',')+'\n';
+      for(let i=start;i<end;i++)
+        yield SIGNAL_COLUMNS.map(c=>csvEscape(c.get(signalEvents[i]))).join(',')+'\n';
+    }else{
+      yield JSON.stringify({schema:COMPACT_VERSION,exportedAt:Date.now(),count}).slice(0,-1)+',"signals":[';
+      for(let i=start;i<end;i++)
+        yield (i===start?'':',')+JSON.stringify(signalEvents[i]);
+      yield ']}';
+    }
+  }
+  return {stream:Readable.from(chunks()),
+    contentType:format==='csv'?'text/csv; charset=utf-8':'application/json; charset=utf-8'};
+}
 
 module.exports = {
   recordSignals, recordSignalOutcome, getSignalHistory, clearSignalHistory, recordBosEvent, flush,
-  exportTrades, exportSignals,
+  exportTrades, exportSignals, exportSignalsStream,
   getResearchEnvironment: researchJournal.getSnapshots,
   getResearchEvents: researchJournal.getEvents,
+  streamResearchEvents: researchJournal.exportEventStream,
+  streamResearchEnvironment: researchJournal.exportEnvironmentStream,
   captureMarketSnapshot: researchJournal.captureMarketSnapshot,
   buildMarketObservation: researchJournal.observation,
   clearResearch: researchJournal.clear,

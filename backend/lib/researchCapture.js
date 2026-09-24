@@ -7,7 +7,9 @@ const store = require('./store');
 const logger = require('./logger');
 const journal = require('./journal');
 const crypto = require('crypto');
+const {StringDecoder}=require('string_decoder');
 const retraceShadow = require('./retraceShadow');
+const bybit = require('./bybit');
 const VERSION = 'PROSPECTIVE_BIRTH_V2';
 const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V4';
 const dir = path.join(store.DATA_DIR, 'research-v2');
@@ -15,13 +17,16 @@ const RETENTION_MS = 48 * 60 * 60 * 1000;
 const lastCandidate = new Map();
 const lastOutcome = new Map();
 const candidateKeysById = new Map();
+const MAX_CANDIDATE_LINKS=20000,MAX_OUTCOME_KEYS=20000;
 let lastPruneAt = 0;
 const liquidations = new Map();
 const seenLiquidation = new Map();
 const priorTickers = new Map();
 const pendingForward = new Map();
-const resolvedForward = new Set();
+const MAX_PENDING_FORWARD = 2048;
+const resolvedForward = new Map();
 const flowCache = new Map();
+const httpCache = new Map(); // at most 16 short-lived research responses/promises
 const flowLabelled = new Set();
 let forwardTimer = null, forwardResolving = false;
 let socket, reconnect, heartbeat, subscribed = new Set(), wanted = new Set(), testnetMode = null;
@@ -41,6 +46,24 @@ function append(kind, row, at = Date.now()) {
     if (at - lastPruneAt > 60 * 60000) { lastPruneAt = at; prune(at); }
   } catch (e) { logger.warn('research', `Could not append ${kind}`, { error:e.message }); }
 }
+function eachLine(file,visit) {
+  const fd=fs.openSync(file,'r'),buffer=Buffer.allocUnsafe(65536),decoder=new StringDecoder('utf8');
+  let carry='';
+  try {
+    let count;
+    while ((count=fs.readSync(fd,buffer,0,buffer.length,null))>0) {
+      carry+=decoder.write(buffer.subarray(0,count));
+      let end;
+      while ((end=carry.indexOf('\n'))>=0) {
+        const line=carry.slice(0,end);carry=carry.slice(end+1);
+        if (line) visit(line);
+      }
+      if (carry.length>1048576) throw Error('Prospective JSONL row exceeds 1 MB');
+    }
+    carry+=decoder.end();
+    if (carry) visit(carry);
+  } finally {fs.closeSync(fd);}
+}
 function prune(now = Date.now()) {
   if (!fs.existsSync(dir)) return;
   const cutoff = now - RETENTION_MS;
@@ -54,10 +77,7 @@ function prune(now = Date.now()) {
   for (const [key, value] of lastOutcome) if (value.at < cutoff) lastOutcome.delete(key);
   for (const [key, value] of candidateKeysById) if (value.at < cutoff) candidateKeysById.delete(key);
   for (const [key, value] of pendingForward) if (value.at < cutoff) pendingForward.delete(key);
-  for (const key of [...resolvedForward]) {
-    const row = restoredBirths.get(key);
-    if (row && row.at < cutoff) resolvedForward.delete(key);
-  }
+  for (const [key,at] of resolvedForward) if (at<cutoff) resolvedForward.delete(key);
   for (const [symbol, value] of flowCache) if (value.at < now - 5*60000) flowCache.delete(symbol);
 }
 function keyFor(signal) {
@@ -65,6 +85,7 @@ function keyFor(signal) {
   const identity = signal.marciIndependent?.patternKey || [signal.engine || signal.entryPath || '',signal.structureEvent || ''].join(':');
   return [engine,signal.symbol,signal.side,identity].join('|');
 }
+function capMap(map,max) {while (map.size>max) map.delete(map.keys().next().value);}
 function digest(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,16); }
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
@@ -79,18 +100,32 @@ function settingsHash(settings) {
   // cohorts can prove they came from the same frozen setup without repeating the whole object.
   return digest(stable(settings || {}));
 }
-async function researchGet(pathname, params, testnet) {
-  // Deliberately bypass the strategy/executor Bybit request queue. Research telemetry must never
-  // delay candles, order placement or trade management. This is public, low-rate, best-effort I/O.
-  const url=new URL(pathname,testnet?'https://api-testnet.bybit.com':'https://api.bybit.com');
-  for (const [k,v] of Object.entries(params||{})) if (v!==undefined&&v!==null&&v!=='') url.searchParams.set(k,String(v));
-  const ctrl=new AbortController(), timer=setTimeout(()=>ctrl.abort(),7000);
-  try {
-    const res=await fetch(url,{signal:ctrl.signal});
-    const json=await res.json();
-    if (!res.ok || json.retCode!==0) throw new Error(`Bybit research ${pathname} failed: ${json.retMsg||res.status}`);
-    return json.result;
-  } finally { clearTimeout(timer); }
+function capPendingForward() {
+  while (pendingForward.size>MAX_PENDING_FORWARD) {
+    const oldest=pendingForward.keys().next().value, birth=pendingForward.get(oldest);
+    pendingForward.delete(oldest);
+    resolvedForward.set(oldest,Date.now());
+    append('compact',{version:COMPACT_VERSION,kind:'forward_label',
+      eventId:digest(['forward',oldest,birth.at]),at:Date.now(),episodeId:oldest,
+      candidateId:birth.candidateId,candidateKey:birth.candidateKey,
+      symbol:birth.symbol,side:birth.side,status:'INCOMPLETE_CAP_EVICTION',incompleteData:true});
+  }
+  capResearchIndexes();
+}
+function capResearchIndexes() {
+  while (resolvedForward.size>50000) resolvedForward.delete(resolvedForward.keys().next().value);
+  while (flowLabelled.size>4096) flowLabelled.delete(flowLabelled.values().next().value);
+}
+async function researchGet(pathname, params, testnet, {notBefore=0}={}) {
+  const ttl=pathname==='/v5/market/kline' ? 300000 : pathname==='/v5/market/tickers' ? 2000 : 10000;
+  const key=JSON.stringify([pathname,params,!!testnet]);
+  const now=Date.now(), hit=httpCache.get(key);
+  if (hit && hit.at>=notBefore && now-hit.at<ttl) return hit.promise;
+  const promise=bybit.researchGet(pathname,params,testnet);
+  httpCache.set(key,{at:now,promise});
+  promise.catch(()=>{if(httpCache.get(key)?.promise===promise) httpCache.delete(key);});
+  while (httpCache.size>16) httpCache.delete(httpCache.keys().next().value);
+  return promise;
 }
 function geometryBucket(value) { return value > 0 ? Math.round(200*Math.log(value)) : null; }
 function compactFiles(date = 'all') {
@@ -102,7 +137,6 @@ function compactFiles(date = 'all') {
     .sort().map(name => path.join(dir,name));
 }
 // Restore the small semantic index after restart, so a restart does not re-emit every setup.
-const restoredBirths = new Map();
 try {
   prune(Date.now());
   // Only recent compact rows are needed to rebuild the live semantic index. Candidate
@@ -115,8 +149,19 @@ try {
     const m=/compact-(\d{4}-\d{2}-\d{2})-(\d{2})\.jsonl$/.exec(file);
     return !m || Date.parse(`${m[1]}T${m[2]}:00:00Z`)+3600000 >= restoreCutoff;
   });
-  for (const file of restoreFiles) for (const line of fs.readFileSync(file,'utf8').split('\n')) {
-    if (!line) continue;
+  // First discover completions, then restore only unresolved births. This avoids
+  // evicting and mislabelling an old birth before its later forward label is read.
+  for (const file of restoreFiles) eachLine(file,line=>{
+    const row=JSON.parse(line);
+    if (row.kind==='forward_label' && row.episodeId)
+      resolvedForward.set(row.episodeId,row.at||Date.now());
+    if (row.kind==='order_flow_label' && row.candidateId) flowLabelled.add(row.candidateId);
+    if (row.kind==='order_outcome')
+      lastOutcome.set(`${row.candidateId}|${row.event}|${row.tradeId||''}`,{at:row.at,signature:row.signature});
+    capResearchIndexes();
+    capMap(lastOutcome,MAX_OUTCOME_KEYS);
+  });
+  for (const file of restoreFiles) eachLine(file,line=>{
     const row = JSON.parse(line);
     if (row.kind === 'candidate_birth' || row.kind === 'candidate_update') {
       const prior=lastCandidate.get(row.candidateKey);
@@ -130,13 +175,14 @@ try {
         originBtcRegime:row.originBtcRegime??row.btcRegime??null,isBirth:row.kind==='candidate_birth',
         engine:row.engine,configHash:row.configHash||null,
         retraceStateShadow:row.retraceStateShadow||null});
-    if (row.kind === 'candidate_birth' && row.episodeId) restoredBirths.set(row.episodeId,row);
-    if (row.kind === 'forward_label' && row.episodeId) resolvedForward.add(row.episodeId);
-    if (row.kind === 'order_flow_label' && row.candidateId) flowLabelled.add(row.candidateId);
-    if (row.kind === 'order_outcome') lastOutcome.set(`${row.candidateId}|${row.event}|${row.tradeId||''}`,{at:row.at,signature:row.signature});
-  }
-  for (const [episodeId,row] of restoredBirths) if (!resolvedForward.has(episodeId) && Date.now()-row.at < RETENTION_MS)
-    pendingForward.set(episodeId,row);
+    capMap(candidateKeysById,MAX_CANDIDATE_LINKS);
+    if (row.kind === 'candidate_birth' && row.episodeId && !resolvedForward.has(row.episodeId)) {
+      pendingForward.set(row.episodeId,row);
+      capPendingForward();
+    }
+  });
+  capPendingForward();
+  capResearchIndexes();
 } catch (e) { logger.warn('research','Could not restore compact research index',{error:e.message}); }
 function cleanOld(now) {
   for (const [symbol, rows] of liquidations) {
@@ -247,9 +293,9 @@ function connect() {
   });
 }
 function watch(symbols, testnet) {
-  startForwardResolver();
   const next = new Set([...symbols, 'BTCUSDT'].filter(s => /^[A-Z0-9]+USDT$/.test(s)));
   if (testnetMode !== null && testnetMode !== !!testnet) stop();
+  startForwardResolver();
   testnetMode = !!testnet; wanted = next;
   if (socket?.readyState === 1) subscribe(wanted); else connect();
 }
@@ -346,11 +392,13 @@ async function recentTradeFlow(symbol, observedForAt, testnet) {
       oldestTradeAt:times.length?Math.min(...times):null,newestTradeAt:times.length?Math.max(...times):null};
   })();
   flowCache.set(cacheKey,{at:Date.now(),promise});
+  while (flowCache.size>256) flowCache.delete(flowCache.keys().next().value);
   return promise;
 }
 function scheduleOrderFlowLabel(compact) {
   if (!compact?.candidateId || flowLabelled.has(compact.candidateId)) return;
   flowLabelled.add(compact.candidateId);
+  while (flowLabelled.size>4096) flowLabelled.delete(flowLabelled.values().next().value);
   recentTradeFlow(compact.symbol, compact.at, !!compact.minutePathRef?.testnet).then(flow => {
     const row={version:COMPACT_VERSION,kind:'order_flow_label',eventId:digest(['flow',compact.candidateId,compact.at]),
       at:Date.now(),observedForAt:compact.at,candidateKey:compact.candidateKey,episodeId:compact.episodeId,
@@ -359,7 +407,13 @@ function scheduleOrderFlowLabel(compact) {
     append('compact',row,row.at);
   }).catch(e => {
     logger.warn('research','Recent public-trade capture unavailable',{symbol:compact.symbol,error:e.message});
-    flowLabelled.delete(compact.candidateId); // allow a later retry on a fresh birth id
+    append('compact',{version:COMPACT_VERSION,kind:'order_flow_label',
+      eventId:digest(['flow',compact.candidateId,compact.at]),at:Date.now(),
+      observedForAt:compact.at,candidateKey:compact.candidateKey,episodeId:compact.episodeId,
+      candidateId:compact.candidateId,engine:compact.engine,symbol:compact.symbol,side:compact.side,
+      configHash:compact.configHash||null,status:'NOT_AVAILABLE',source:'Bybit /v5/market/recent-trade',
+      takerBuyNotional1m:null,takerSellNotional1m:null,takerImbalance1m:null,tradeCount1m:null,
+      incompleteData:true},Date.now());
   });
 }
 function directionalReturn(reference, close, side) {
@@ -441,7 +495,8 @@ async function resolveDueForwardLabels(limit=8) {
   forwardResolving=true;
   try {
     const now=Date.now();
-    const due=[...pendingForward.values()].filter(x => now >= x.at + 62*60000).sort((a,b)=>a.at-b.at).slice(0,limit);
+    const due=[...pendingForward.values()].filter(x => now >= x.at + 62*60000 && now >= (x.nextAttemptAt||0))
+      .sort((a,b)=>a.at-b.at).slice(0,limit);
     for (const birth of due) {
       try {
         const start=Math.ceil(birth.at/60000)*60000;
@@ -452,8 +507,12 @@ async function resolveDueForwardLabels(limit=8) {
         const row=computeForwardLabel(birth,bars);
         row.eventId=digest(['forward',birth.episodeId,birth.at]);
         append('compact',row,row.at);
-        resolvedForward.add(birth.episodeId); pendingForward.delete(birth.episodeId);
-      } catch (e) { logger.warn('research','Forward label resolution failed',{symbol:birth.symbol,error:e.message}); }
+        resolvedForward.set(birth.episodeId,Date.now()); pendingForward.delete(birth.episodeId);
+        capResearchIndexes();
+      } catch (e) {
+        birth.nextAttemptAt=Date.now()+120000;
+        logger.warn('research','Forward label resolution failed',{symbol:birth.symbol,error:e.message});
+      }
     }
   } finally { forwardResolving=false; }
 }
@@ -556,6 +615,7 @@ function birth(signal, context) {
     isBirth:!continuing,
     engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',configHash,
     retraceStateShadow:compact.retraceStateShadow||null});
+  capMap(candidateKeysById,MAX_CANDIDATE_LINKS);
   if (continuing && previous.signature === signature) { previous.at=scanAt; return; }
   compact.kind = continuing ? 'candidate_update' : 'candidate_birth';
   compact.episodeId = episodeId;
@@ -577,6 +637,7 @@ function birth(signal, context) {
   append('compact',update,scanAt);
   if (compact.kind === 'candidate_birth') {
     pendingForward.set(episodeId,compact);
+    capPendingForward();
     scheduleOrderFlowLabel(compact);
   }
 }
@@ -586,10 +647,10 @@ function outcome(candidateId, event, trade, detail={}) {
   const at=Date.now(), tradeId=trade?.id||null;
   const match=candidateKeysById.get(candidateId);
   const row={version:COMPACT_VERSION,kind:'order_outcome',candidateId,
-    candidateKey:match?.key||(trade?.symbol&&trade?.side?keyFor(trade):null),
-    episodeId:match?.episodeId||null,engine:match?.engine||
+    candidateKey:match?.key||trade?.candidateKey||(trade?.symbol&&trade?.side?keyFor(trade):null),
+    episodeId:match?.episodeId||trade?.episodeId||null,engine:match?.engine||
       (trade?.researchEngine?.startsWith('MARCI')?'MARCI':'NEW_ORAYAN'),
-    configHash:match?.configHash||null,
+    configHash:match?.configHash||trade?.configHash||null,
     symbol:trade?.symbol||null,side:trade?.side||null,event,at,
     tradeId,exchangeOrderId:trade?.exchangeOrderId||null,status:trade?.status||null,
     marketSnapshotId:trade?.marketSnapshotId||null, intendedEntry:trade?.plannedEntry??null,
@@ -609,6 +670,7 @@ function outcome(candidateId, event, trade, detail={}) {
   if (lastOutcome.get(key)?.signature === row.signature) return;
   row.eventId=digest([key,row.signature,at]);
   lastOutcome.set(key,{at,signature:row.signature});
+  capMap(lastOutcome,MAX_OUTCOME_KEYS);
   append('compact',row,at);
 }
 function exportFiles(date = 'all', raw = false) {

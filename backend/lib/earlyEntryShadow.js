@@ -5,15 +5,20 @@
 const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
+const {StringDecoder}=require('string_decoder');
 const store=require('./store');
 const logger=require('./logger');
 const capture=require('./researchCapture');
 const risk=require('./risk');
+const researchJournal=require('./researchJournal');
+const {detectStructure}=require('./structure');
 
 const VERSION='EARLY_ENTRY_SHADOW_V1';
+const HYPOTHESIS='RETRACE_CONTEXT_PRIOR_BREADTH_192_BOS_CHOCH_V1';
 const DIR=path.join(store.DATA_DIR,'early-entry-shadow-v1');
 const RETENTION_MS=96*3600000; // max 72h hold + entry window/restart margin
 const MAX_PENDING=512;
+const MAX_SEEN=20000;
 const seen=new Map(),pending=new Map(),pendingQuotes=new Map();
 const quoteInFlight=new Set();
 let timer=null,resolving=false,lastPrune=0;
@@ -53,6 +58,7 @@ function append(row,at=Date.now()) {
     const hour=new Date(at).toISOString().slice(0,13).replace('T','-');
     fs.appendFileSync(path.join(DIR,`early-entry-${hour}.jsonl`),JSON.stringify(row)+'\n');
     seen.set(dedupe,at);
+    while (seen.size>MAX_SEEN) seen.delete(seen.keys().next().value);
     if (at-lastPrune>3600000) {lastPrune=at;prune(at);}
     return true;
   } catch(e) {logger.warn('research','Early-entry append failed',{error:e.message});return false;}
@@ -70,51 +76,54 @@ function trimPending() {
   }
 }
 
-// Restore only the bounded 96-hour hourly stream. Pair rows are compact and pending is capped.
+function eachLine(file,visit) {
+  const fd=fs.openSync(file,'r'),buffer=Buffer.allocUnsafe(65536),decoder=new StringDecoder('utf8');
+  let carry='';
+  try {
+    let count;
+    while ((count=fs.readSync(fd,buffer,0,buffer.length,null))>0) {
+      carry+=decoder.write(buffer.subarray(0,count));
+      let end;
+      while ((end=carry.indexOf('\n'))>=0) {
+        const line=carry.slice(0,end);carry=carry.slice(end+1);
+        if (line) visit(line);
+      }
+      if (carry.length>1048576) throw Error('Early-entry JSONL row exceeds 1 MB');
+    }
+    carry+=decoder.end();
+    if (carry) visit(carry);
+  } finally {fs.closeSync(fd);}
+}
+// Stream the 96-hour archive to recover pending pairs without materialising whole files.
 try {
   prune();
-  const completed=new Set();
-  for (const file of files()) for (const line of fs.readFileSync(file,'utf8').split('\n')) {
-    if (!line) continue;
+  const seenCutoff=Date.now()-3*3600000;
+  for (const file of files()) eachLine(file,line=>{
     const row=JSON.parse(line);
-    seen.set(`${row.kind}|${row.eventId}`,finite(row.at)||Date.now());
+    if ((finite(row.at)||0)>=seenCutoff) {
+      seen.set(`${row.kind}|${row.eventId}`,finite(row.at)||Date.now());
+      while (seen.size>MAX_SEEN) seen.delete(seen.keys().next().value);
+    }
     if (row.kind==='pair_created') pending.set(row.experimentId,row);
-    if (row.kind==='paired_outcome'||row.kind==='incomplete') completed.add(row.experimentId);
-    if (row.kind==='eligibility_assessment'&&row.eligible===true) pendingQuotes.set(row.experimentId,row);
-  }
-  for (const id of completed) {pending.delete(id);pendingQuotes.delete(id);}
+    if (row.kind==='paired_outcome'||row.kind==='incomplete') {
+      pending.delete(row.experimentId);pendingQuotes.delete(row.experimentId);
+    }
+    if (row.kind==='eligibility_assessment'&&row.eligible===true&&
+        Date.now()-row.decisionAt<60000) pendingQuotes.set(row.experimentId,row);
+  });
   for (const id of pending.keys()) pendingQuotes.delete(id);
   trimPending();
 } catch(e) {logger.warn('research','Early-entry restore failed',{error:e.message});}
 
-function exactDirectionContext(signal,decisionAt) {
-  const candidates=[
-    ['signal.directionBrain',signal?.directionBrain],
-    ['signal.dirBrainAdvice',signal?.dirBrainAdvice],
-    ['signal.researchContext.directionBrain',signal?.researchContext?.directionBrain],
-  ];
-  for (const [source,x] of candidates) {
-    const value=String(typeof x==='string'?x:(x?.verdict??x?.value??'')).toUpperCase();
-    const observedAt=finite(x?.observedAt??x?.at??signal?.createdAt);
-    if (['CAUTION','AGREE','OPPOSE'].includes(value)&&observedAt!==null&&observedAt<=decisionAt)
-      return {value,source,observedAt};
-  }
-  return {value:'NOT_AVAILABLE',source:'NOT_AVAILABLE_IN_NEW_ORAYAN',observedAt:null};
+function researchDirectionContext(link,scanAt,decisionAt) {
+  const state=link?.retraceStateShadow?.state;
+  if (link?.isBirth!==true || !['DETERIORATING','HEALTHY_PULLBACK','STRONG_CONTINUATION'].includes(state) ||
+      !Number.isFinite(scanAt) || scanAt>decisionAt)
+    return {value:'NOT_AVAILABLE',source:'RETRACE_STATE_SHADOW_V1',observedAt:null};
+  return {value:state,source:'RETRACE_STATE_SHADOW_V1_RESEARCH_ONLY',observedAt:scanAt};
 }
 function exactBreadthPercentile(signal,snapshot,decisionAt) {
-  const candidates=[
-    ['signal.breadthPercentile',signal?.breadthPercentile,signal?.breadthPercentileObservedAt??signal?.createdAt],
-    ['signal.breadthRangePctileAtEntry',signal?.breadthRangePctileAtEntry,signal?.createdAt],
-    ['signal.researchContext.breadthPercentile',signal?.researchContext?.breadthPercentile,
-      signal?.researchContext?.breadthObservedAt??signal?.createdAt],
-    ['snapshot.breadthPercentile',snapshot?.breadthPercentile,snapshot?.observedAt],
-  ];
-  for (const [source,valueRaw,atRaw] of candidates) {
-    const value=finite(valueRaw),observedAt=finite(atRaw);
-    if (value!==null&&value>=0&&value<=100&&observedAt!==null&&observedAt<=decisionAt)
-      return {value,category:value>=85?'TOP_>=85':value<=15?'BOTTOM_<=15':'MID_15_85',source,observedAt};
-  }
-  return {value:null,category:'NOT_AVAILABLE',source:'NOT_AVAILABLE_IN_NEW_ORAYAN',observedAt:null};
+  return researchJournal.breadthPercentileAt(snapshot,decisionAt);
 }
 function structureTag(value) {
   const text=String(value||'').toUpperCase();
@@ -130,22 +139,32 @@ function btcBuyPermission(signal) {
   const allowed=['BULL_TREND','BULL_RANGE'].includes(regime)&&signal?.regimeAligned===true&&check?.pass!==false;
   return {allowed,regime,gateCheck:check||null,source:'native regimeAligned + BTC_REGIME gate'};
 }
+function birthStructure(signal,context) {
+  if (signal?.engine==='STRUCTURE') return structureTag(signal.structureEvent);
+  const candles=context?.candles;
+  if (signal?.engine!=='TREND'||!Array.isArray(candles)||candles.length<10) return 'NOT_AVAILABLE';
+  const width=Math.max(2,Math.round(finite(context?.settings?.pivotWidth)??2));
+  const event=detectStructure(candles,width).event;
+  const expected=signal.side==='BUY'?'UP':'DOWN';
+  return /^(BOS|CHOCH)_(UP|DOWN)$/.test(event)&&event.endsWith(expected)?structureTag(event):'NOT_AVAILABLE';
+}
 function evaluateEligibility({signal,link,context}) {
   const scanAt=finite(context?.scanAt)??finite(signal?.createdAt)??Date.now();
   // scanAt is captured before the universe loop; a signal may be constructed milliseconds later.
   // The decision cannot predate either timestamp.
   const decisionAt=Math.max(scanAt,finite(signal?.createdAt)??scanAt);
-  const direction=exactDirectionContext(signal,decisionAt);
+  const direction=researchDirectionContext(link,scanAt,decisionAt);
   const breadth=exactBreadthPercentile(signal,context?.snapshot,decisionAt);
-  const structure=structureTag(signal?.structureEvent);
+  const structure=birthStructure(signal,context);
   const permission=btcBuyPermission(signal);
   const originAt=finite(link?.originAt)??scanAt;
   const episodeAgeMs=Math.max(0,scanAt-originAt);
   const fresh=link?.isBirth===true&&episodeAgeMs===0;
-  const cohort=direction.value==='CAUTION'?'CAUTION':direction.value==='AGREE'?'AGREE':'UNCLASSIFIED';
+  const cohort=direction.value==='NOT_AVAILABLE'?'UNCLASSIFIED':direction.value;
   const checks={buy:signal?.side==='BUY',nativeEpisodeFresh:fresh,directionContextAvailable:direction.value!=='NOT_AVAILABLE',
-    directionContextEligible:['CAUTION','AGREE'].includes(direction.value),breadthTop85:breadth.category==='TOP_>=85',
-    explicitStructure:['BOS','CHOCH','TRAP','DIVERGENCE'].includes(structure),
+    directionContextEligible:['DETERIORATING','HEALTHY_PULLBACK','STRONG_CONTINUATION'].includes(direction.value),
+    breadthTop85:breadth.category==='TOP_>=85',
+    explicitStructure:['BOS','CHOCH'].includes(structure),
     bullishPermission:permission.allowed,strategyGatesPassed:signal?.gates?.passed===true,
     contemporaneous:direction.observedAt!==null&&breadth.observedAt!==null&&
       direction.observedAt<=decisionAt&&breadth.observedAt<=decisionAt};
@@ -175,27 +194,31 @@ function observeCandidate(signal,context={}) {
   const link=capture.candidateLink(signal?.id);
   if (!link||link.engine!=='NEW_ORAYAN'||link.isBirth!==true) return null;
   const assessment=evaluateEligibility({signal,link,context});
-  const experimentId=digest([VERSION,link.episodeId,assessment.cohort]);
+  const experimentId=digest([VERSION,HYPOTHESIS,link.episodeId,assessment.cohort]);
   const eventId=digest(['eligibility',experimentId]);
   if (seen.has(`eligibility_assessment|${eventId}`)) return experimentId;
-  const row={version:VERSION,kind:'eligibility_assessment',eventId,at:Date.now(),experimentId,
+  const row={version:VERSION,hypothesisId:HYPOTHESIS,kind:'eligibility_assessment',eventId,at:Date.now(),experimentId,
     candidateId:signal.id,candidateKey:link.key,episodeId:link.episodeId,decisionAt:assessment.decisionAt,
     decisionTimeSource:'max(engine scanAt, signal.createdAt) after gate verdict is available',symbol:signal.symbol,side:signal.side,
     configHash:context.configHash||link.configHash||null,marketSnapshotId:context.snapshot?.marketSnapshotId||null,
     cohort:assessment.cohort,eligible:assessment.eligible,eligibilityChecks:assessment.checks,
     ineligibilityReasons:assessment.reasons,directionContext:assessment.direction,
     breadthPercentile:assessment.breadth.value,breadthCategory:assessment.breadth.category,
-    breadthPercentileSource:assessment.breadth.source,structureAtBirth:assessment.structure,
+    breadthPercentileSource:assessment.breadth.source,breadthHistoryCount:assessment.breadth.historyCount,
+    structureAtBirth:assessment.structure,
     permissionAtBirth:assessment.permission,episodeFresh:assessment.fresh,
     freshnessDefinition:'FIRST_OBSERVATION_OF_NATIVE_30_MINUTE_CONTINUITY_EPISODE',
     episodeOriginAt:assessment.originAt,episodeAgeMs:assessment.episodeAgeMs,episodeState:assessment.fresh?'FRESH_BIRTH':'STALE_OR_CONTINUING',
     originRegime:link.originBtcRegime||signal.btcRegime||null,orderTimeRegime:signal.btcRegime||null,
     originToOrderRegime:link.originBtcRegime&&signal.btcRegime?`${link.originBtcRegime}->${signal.btcRegime}`:'NOT_AVAILABLE',
-    exhaustionContext:exhaustionContext(signal,assessment.decisionAt),
+    exhaustionContext:assessment.structure==='BOS'?exhaustionContext({...signal,structureEvent:'BOS'},assessment.decisionAt):
+      {tag:'NOT_BOS',isGate:false,usesPostEvent:false,pre5:null,pre1:null},
     plannedEntry:finite(signal.entry),plannedSl:finite(signal.sl),plannedTp:finite(signal.tp),
     settings:frozenSettings(context.settings),instrument:context.instrument||null,
     quoteStatus:assessment.eligible?'PENDING_FIRST_POST_DECISION_QUOTE':'NOT_REQUESTED',
-    incompleteData:!assessment.eligible&&assessment.reasons.some(x=>x.includes('Available')||x==='contemporaneous')};
+    incompleteData:!assessment.eligible&&(assessment.direction.value==='NOT_AVAILABLE'||
+      ['NOT_AVAILABLE','WARMUP'].includes(assessment.breadth.category)||
+      assessment.structure==='NOT_AVAILABLE'||!assessment.checks.contemporaneous)};
   if (!append(row,row.at)||!assessment.eligible) return experimentId;
   pendingQuotes.set(experimentId,row);
   trimPending();
@@ -210,11 +233,21 @@ function quoteFromResult(result,symbol) {
 async function acquireQuote(assessment) {
   if (!pendingQuotes.has(assessment.experimentId)||pending.has(assessment.experimentId)||
     quoteInFlight.has(assessment.experimentId)||quoteInFlight.size>=4) return;
+  if (Date.now()-assessment.decisionAt>60000) {
+    pendingQuotes.delete(assessment.experimentId);
+    append({version:VERSION,kind:'incomplete',eventId:digest(['quote-stale',assessment.experimentId]),
+      at:Date.now(),experimentId:assessment.experimentId,episodeId:assessment.episodeId,
+      reason:'FIRST_POST_DECISION_QUOTE_TOO_LATE',incompleteData:true});
+    return;
+  }
   quoteInFlight.add(assessment.experimentId);
   const requestedAt=Math.max(Date.now(),assessment.decisionAt+1);
   try {
-    const result=await capture.researchGet('/v5/market/tickers',{category:'linear',symbol:assessment.symbol},assessment.settings.testnet);
+    const result=await capture.researchGet('/v5/market/tickers',
+      {category:'linear',symbol:assessment.symbol},assessment.settings.testnet,
+      {notBefore:assessment.decisionAt});
     const receivedAt=Date.now(),quote=quoteFromResult(result,assessment.symbol);
+    if (receivedAt-assessment.decisionAt>60000) throw Error('First quote arrived too late');
     if (!(quote.ask>0)||!(quote.bid>0)) throw Error('Executable bid/ask unavailable');
     const slipBps=assessment.settings.adverseSlippageBps||0;
     const earlyEntry=assessment.side==='BUY'?quote.ask*(1+slipBps/10000):quote.bid*(1-slipBps/10000);
@@ -225,7 +258,7 @@ async function acquireQuote(assessment) {
     const executableEarlyEntry=earlySizing.ok?earlySizing.entry:earlyEntry;
     const executableControlEntry=controlSizing.ok?controlSizing.entry:assessment.plannedEntry;
     const frozenSl=controlSizing.ok?controlSizing.sl:assessment.plannedSl;
-    const pair={version:VERSION,kind:'pair_created',eventId:digest(['pair',assessment.experimentId]),at:receivedAt,
+    const pair={version:VERSION,hypothesisId:HYPOTHESIS,kind:'pair_created',eventId:digest(['pair',assessment.experimentId]),at:receivedAt,
       experimentId:assessment.experimentId,candidateId:assessment.candidateId,candidateKey:assessment.candidateKey,
       episodeId:assessment.episodeId,cohort:assessment.cohort,symbol:assessment.symbol,side:assessment.side,
       decisionAt:assessment.decisionAt,episodeOriginAt:assessment.episodeOriginAt,episodeAgeMs:assessment.episodeAgeMs,
@@ -237,7 +270,8 @@ async function acquireQuote(assessment) {
       permissionAtBirth:assessment.permissionAtBirth,exhaustionContext:assessment.exhaustionContext,
       quoteRequestedAt:requestedAt,quoteReceivedAt:receivedAt,quoteLatencyMs:receivedAt-requestedAt,
       quoteTimestampPrecision:'LOCAL_REQUEST_AND_RECEIPT; EXCHANGE_TICK_TIMESTAMP_UNAVAILABLE',
-      firstPostDecisionQuote:true,bid:quote.bid,ask:quote.ask,mark:quote.mark,last:quote.last,
+      firstPostDecisionQuote:null,firstObservedPostDecisionQuote:true,
+      bid:quote.bid,ask:quote.ask,mark:quote.mark,last:quote.last,
       spreadAbs:round(quote.ask-quote.bid),spreadBps:round(10000*(quote.ask-quote.bid)/((quote.ask+quote.bid)/2)),
       frozenSl,frozenTp:assessment.plannedTp,settings:assessment.settings,
       early:{armId:digest([assessment.experimentId,'EARLY']),entryTime:receivedAt,entryPrice:round(executableEarlyEntry),
@@ -292,7 +326,15 @@ function armOutcome({pair,bars,kind,entry,entryTime,filled=true,fillAt=null}) {
     directionalReturn15m:null,directionalReturn30m:null,directionalReturn60m:null,mfeR:null,maeR:null,
     timeToMfeMin:null,timeToMaeMin:null,ambiguity:false,incompleteData:false};
   const origin=fillAt??entryTime;
-  const start=kind==='EARLY'?Math.ceil(origin/60000)*60000:Math.floor(origin/60000)*60000;
+  const fillBar=kind==='CONTROL'?bars.find(x=>x.ts===origin):null;
+  const ambiguousFillBar=!!fillBar&&(
+    buy?(fillBar.high>=tp+tpBuffer||fillBar.low<=sl):
+      (fillBar.low<=tp-tpBuffer||fillBar.high>=sl));
+  if (ambiguousFillBar) return {filled:true,fillAt:origin,entryPrice:entry,
+    tpSlOutcome:'ENTRY_BAR_AMBIGUOUS',netR:null,directionalReturn15m:null,
+    directionalReturn30m:null,directionalReturn60m:null,mfeR:null,maeR:null,
+    timeToMfeMin:null,timeToMaeMin:null,ambiguity:true,incompleteData:true};
+  const start=kind==='EARLY'?Math.ceil(origin/60000)*60000:origin+60000;
   const end=origin+pair.settings.maxHoldMin*60000;
   const usable=bars.filter(x=>x.ts>=start&&x.ts<end);
   let outcome='NEITHER',resolvedAt=null,exitPrice=null,ambiguity=false;
@@ -320,19 +362,21 @@ function armOutcome({pair,bars,kind,entry,entryTime,filled=true,fillAt=null}) {
     directionalReturn15m:dirReturn(entry,closeAt(bars,origin,15),pair.side),
     directionalReturn30m:dirReturn(entry,closeAt(bars,origin,30),pair.side),
     directionalReturn60m:dirReturn(entry,closeAt(bars,origin,60),pair.side),mfeR,maeR,timeToMfeMin,timeToMaeMin,
-    netR,ambiguity,entryMinuteExcluded:kind==='EARLY',incompleteData:exitPrice===null};
+    netR,ambiguity,entryMinuteExcluded:true,incompleteData:exitPrice===null};
 }
 function labelPair(pair,bars) {
   const buy=pair.side==='BUY',buffer=pair.control.plannedEntry*(pair.settings.entryBufferBps||0)/10000;
   const expires=pair.control.createdAt+pair.settings.entryWindowMin*60000;
-  const fillBar=bars.find(c=>c.ts>=pair.control.createdAt&&c.ts<=expires&&
+  // A 1m OHLC bar is usable only when the entire bar falls after decision and before expiry.
+  const fillBar=bars.find(c=>c.ts>=Math.ceil(pair.control.createdAt/60000)*60000&&
+    c.ts+60000<=expires&&
     (buy?c.low<=pair.control.plannedEntry-buffer:c.high>=pair.control.plannedEntry+buffer));
   const early=armOutcome({pair,bars,kind:'EARLY',entry:pair.early.entryPrice,entryTime:pair.early.entryTime});
   const control=armOutcome({pair,bars,kind:'CONTROL',entry:pair.control.plannedEntry,
     entryTime:pair.control.createdAt,filled:!!fillBar,fillAt:fillBar?.ts??null});
   early.sizing=pair.early.sizing;early.entryFeeRole='TAKER';
   control.sizing=pair.control.sizing;control.entryFeeRole='MAKER';
-  return {version:VERSION,kind:'paired_outcome',eventId:digest(['outcome',pair.experimentId]),at:Date.now(),
+  return {version:VERSION,hypothesisId:pair.hypothesisId||null,kind:'paired_outcome',eventId:digest(['outcome',pair.experimentId]),at:Date.now(),
     experimentId:pair.experimentId,candidateId:pair.candidateId,candidateKey:pair.candidateKey,episodeId:pair.episodeId,
     cohort:pair.cohort,symbol:pair.symbol,side:pair.side,decisionAt:pair.decisionAt,
     configHash:pair.configHash,marketSnapshotId:pair.marketSnapshotId,episodeOriginAt:pair.episodeOriginAt,
@@ -356,17 +400,39 @@ async function resolveDue(limit=2) {
     const now=Date.now();
     pumpQuotes();
     if (now-lastPrune>3600000) {lastPrune=now;prune(now);}
-    const due=[...pending.values()].filter(x=>now>=x.decisionAt+(x.settings.entryWindowMin+x.settings.maxHoldMin+2)*60000)
+    const due=[...pending.values()].filter(x=>now>=x.decisionAt+(x.settings.entryWindowMin+x.settings.maxHoldMin+2)*60000&&
+      now>=(x.nextAttemptAt||0))
       .sort((a,b)=>a.decisionAt-b.decisionAt).slice(0,limit);
     for (const pair of due) try {
       const bars=await fetchBars(pair);
       const expected=Math.min(60,pair.settings.maxHoldMin);
-      if (bars.filter(x=>x.ts>=Math.ceil(pair.early.entryTime/60000)*60000).length<expected) continue;
       const requiredThrough=pair.decisionAt+(pair.settings.entryWindowMin+pair.settings.maxHoldMin)*60000;
-      if (!bars.length||bars.at(-1).ts+60000<requiredThrough) continue;
+      if (bars.filter(x=>x.ts>=Math.ceil(pair.early.entryTime/60000)*60000).length<expected||
+          !bars.length||bars.at(-1).ts+60000<requiredThrough) {
+        if (now<requiredThrough+10*60000) {pair.nextAttemptAt=now+120000;continue;}
+        append({version:VERSION,kind:'incomplete',eventId:digest(['bar-short',pair.experimentId]),
+          at:Date.now(),experimentId:pair.experimentId,episodeId:pair.episodeId,
+          reason:'INSUFFICIENT_1M_BARS',incompleteData:true});
+        pending.delete(pair.experimentId);
+        continue;
+      }
+      const timestamps=new Set(bars.map(x=>x.ts));
+      let missing=false;
+      for (let t=Math.ceil(pair.decisionAt/60000)*60000;t+60000<=requiredThrough;t+=60000)
+        if (!timestamps.has(t)) {missing=true;break;}
+      if (missing) {
+        append({version:VERSION,kind:'incomplete',eventId:digest(['bar-gap',pair.experimentId]),
+          at:Date.now(),experimentId:pair.experimentId,episodeId:pair.episodeId,
+          reason:'MISSING_1M_BARS',incompleteData:true});
+        pending.delete(pair.experimentId);
+        continue;
+      }
       const row=labelPair(pair,bars);
       if (append(row,row.at)) pending.delete(pair.experimentId);
-    } catch(e) {logger.warn('research','Early-entry outcome resolution failed',{symbol:pair.symbol,error:e.message});}
+    } catch(e) {
+      pair.nextAttemptAt=Date.now()+120000;
+      logger.warn('research','Early-entry outcome resolution failed',{symbol:pair.symbol,error:e.message});
+    }
   } finally {resolving=false;}
 }
 function start() {
@@ -378,4 +444,4 @@ function start() {
 function stop() {if (timer) clearInterval(timer);timer=null;}
 
 module.exports={VERSION,observeCandidate,evaluateEligibility,labelPair,armOutcome,resolveDue,files,prune,start,stop,
-  _test:{exactDirectionContext,exactBreadthPercentile,structureTag,btcBuyPermission}};
+  _test:{researchDirectionContext,exactBreadthPercentile,structureTag,birthStructure,btcBuyPermission}};

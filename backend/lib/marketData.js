@@ -18,7 +18,7 @@ let tickerCache = { at: 0, list: [] };
  * downstream has to remember to.
  */
 async function getCandles(symbol, interval, limit, { testnet, ttlMs } = {}) {
-  const key = `${symbol}:${interval}`;
+  const key = `${testnet !== false ? 'testnet' : 'mainnet'}:${symbol}:${interval}`;
   const now = Date.now();
   const intervalMs = Math.max(60000, num(interval) * 60000);
   const hit = klineCache.get(key);
@@ -76,7 +76,7 @@ async function getCandles(symbol, interval, limit, { testnet, ttlMs } = {}) {
 
 /** All linear USDT perpetual tickers, with 24h turnover and spread. */
 async function getTickers({ testnet, ttlMs = 60000 } = {}) {
-  if (Date.now() - tickerCache.at < ttlMs && tickerCache.list.length) return tickerCache.list;
+  if (tickerCache.testnet === (testnet !== false) && Date.now() - tickerCache.at < ttlMs && tickerCache.list.length) return tickerCache.list;
 
   const res = await bybit.publicGet('/v5/market/tickers', { category: 'linear' }, testnet);
   const list = (res?.list || [])
@@ -106,13 +106,13 @@ async function getTickers({ testnet, ttlMs = 60000 } = {}) {
       };
     });
 
-  tickerCache = { at: Date.now(), list };
+  tickerCache = { at: Date.now(), list, testnet:testnet !== false };
   return list;
 }
 
 /** Lot size, tick size and minimum order quantity — required to size an order correctly. */
 async function getInstruments({ testnet, ttlMs = 6 * 3600 * 1000 } = {}) {
-  if (Date.now() - instrumentCache.at < ttlMs && instrumentCache.map.size) return instrumentCache.map;
+  if (instrumentCache.testnet === (testnet !== false) && Date.now() - instrumentCache.at < ttlMs && instrumentCache.map.size) return instrumentCache.map;
 
   const map = new Map();
   let cursor = '';
@@ -138,6 +138,7 @@ async function getInstruments({ testnet, ttlMs = 6 * 3600 * 1000 } = {}) {
 
   instrumentCache.at = Date.now();
   instrumentCache.map = map;
+  instrumentCache.testnet = testnet !== false;
   logger.info('market', `Loaded ${map.size} tradable USDT perpetual instruments`);
   return map;
 }
@@ -147,6 +148,7 @@ function clearCaches() {
   tickerCache = { at: 0, list: [] };
   instrumentCache.at = 0;
   instrumentCache.map = new Map();
+  instrumentCache.testnet = null;
 }
 
 function cacheStats() {

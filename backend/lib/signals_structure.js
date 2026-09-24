@@ -72,7 +72,7 @@ function regimeAllows(regime, side) {
     case 'CHOP':
       return false;
     default:
-      return true;
+      return false; // missing/stale BTC data cannot grant directional permission
   }
 }
 

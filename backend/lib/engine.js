@@ -120,12 +120,17 @@ async function buildUniverse(settings) {
 async function getBtcRegime(settings) {
   try {
     const candles = await marketData.getCandles('BTCUSDT', settings.timeframe, 200, { testnet: settings.testnet });
-    const regime = detectBtcRegime(candles);
+    const latest=candles.at(-1),intervalMs=Number(settings.timeframe)*60000;
+    if (!latest || !Number.isFinite(latest.ts) ||
+        Date.now()-(latest.ts+intervalMs)>2.5*intervalMs)
+      throw Error('BTC closed candle is missing or stale');
+    const regime = {...detectBtcRegime(candles),observedAt:Date.now(),closedBarAt:latest.ts+intervalMs};
     state.btcRegime = regime;
     return regime;
   } catch (e) {
     logger.warn('engine', 'Could not determine BTC regime', { error: e.message });
-    return { regime: 'UNKNOWN', strength: 0 };
+    state.btcRegime={ regime: 'UNKNOWN', strength: 0, observedAt:Date.now(),closedBarAt:null,error:e.message };
+    return state.btcRegime;
   }
 }
 
@@ -363,6 +368,7 @@ async function scanOnce() {
     const tickerBySymbol = new Map(tickers.map((t) => [t.symbol, t]));
     const instruments = await marketData.getInstruments({ testnet: settings.testnet });
     const btcRegime = await getBtcRegime(settings);
+    logger.info('engine', `BTC regime ${btcRegime.regime} from closed bar ${btcRegime.closedBarAt || 'NOT_AVAILABLE'}`);
     const scanAt = Date.now();
     const scanId = uid('scan');
     const researchConfigHash = researchCapture.settingsHash(settings);
@@ -548,7 +554,8 @@ async function scanOnce() {
       // Shadow-only sidecar. Its return value is deliberately ignored and cannot affect any
       // candidate, gate, rank, size, portfolio limit, or order path below.
       try { earlyEntryShadow.observeCandidate(signal,{scanAt,settings,snapshot:marketSnapshot,
-        configHash:researchConfigHash,instrument:instruments.get(signal.symbol)||null}); }
+        candles:researchCandles.get(signal.symbol)||[],configHash:researchConfigHash,
+        instrument:instruments.get(signal.symbol)||null}); }
       catch (e) { logger.warn('research','Early-entry shadow capture failed',{error:e.message,symbol:signal.symbol}); }
     }
     for (const observation of structureObservations) {

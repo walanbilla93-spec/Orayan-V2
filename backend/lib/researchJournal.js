@@ -1,21 +1,75 @@
 'use strict';
+const fs=require('fs');
+const path=require('path');
+const {Readable}=require('stream');
+const {StringDecoder}=require('string_decoder');
 const store = require('./store');
+const logger=require('./logger');
 const VERSION = 'MARKET_ENVIRONMENT_RESEARCH_V1';
 // Research events are needed for rejected-candidate counterfactual work. Keep a time-based
 // window large enough for multi-day analysis; the old 20k hard cap discarded ~7h in <2 days.
 const RETENTION_MS = 4 * 86400000; // 96h, safely above the requested 72h minimum
 const MAX_SNAPSHOTS = 2500;
-const MAX_EVENTS = 100000; // safety ceiling; time retention is the primary policy
 let snapshots = store.read('researchEnvironmentV1', []);
-let events = store.read('researchEventsV1', []);
 if (!Array.isArray(snapshots)) snapshots = [];
-if (!Array.isArray(events)) events = [];
 const bootNow = Date.now();
 snapshots = snapshots.filter(x => Number(x?.barOpenAt || x?.observedAt || 0) >= bootNow - RETENTION_MS).slice(-MAX_SNAPSHOTS);
-events = events.filter(x => Number(x?.at || 0) >= bootNow - RETENTION_MS).slice(-MAX_EVENTS);
-let timer = null, dirty = false;
-const lastEventSignature = new Map(events.filter(e => e?.candidateKey && e?.signature)
-  .map(e => [e.candidateKey, e.signature]));
+let timer = null, dirty = false,lastEventPrune=Date.now();
+const eventDir=path.join(store.DATA_DIR,'research-events-v1');
+const legacyEventFile=path.join(store.DATA_DIR,'researchEventsV1.json');
+const lastEventSignature=new Map(),recentEvents=[];
+const MAX_SIGNATURES=4096,MAX_RECENT=256;
+function eventFiles() {
+  if (!fs.existsSync(eventDir)) return [];
+  return fs.readdirSync(eventDir).filter(x=>/^events-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/.test(x))
+    .sort().map(x=>path.join(eventDir,x));
+}
+function pruneEventFiles(now=Date.now()) {
+  const cutoff=now-RETENTION_MS;
+  for(const file of eventFiles()) {
+    const m=/events-(\d{4}-\d{2}-\d{2})-(\d{2})\.jsonl$/.exec(file);
+    if(Date.parse(`${m[1]}T${m[2]}:00:00Z`)+3600000<cutoff)
+      try{fs.unlinkSync(file);}catch(e){logger.warn('research','Could not prune event file',{error:e.message});}
+  }
+}
+// Only recent signatures are needed for restart dedupe. Never parse the legacy
+// researchEventsV1.json array at boot; it can occupy most of a small V8 heap.
+try {
+  pruneEventFiles();
+  const cutoff=Date.now()-3*3600000;
+  for(const file of eventFiles()) {
+    const m=/events-(\d{4}-\d{2}-\d{2})-(\d{2})\.jsonl$/.exec(file);
+    if(Date.parse(`${m[1]}T${m[2]}:00:00Z`)+3600000<cutoff)continue;
+    const fd=fs.openSync(file,'r'),buf=Buffer.allocUnsafe(65536),decoder=new StringDecoder('utf8');
+    let carry='';
+    try {
+      let count;
+      while((count=fs.readSync(fd,buf,0,buf.length,null))>0){
+        carry+=decoder.write(buf.subarray(0,count));
+        let end;
+        while((end=carry.indexOf('\n'))>=0){
+          const line=carry.slice(0,end);carry=carry.slice(end+1);
+          if(line.length>1048576)throw Error('Research event row exceeds 1 MB');
+          if(line)try{const row=JSON.parse(line);if(row.candidateKey&&row.signature){
+            lastEventSignature.delete(row.candidateKey);
+            lastEventSignature.set(row.candidateKey,row.signature);
+            if(lastEventSignature.size>MAX_SIGNATURES)
+              lastEventSignature.delete(lastEventSignature.keys().next().value);
+          }}catch(e){logger.warn('research','Skipping malformed research event row',{file,error:e.message});}
+        }
+        if(carry.length>1048576)throw Error('Research event row exceeds 1 MB');
+      }
+      carry+=decoder.end();
+      // A crash during append can leave an incomplete final line. Do not let
+      // that one line prevent restoration of all earlier complete records.
+      if(carry)try{const row=JSON.parse(carry);if(row.candidateKey&&row.signature){
+        lastEventSignature.delete(row.candidateKey);
+        lastEventSignature.set(row.candidateKey,row.signature);
+      }}catch(e){logger.warn('research','Ignoring incomplete final event row',{file,error:e.message});}
+    }finally{fs.closeSync(fd);}
+  }
+  while(lastEventSignature.size>MAX_SIGNATURES)lastEventSignature.delete(lastEventSignature.keys().next().value);
+}catch(e){logger.warn('research','Could not restore research event signatures',{error:e.message});}
 function flush() {
   if (timer) { clearTimeout(timer); timer = null; }
   if (!dirty) return;
@@ -23,7 +77,6 @@ function flush() {
   // Minified persistence materially lowers the temporary JSON string allocated during flush.
   // These files are machine research stores; pretty printing only increases heap pressure.
   store.write('researchEnvironmentV1', snapshots, false);
-  store.write('researchEventsV1', events, false);
 }
 function schedule() {
   dirty = true;
@@ -159,6 +212,7 @@ function project(s) {
 }
 function recordEvents(signals, meta = {}) {
   const at = meta.scanAt || Date.now();
+  const additions=[],signatures=[];
   for (const signal of Array.isArray(signals) ? signals : []) {
     if (!signal?.symbol || !signal?.side) continue;
     const row = project(signal);
@@ -166,18 +220,150 @@ function recordEvents(signals, meta = {}) {
     const signature = JSON.stringify([row.passed, [...row.failedGates].sort(), row.structureEvent,
       row.locationBucket, signal.entryPath || null]);
     if (lastEventSignature.get(candidateKey) === signature) continue;
-    lastEventSignature.set(candidateKey, signature);
-    events.push({ version:VERSION, key:`${candidateKey}|${at}`, candidateKey, signature, at,
+    signatures.push([candidateKey,signature]);
+    additions.push({ version:VERSION, key:`${candidateKey}|${at}`, candidateKey, signature, at,
       scanId:meta.scanId || null, marketSnapshotId:row.marketSnapshotId || meta.marketSnapshotId || null,
       configHash:meta.configHash || null, ...row });
   }
-  events = events.filter(x => x.at >= at - RETENTION_MS).slice(-MAX_EVENTS);
-  schedule();
+  if(!additions.length)return;
+  try{
+    fs.mkdirSync(eventDir,{recursive:true});
+    const stamp=new Date(at).toISOString().slice(0,13).replace('T','-');
+    fs.appendFileSync(path.join(eventDir,`events-${stamp}.jsonl`),
+      additions.map(row=>JSON.stringify(row)).join('\n')+'\n');
+    for(const [key,signature] of signatures){
+      lastEventSignature.delete(key);lastEventSignature.set(key,signature);
+    }
+    while(lastEventSignature.size>MAX_SIGNATURES)lastEventSignature.delete(lastEventSignature.keys().next().value);
+    recentEvents.push(...additions);
+    if(recentEvents.length>MAX_RECENT)recentEvents.splice(0,recentEvents.length-MAX_RECENT);
+    if(at-lastEventPrune>3600000){lastEventPrune=at;pruneEventFiles(at);}
+  }catch(e){logger.warn('research','Could not append research events',{error:e.message});}
 }
 function clear() {
-  snapshots = []; events = []; lastEventSignature.clear(); dirty = true; flush();
+  snapshots = []; recentEvents.length=0; lastEventSignature.clear(); dirty = true; flush();
+  store.write('researchEventsV1',[],false);
+  for(const file of eventFiles())try{fs.unlinkSync(file);}catch(e){
+    logger.warn('research','Could not clear research event file',{error:e.message});
+  }
+}
+async function* legacyEventRows(file=legacyEventFile,size=null) {
+  if(!fs.existsSync(file))return;
+  if(size===0)return;
+  const decoder=new StringDecoder('utf8');
+  let depth=0,quoted=false,escaped=false,object='';
+  function* scan(text) {
+    for(const char of text) {
+      if(depth===0){if(char==='{'){depth=1;object='{';}continue;}
+      object+=char;
+      if(escaped){escaped=false;continue;}
+      if(char==='\\'&&quoted){escaped=true;continue;}
+      if(char==='"'){quoted=!quoted;continue;}
+      if(!quoted){
+        if(char==='{')depth++;
+        else if(char==='}'){
+          depth--;
+          if(depth===0){yield JSON.parse(object);object='';}
+        }
+      }
+      if(object.length>1048576)throw Error('Legacy research event exceeds 1 MB');
+    }
+  }
+  for await(const chunk of fs.createReadStream(file,{
+    highWaterMark:65536,...(size===null?{}:{start:0,end:size-1})}))
+    yield* scan(decoder.write(chunk));
+  yield* scan(decoder.end());
+  if(depth!==0)throw Error('Legacy research event JSON is incomplete');
+}
+async function* eventRows(plan) {
+  const cutoff=plan.at-RETENTION_MS;
+  for await(const row of legacyEventRows(legacyEventFile,plan.legacySize))
+    if(Number(row.at)>=cutoff&&Number(row.at)<=plan.at)yield row;
+  for(const {file,size} of plan.files){
+    if(!size)continue;
+    const decoder=new StringDecoder('utf8');
+    let carry='';
+    for await(const chunk of fs.createReadStream(file,{highWaterMark:65536,start:0,end:size-1})){
+      carry+=decoder.write(chunk);
+      let end;
+      while((end=carry.indexOf('\n'))>=0){
+        const line=carry.slice(0,end);carry=carry.slice(end+1);
+        if(line.length>1048576)throw Error('Research event row exceeds 1 MB');
+        if(!line)continue;
+        let row;
+        try{row=JSON.parse(line);}catch(e){
+          logger.warn('research','Skipping malformed research event row',{file,error:e.message});
+          continue;
+        }
+        if(Number(row.at)>=cutoff&&Number(row.at)<=plan.at)yield row;
+      }
+      if(carry.length>1048576)throw Error('Research event row exceeds 1 MB');
+    }
+    carry+=decoder.end();
+    if(carry)try{
+      const row=JSON.parse(carry);
+      if(Number(row.at)>=cutoff&&Number(row.at)<=plan.at)yield row;
+    }catch(e){logger.warn('research','Skipping incomplete final research event row',{file,error:e.message});}
+  }
+}
+async function* environmentRows(){for(const row of snapshots)yield row;}
+function csvCell(value) {
+  if(value===null||value===undefined)return '';
+  const s=typeof value==='object'?JSON.stringify(value):String(value);
+  return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;
+}
+async function* serializedRows(factory,format) {
+  if(format==='json'){
+    yield '[';
+    let first=true;
+    for await(const row of factory()){yield (first?'':',')+JSON.stringify(row);first=false;}
+    yield ']';
+    return;
+  }
+  const keys=[],seen=new Set();
+  for await(const row of factory())for(const key of Object.keys(row))
+    if(!seen.has(key)){seen.add(key);keys.push(key);}
+  if(!keys.length)return;
+  yield keys.join(',')+'\n';
+  for await(const row of factory())yield keys.map(key=>csvCell(row[key])).join(',')+'\n';
+}
+function exportStream(factory,format) {
+  return {stream:Readable.from(serializedRows(factory,format)),
+    contentType:format==='json'?'application/json; charset=utf-8':'text/csv; charset=utf-8'};
+}
+function exportEventStream(format) {
+  const plan={at:Date.now(),legacySize:fs.existsSync(legacyEventFile)?fs.statSync(legacyEventFile).size:0,
+    files:eventFiles().map(file=>({file,size:fs.statSync(file).size}))};
+  return exportStream(()=>eventRows(plan),format);
+}
+// Rank the current, already-observed breadth against older snapshots of this same
+// timeframe/configuration. Never include the current bar or a later observation.
+function breadthPercentileAt(snapshot, decisionAt) {
+  const value=finite(snapshot?.directionalBreadth);
+  if (value===null || !Number.isFinite(decisionAt) || snapshot.observedAt>decisionAt ||
+      !(snapshot.coveragePct>=80))
+    return {value:null,category:'NOT_AVAILABLE',source:'PRIOR_MARKET_SNAPSHOTS',observedAt:null,historyCount:0};
+  const prior=[];
+  for (let i=snapshots.length-1;i>=0 && prior.length<192;i--) {
+    const s=snapshots[i];
+    if (s.timeframe!==snapshot.timeframe || s.configHash!==snapshot.configHash ||
+        !(s.coveragePct>=80) ||
+        s.barOpenAt>=snapshot.barOpenAt || s.observedAt>decisionAt) continue;
+    const b=finite(s.directionalBreadth);
+    if (b!==null) prior.push(b);
+  }
+  if (prior.length<24) return {value:null,category:'WARMUP',source:'PRIOR_MARKET_SNAPSHOTS',
+    observedAt:snapshot.observedAt,historyCount:prior.length};
+  const percentile=100*prior.filter(x=>x<=value).length/prior.length;
+  return {value:round(percentile,4),category:percentile>=85?'TOP_>=85':
+    percentile<=15?'BOTTOM_<=15':'MID_15_85',source:'PRIOR_MARKET_SNAPSHOTS_192_MAX',
+    observedAt:snapshot.observedAt,historyCount:prior.length};
 }
 module.exports = {
   VERSION, observation, captureMarketSnapshot, recordEvents,
-  getSnapshots:() => snapshots.slice(), getEvents:() => events.slice(), clear, flush,
+  getSnapshots:() => snapshots.slice(), getEvents:() => recentEvents.slice(),
+  exportEventStream,
+  exportEnvironmentStream:format=>exportStream(environmentRows,format),
+  breadthPercentileAt, clear, flush,
+  _test:{legacyEventRows,exportStream},
 };

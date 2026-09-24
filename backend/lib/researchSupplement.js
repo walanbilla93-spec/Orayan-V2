@@ -4,6 +4,7 @@
 const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
+const {StringDecoder}=require('string_decoder');
 const store=require('./store');
 const logger=require('./logger');
 const capture=require('./researchCapture');
@@ -12,6 +13,7 @@ const {detectStructure}=require('./structure');
 const VERSION='STRUCTURE_EVENT_RESEARCH_V1';
 const STOP_VERSION='STOP_RECOVERY_LABEL_V1';
 const RETENTION_MS=72*3600000;
+const MAX_SEEN=20000,MAX_PENDING=1024;
 const DIR=path.join(store.DATA_DIR,'research-supplement-v1');
 const pendingStructure=new Map(),pendingStops=new Map(),seen=new Map();
 let resolving=false,lastPrune=0;
@@ -44,22 +46,53 @@ function append(row,at=Date.now()) {
     const hour=new Date(at).toISOString().slice(0,13).replace('T','-');
     fs.appendFileSync(path.join(DIR,`supplement-${hour}.jsonl`),JSON.stringify(row)+'\n');
     seen.set(`${row.kind}|${row.eventId}`,at);
+    while (seen.size>MAX_SEEN) seen.delete(seen.keys().next().value);
     if (at-lastPrune>3600000) {lastPrune=at;prune(at);}
     return true;
   } catch(e) {logger.warn('research','Supplement append failed',{error:e.message});return false;}
 }
+function eachLine(file,visit) {
+  const fd=fs.openSync(file,'r'),buffer=Buffer.allocUnsafe(65536),decoder=new StringDecoder('utf8');
+  let carry='';
+  try {
+    let count;
+    while ((count=fs.readSync(fd,buffer,0,buffer.length,null))>0) {
+      carry+=decoder.write(buffer.subarray(0,count));
+      let end;
+      while ((end=carry.indexOf('\n'))>=0) {
+        const line=carry.slice(0,end);carry=carry.slice(end+1);
+        if (line) visit(line);
+      }
+      if (carry.length>1048576) throw Error('Supplement JSONL row exceeds 1 MB');
+    }
+    carry+=decoder.end();
+    if (carry) visit(carry);
+  } finally {fs.closeSync(fd);}
+}
+function trimPending() {
+  for (const [map,kind] of [[pendingStructure,'structure_event_label'],[pendingStops,'stop_recovery_label']]) {
+    while (map.size>MAX_PENDING) {
+      const key=map.keys().next().value,row=map.get(key);
+      map.delete(key);
+      append({version:kind==='structure_event_label'?VERSION:STOP_VERSION,kind,eventId:key,
+        at:Date.now(),symbol:row.symbol,candidateId:row.candidateId||null,
+        episodeId:row.episodeId||null,status:'INCOMPLETE_CAP_EVICTION',incompleteData:true});
+    }
+  }
+}
 // Restore only bounded 72h hourly files, preserving dedupe and unfinished maturity across restart.
 try {
   prune();
-  for (const file of files()) for (const line of fs.readFileSync(file,'utf8').split('\n')) {
-    if (!line) continue;
+  for (const file of files()) eachLine(file,line=>{
     const row=JSON.parse(line);
     seen.set(`${row.kind}|${row.eventId}`,number(row.at)||Date.now());
+    while (seen.size>MAX_SEEN) seen.delete(seen.keys().next().value);
     if (row.kind==='structure_event') pendingStructure.set(row.eventId,row);
     if (row.kind==='structure_event_label') pendingStructure.delete(row.eventId);
     if (row.kind==='stop_recovery_pending') pendingStops.set(row.eventId,row);
     if (row.kind==='stop_recovery_label') pendingStops.delete(row.eventId);
-  }
+  });
+  trimPending();
 } catch(e) {logger.warn('research','Supplement restore failed',{error:e.message});}
 function observeStructure({symbol,candles,ticker,tickerDynamic,settings,scanAt,configHash,marketSnapshotId,marketSnapshot,signals=[]}) {
   if (!Array.isArray(candles)||candles.length<10) return null;
@@ -96,7 +129,7 @@ function observeStructure({symbol,candles,ticker,tickerDynamic,settings,scanAt,c
     pre5:liquidationAtObservation.pre5,pre1:liquidationAtObservation.pre1,
     baselineMean1m:liquidationAtObservation.baselineMean1m,
     baselineSd1m:liquidationAtObservation.baselineSd1m} : null;
-  if (append(row)) pendingStructure.set(eventId,row);
+  if (append(row)) {pendingStructure.set(eventId,row);trimPending();}
   return eventId;
 }
 function observeStop(trade,link={}) {
@@ -119,7 +152,7 @@ function observeStop(trade,link={}) {
     stopAndTargetSameMinuteFlag:trade.closeReason!=='Stop loss',
     configHash:link.configHash||trade.configHash||null,
     marketSnapshotId:link.marketSnapshotId||trade.marketSnapshotId||null,testnet:!!trade.testnet};
-  if (append(row)) pendingStops.set(eventId,row);
+  if (append(row)) {pendingStops.set(eventId,row);trimPending();}
   return eventId;
 }
 function directionalReturn(base,close,side) {return base>0&&close>0?round((side==='SELL'?-1:1)*(close/base-1)):null;}
@@ -192,13 +225,16 @@ async function resolveDue(limit=8) {
     if (now-lastPrune>3600000) {lastPrune=now;prune(now);}
     const due=[...pendingStructure.values()].map(x=>({kind:'structure',x,time:x.breakTs}))
       .concat([...pendingStops.values()].map(x=>({kind:'stop',x,time:x.stopCloseTime})))
-      .filter(v=>now>=v.time+62*60000).sort((a,b)=>a.time-b.time).slice(0,limit);
+      .filter(v=>now>=v.time+62*60000&&now>=(v.x.nextAttemptAt||0)).sort((a,b)=>a.time-b.time).slice(0,limit);
     for (const v of due) try {
       const bars=await fetchBars(v.x.symbol,v.time,v.time+61*60000,v.x.testnet);
-      if (bars.length<55) continue; // retry incomplete public history, never publish false negatives
+      if (bars.length<55) {v.x.nextAttemptAt=Date.now()+120000;continue;} // retry incomplete public history
       const row=v.kind==='structure'?structureLabel(v.x,bars,capture.liquidationWindows(v.x.symbol,v.time,Date.now())):stopLabel(v.x,bars);
       if (append(row)) (v.kind==='structure'?pendingStructure:pendingStops).delete(v.x.eventId);
-    } catch(e) {logger.warn('research','Supplement label resolution failed',{symbol:v.x.symbol,error:e.message});}
+    } catch(e) {
+      v.x.nextAttemptAt=Date.now()+120000;
+      logger.warn('research','Supplement label resolution failed',{symbol:v.x.symbol,error:e.message});
+    }
   } finally {resolving=false;}
 }
 module.exports={VERSION,STOP_VERSION,observeStructure,observeStop,resolveDue,files,prune,structureLabel,stopLabel};
