@@ -5,6 +5,7 @@ const {Readable}=require('stream');
 const {StringDecoder}=require('string_decoder');
 const store = require('./store');
 const logger=require('./logger');
+const runtime=require('./runtimeIdentity');
 const VERSION = 'MARKET_ENVIRONMENT_RESEARCH_V1';
 // Research events are needed for rejected-candidate counterfactual work. Keep a time-based
 // window large enough for multi-day analysis; the old 20k hard cap discarded ~7h in <2 days.
@@ -168,6 +169,7 @@ function captureMarketSnapshot(observations, meta = {}) {
       ? (shockZ > 0 ? 'UP_SHOCK' : 'DOWN_SHOCK') : 'NORMAL';
   const id = `mes_${meta.timeframe || 'na'}_${barOpenAt}`;
   const snapshot = {
+    ...runtime.rowFields(),
     version:VERSION, id, marketSnapshotId:id, barOpenAt, configHash:meta.configHash || null,
     barOpenIso:new Date(barOpenAt).toISOString(), observedAt:meta.scanAt || Date.now(),
     timeframe:meta.timeframe || null, expectedUniverseCount:meta.expectedUniverseCount || null,
@@ -221,7 +223,7 @@ function recordEvents(signals, meta = {}) {
       row.locationBucket, signal.entryPath || null]);
     if (lastEventSignature.get(candidateKey) === signature) continue;
     signatures.push([candidateKey,signature]);
-    additions.push({ version:VERSION, key:`${candidateKey}|${at}`, candidateKey, signature, at,
+    additions.push({ ...runtime.rowFields(), version:VERSION, key:`${candidateKey}|${at}`, candidateKey, signature, at,
       scanId:meta.scanId || null, marketSnapshotId:row.marketSnapshotId || meta.marketSnapshotId || null,
       configHash:meta.configHash || null, ...row });
   }

@@ -26,6 +26,14 @@ const MAX_CRITICAL_QUEUE = 128;
 const criticalQueue = [], researchQueue = [];
 let pumping = false, researchCooldownUntil = 0;
 let lastCallAt = 0;
+let operationalSink = null;
+
+function operationalEvent(type, detail = {}) {
+  const event = { type, at:Date.now(), researchCooldownUntil,
+    criticalQueueDepth:criticalQueue.length, researchQueueDepth:researchQueue.length, ...detail };
+  try { operationalSink?.(event); } catch (_) { /* telemetry must never affect transport */ }
+}
+function taggedError(message,reasonCode) {const error=new Error(message);error.reasonCode=reasonCode;return error;}
 
 async function pump() {
   if (pumping) return;
@@ -34,7 +42,8 @@ async function pump() {
     while (criticalQueue.length || researchQueue.length) {
       const job=criticalQueue.shift() || researchQueue.shift();
       if (job.research && Date.now()<researchCooldownUntil) {
-        job.reject(new Error('Bybit research cooling down after rate limit'));
+        operationalEvent('RESEARCH_COOLDOWN_REJECTED',{reasonCode:'COOLDOWN_ACTIVE',endpoint:job.endpoint});
+        job.reject(taggedError('Bybit research cooling down after rate limit','COOLDOWN_ACTIVE'));
         continue;
       }
       const wait=Math.max(0,(job.research?RESEARCH_GAP_MS:MIN_GAP_MS)-(Date.now()-lastCallAt));
@@ -46,19 +55,29 @@ async function pump() {
       try {job.resolve(await job.fn());}
       catch(e) {
         if (job.research && (e.status===429 || e.retCode===10006 || /rate.limit/i.test(e.message||'')))
-          researchCooldownUntil=Date.now()+60000;
+          { researchCooldownUntil=Date.now()+60000;
+            operationalEvent('BYBIT_RATE_LIMIT',{reasonCode:e.retCode===10006?'RATE_LIMIT_10006':'HTTP_ERROR',
+              endpoint:job.endpoint,httpStatus:e.status||null,retCode:e.retCode||null}); }
         job.reject(e);
       }
     }
   } finally {pumping=false; if (criticalQueue.length||researchQueue.length) pump();}
 }
-function schedule(fn,{research=false}={}) {
-  if (research && (researchQueue.length>=MAX_RESEARCH_QUEUE || Date.now()<researchCooldownUntil))
-    return Promise.reject(new Error('Bybit research capacity/cooldown unavailable'));
-  if (!research && criticalQueue.length>=MAX_CRITICAL_QUEUE)
+function schedule(fn,{research=false,endpoint=null}={}) {
+  if (research && researchQueue.length>=MAX_RESEARCH_QUEUE) {
+    operationalEvent('RESEARCH_QUEUE_CAPACITY',{reasonCode:'RESEARCH_QUEUE_CAPACITY',endpoint});
+    return Promise.reject(taggedError('Bybit research queue capacity unavailable','RESEARCH_QUEUE_CAPACITY'));
+  }
+  if (research && Date.now()<researchCooldownUntil) {
+    operationalEvent('RESEARCH_COOLDOWN_REJECTED',{reasonCode:'COOLDOWN_ACTIVE',endpoint});
+    return Promise.reject(taggedError('Bybit research cooldown active','COOLDOWN_ACTIVE'));
+  }
+  if (!research && criticalQueue.length>=MAX_CRITICAL_QUEUE) {
+    operationalEvent('CRITICAL_QUEUE_CAPACITY',{reasonCode:'CRITICAL_QUEUE_CAPACITY',endpoint});
     return Promise.reject(new Error('Bybit critical request queue capacity exceeded'));
+  }
   return new Promise((resolve,reject)=>{
-    (research?researchQueue:criticalQueue).push({fn,resolve,reject,research});
+    (research?researchQueue:criticalQueue).push({fn,resolve,reject,research,endpoint});
     pump();
   });
 }
@@ -118,7 +137,8 @@ async function request(method, path, params, { testnet = true, auth = false, tim
     try {
       json = JSON.parse(text);
     } catch (_e) {
-      throw new Error(`Bybit returned non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
+      const err=new Error(`Bybit returned non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
+      err.status=res.status;err.reasonCode='PARSE_ERROR';throw err;
     }
     if (!res.ok) {
       const err=new Error(`Bybit ${path} HTTP ${res.status}: ${json.retMsg||'request failed'}`);
@@ -146,7 +166,9 @@ async function withRetry(fn, { attempts = 3, label = 'bybit' } = {}) {
       return await fn();
     } catch (e) {
       lastErr = e;
-      if (e.status===429 || e.retCode===10006) researchCooldownUntil=Date.now()+60000;
+      if (e.status===429 || e.retCode===10006) {researchCooldownUntil=Date.now()+60000;
+        operationalEvent('BYBIT_RATE_LIMIT',{reasonCode:e.retCode===10006?'RATE_LIMIT_10006':'HTTP_ERROR',
+          endpoint:label,httpStatus:e.status||null,retCode:e.retCode||null});}
       const retriable = e.name === 'AbortError'
         || /fetch failed|ECONNRESET|ETIMEDOUT|socket hang up/i.test(e.message || '')
         || e.status === 429 || e.retCode === 10006 || e.retCode === 10016;
@@ -160,17 +182,17 @@ async function withRetry(fn, { attempts = 3, label = 'bybit' } = {}) {
 }
 
 const publicGet = (path, params, testnet) =>
-  schedule(() => withRetry(() => request('GET', path, params, { testnet, auth: false }), { label: path }));
+  schedule(() => withRetry(() => request('GET', path, params, { testnet, auth: false }), { label: path }),{endpoint:path});
 
 // Best effort only. Research has a bounded, lower-priority queue and no retry burst.
 const researchGet = (path, params, testnet) =>
-  schedule(() => request('GET',path,params,{testnet,auth:false,timeoutMs:7000}),{research:true});
+  schedule(() => request('GET',path,params,{testnet,auth:false,timeoutMs:7000}),{research:true,endpoint:path});
 
 const privateGet = (path, params, testnet) =>
-  schedule(() => withRetry(() => request('GET', path, params, { testnet, auth: true }), { label: path }));
+  schedule(() => withRetry(() => request('GET', path, params, { testnet, auth: true }), { label: path }),{endpoint:path});
 
 const privatePost = (path, params, testnet) =>
-  schedule(() => withRetry(() => request('POST', path, params, { testnet, auth: true }), { attempts: 2, label: path }));
+  schedule(() => withRetry(() => request('POST', path, params, { testnet, auth: true }), { attempts: 2, label: path }),{endpoint:path});
 
 /** Align local clock with Bybit's so signed requests are not rejected for timestamp drift. */
 async function syncClock(testnet) {
@@ -193,5 +215,8 @@ module.exports = {
   researchGet,
   privateGet,
   privatePost,
+  setOperationalSink: sink => { operationalSink = typeof sink === 'function' ? sink : null; },
+  getOperationalState: () => ({researchCooldownUntil,criticalQueueDepth:criticalQueue.length,
+    researchQueueDepth:researchQueue.length}),
   getClockOffset: () => clockOffsetMs,
 };

@@ -12,6 +12,7 @@ const capture=require('./researchCapture');
 const risk=require('./risk');
 const researchJournal=require('./researchJournal');
 const {detectStructure}=require('./structure');
+const runtime=require('./runtimeIdentity');
 
 const VERSION='EARLY_ENTRY_SHADOW_V1';
 const HYPOTHESIS='RETRACE_CONTEXT_PRIOR_BREADTH_192_BOS_CHOCH_V1';
@@ -56,7 +57,8 @@ function append(row,at=Date.now()) {
   try {
     fs.mkdirSync(DIR,{recursive:true});
     const hour=new Date(at).toISOString().slice(0,13).replace('T','-');
-    fs.appendFileSync(path.join(DIR,`early-entry-${hour}.jsonl`),JSON.stringify(row)+'\n');
+    fs.appendFileSync(path.join(DIR,`early-entry-${hour}.jsonl`),
+      JSON.stringify({...runtime.rowFields(),...row})+'\n');
     seen.set(dedupe,at);
     while (seen.size>MAX_SEEN) seen.delete(seen.keys().next().value);
     if (at-lastPrune>3600000) {lastPrune=at;prune(at);}

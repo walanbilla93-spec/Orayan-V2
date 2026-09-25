@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const {StringDecoder}=require('string_decoder');
 const retraceShadow = require('./retraceShadow');
 const bybit = require('./bybit');
+const runtime = require('./runtimeIdentity');
 const VERSION = 'PROSPECTIVE_BIRTH_V2';
 const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V4';
 const dir = path.join(store.DATA_DIR, 'research-v2');
@@ -28,6 +29,10 @@ const resolvedForward = new Map();
 const flowCache = new Map();
 const httpCache = new Map(); // at most 16 short-lived research responses/promises
 const flowLabelled = new Set();
+const flowScheduled = new Set();
+const pendingOrderFlow = [];
+const MAX_PENDING_ORDER_FLOW = 1024;
+let orderFlowPumping = false;
 let forwardTimer = null, forwardResolving = false;
 let socket, reconnect, heartbeat, subscribed = new Set(), wanted = new Set(), testnetMode = null;
 let confirmed = new Set(), pendingBatches = new Map(), requestNumber = 0;
@@ -42,10 +47,14 @@ function append(kind, row, at = Date.now()) {
   try {
     fs.mkdirSync(dir, { recursive:true });
     const stamp = new Date(at).toISOString().slice(0, kind === 'compact' ? 13 : 10).replace('T','-');
-    fs.appendFileSync(path.join(dir, `${kind}-${stamp}.jsonl`), JSON.stringify({recordType:kind,...row}) + '\n');
+    fs.appendFileSync(path.join(dir, `${kind}-${stamp}.jsonl`),
+      JSON.stringify({recordType:kind,...runtime.rowFields(),...row}) + '\n');
     if (at - lastPruneAt > 60 * 60000) { lastPruneAt = at; prune(at); }
-  } catch (e) { logger.warn('research', `Could not append ${kind}`, { error:e.message }); }
+    return true;
+  } catch (e) { logger.warn('research', `Could not append ${kind}`, { error:e.message }); return false; }
 }
+bybit.setOperationalSink(event => append('compact',{version:COMPACT_VERSION,kind:'operational_event',
+  eventId:digest(['bybit-operational',event.type,event.at,event.endpoint]),...event},event.at));
 function eachLine(file,visit) {
   const fd=fs.openSync(file,'r'),buffer=Buffer.allocUnsafe(65536),decoder=new StringDecoder('utf8');
   let carry='';
@@ -179,6 +188,16 @@ try {
     if (row.kind === 'candidate_birth' && row.episodeId && !resolvedForward.has(row.episodeId)) {
       pendingForward.set(row.episodeId,row);
       capPendingForward();
+    }
+  });
+  // A process may stop after the durable birth append but before the asynchronous request
+  // finishes. Such births cannot be reconstructed from a later recent-trade response without
+  // backdating. Close them explicitly instead of leaving a permanently missing join.
+  for (const file of restoreFiles) eachLine(file,line=>{
+    const row=JSON.parse(line);
+    if (row.kind==='candidate_birth' && row.candidateId && !flowLabelled.has(row.candidateId)) {
+      appendOrderFlowTerminal(row,{status:'NOT_AVAILABLE',reasonCode:'RESTART_OR_RETENTION',
+        detail:'Birth restored without a durable order-flow terminal row'});
     }
   });
   capPendingForward();
@@ -375,9 +394,17 @@ async function recentTradeFlow(symbol, observedForAt, testnet) {
       category:'linear', symbol, limit:1000,
     }, testnet);
     const start = observedForAt - 60000;
-    const rows = (res?.list || []).map(x => ({
+    const raw = (res?.list || []).map(x => ({
       at:n(x.time), side:String(x.side || ''), size:n(x.size), price:n(x.price),
-    })).filter(x => x.at !== null && x.at <= observedForAt && x.at > start && x.size > 0 && x.price > 0);
+    })).filter(x => x.at !== null && x.size > 0 && x.price > 0);
+    const rows=raw.filter(x => x.at <= observedForAt && x.at > start);
+    const rawOldest=raw.length?Math.min(...raw.map(x=>x.at)):null;
+    if (!rows.length || (raw.length>=1000 && rawOldest!==null && rawOldest>start))
+      return {status:'NOT_AVAILABLE',reasonCode:'INSUFFICIENT_TRADES',source:'Bybit /v5/market/recent-trade',
+        windowMs:60000,tradeCountObserved:rows.length,oldestTradeAt:rows.length?Math.min(...rows.map(x=>x.at)):null,
+        newestTradeAt:rows.length?Math.max(...rows.map(x=>x.at)):null,
+        takerBuyNotional1m:null,takerSellNotional1m:null,takerImbalance1m:null,tradeCount1m:null,
+        incompleteData:true};
     let buy=0, sell=0;
     for (const x of rows) {
       const notional=x.size*x.price;
@@ -386,7 +413,7 @@ async function recentTradeFlow(symbol, observedForAt, testnet) {
     }
     const total=buy+sell;
     const times=rows.map(x=>x.at);
-    return {status:'OK',source:'Bybit /v5/market/recent-trade',windowMs:60000,
+    return {status:'OK',reasonCode:null,source:'Bybit /v5/market/recent-trade',windowMs:60000,
       takerBuyNotional1m:r(buy),takerSellNotional1m:r(sell),
       takerImbalance1m:r(total>0?(buy-sell)/total:null),tradeCount1m:rows.length,
       oldestTradeAt:times.length?Math.min(...times):null,newestTradeAt:times.length?Math.max(...times):null};
@@ -395,26 +422,63 @@ async function recentTradeFlow(symbol, observedForAt, testnet) {
   while (flowCache.size>256) flowCache.delete(flowCache.keys().next().value);
   return promise;
 }
-function scheduleOrderFlowLabel(compact) {
-  if (!compact?.candidateId || flowLabelled.has(compact.candidateId)) return;
+function orderFlowFailureReason(e) {
+  if (['RATE_LIMIT_10006','RESEARCH_QUEUE_CAPACITY','COOLDOWN_ACTIVE','TIMEOUT','HTTP_ERROR',
+      'PARSE_ERROR','INSUFFICIENT_TRADES','RESTART_OR_RETENTION','UNKNOWN'].includes(e?.reasonCode)) return e.reasonCode;
+  if (e?.retCode===10006) return 'RATE_LIMIT_10006';
+  if (/capacity/i.test(e?.message||'')) return 'RESEARCH_QUEUE_CAPACITY';
+  if (/cooling down|cooldown/i.test(e?.message||'')) return 'COOLDOWN_ACTIVE';
+  if (e?.name==='AbortError') return 'TIMEOUT';
+  if (e?.reasonCode==='PARSE_ERROR'||/non-JSON|parse/i.test(e?.message||'')) return 'PARSE_ERROR';
+  if (Number.isFinite(e?.status)) return 'HTTP_ERROR';
+  return 'UNKNOWN';
+}
+function appendOrderFlowTerminal(compact,flow) {
+  if (!compact?.candidateId || flowLabelled.has(compact.candidateId)) return false;
+  const at=Date.now();
+  const row={version:COMPACT_VERSION,kind:'order_flow_label',
+    eventId:digest(['flow',compact.candidateId,compact.at]),at,observedForAt:compact.at,
+    decisionAt:compact.at,candidateKey:compact.candidateKey,episodeId:compact.episodeId,
+    candidateId:compact.candidateId,engine:compact.engine,symbol:compact.symbol,side:compact.side,
+    configHash:compact.configHash||null,source:'Bybit /v5/market/recent-trade',
+    takerBuyNotional1m:null,takerSellNotional1m:null,takerImbalance1m:null,tradeCount1m:null,
+    incompleteData:flow.status!=='OK',...flow};
+  if (!append('compact',row,at)) return false;
   flowLabelled.add(compact.candidateId);
+  flowScheduled.delete(compact.candidateId);
   while (flowLabelled.size>4096) flowLabelled.delete(flowLabelled.values().next().value);
-  recentTradeFlow(compact.symbol, compact.at, !!compact.minutePathRef?.testnet).then(flow => {
-    const row={version:COMPACT_VERSION,kind:'order_flow_label',eventId:digest(['flow',compact.candidateId,compact.at]),
-      at:Date.now(),observedForAt:compact.at,candidateKey:compact.candidateKey,episodeId:compact.episodeId,
-      candidateId:compact.candidateId,engine:compact.engine,symbol:compact.symbol,side:compact.side,
-      configHash:compact.configHash||null,...flow};
-    append('compact',row,row.at);
-  }).catch(e => {
-    logger.warn('research','Recent public-trade capture unavailable',{symbol:compact.symbol,error:e.message});
-    append('compact',{version:COMPACT_VERSION,kind:'order_flow_label',
-      eventId:digest(['flow',compact.candidateId,compact.at]),at:Date.now(),
-      observedForAt:compact.at,candidateKey:compact.candidateKey,episodeId:compact.episodeId,
-      candidateId:compact.candidateId,engine:compact.engine,symbol:compact.symbol,side:compact.side,
-      configHash:compact.configHash||null,status:'NOT_AVAILABLE',source:'Bybit /v5/market/recent-trade',
-      takerBuyNotional1m:null,takerSellNotional1m:null,takerImbalance1m:null,tradeCount1m:null,
-      incompleteData:true},Date.now());
-  });
+  return true;
+}
+async function pumpOrderFlow() {
+  if (orderFlowPumping) return;
+  orderFlowPumping=true;
+  try {
+    while (pendingOrderFlow.length) {
+      const compact=pendingOrderFlow.shift();
+      if (flowLabelled.has(compact.candidateId)) {flowScheduled.delete(compact.candidateId);continue;}
+      try {
+        const flow=await recentTradeFlow(compact.symbol,compact.at,!!compact.minutePathRef?.testnet);
+        appendOrderFlowTerminal(compact,flow);
+      } catch(e) {
+        const reasonCode=orderFlowFailureReason(e);
+        logger.warn('research','Recent public-trade capture unavailable',
+          {symbol:compact.symbol,reasonCode,error:e.message});
+        appendOrderFlowTerminal(compact,{status:'NOT_AVAILABLE',reasonCode,
+          httpStatus:e.status||null,retCode:e.retCode||null,detail:String(e.message||'').slice(0,200)});
+      }
+    }
+  } finally {orderFlowPumping=false;if(pendingOrderFlow.length)setImmediate(pumpOrderFlow);}
+}
+function scheduleOrderFlowLabel(compact) {
+  if (!compact?.candidateId || flowLabelled.has(compact.candidateId)||flowScheduled.has(compact.candidateId)) return;
+  if (pendingOrderFlow.length>=MAX_PENDING_ORDER_FLOW) {
+    appendOrderFlowTerminal(compact,{status:'NOT_AVAILABLE',reasonCode:'RESEARCH_QUEUE_CAPACITY',
+      detail:`Local order-flow queue capped at ${MAX_PENDING_ORDER_FLOW}`});
+    return;
+  }
+  flowScheduled.add(compact.candidateId);
+  pendingOrderFlow.push(compact);
+  setImmediate(pumpOrderFlow);
 }
 function directionalReturn(reference, close, side) {
   if (!(reference > 0) || !(close > 0)) return null;
@@ -534,7 +598,8 @@ function birth(signal, context) {
   const engine=signal.signalSource?.startsWith('MARCI')?'Marci':'New Orayan';
   const configHash=settingsHash(settings);
   const capturedAt=Date.now();
-  const row={ version:VERSION, kind:'candidate_birth', candidateId:signal.id, scanId, signalTime:n(signal.createdAt)||scanAt,
+  const row={ version:VERSION, kind:'candidate_birth', candidateId:signal.id, scanId,
+    decisionAt:Math.max(scanAt,n(signal.createdAt)||scanAt),signalTime:n(signal.createdAt)||scanAt,
     capturedAt, configHash, captureLagMs:capturedAt-scanAt, signalToCaptureLagMs:capturedAt-(n(signal.createdAt)||scanAt), engine, engineVariant:signal.engine||null, signalSource:signal.signalSource||null,
     symbol:signal.symbol, side:signal.side, plannedEntry:entry, plannedSl:sl, plannedTp:tp,
     entryModeDecision:signal.gates?.passed && signal.marciShadow?.passed !== false
@@ -574,7 +639,8 @@ function birth(signal, context) {
     orderIntent:null, orderAck:null, fill:null };
   const candidateKey = keyFor(signal);
   const passed = !!signal.gates?.passed && signal.marciShadow?.passed !== false;
-  const compact = {version:COMPACT_VERSION, at:scanAt, capturedAt:row.capturedAt, configHash,
+  const compact = {version:COMPACT_VERSION, at:scanAt, decisionAt:row.decisionAt,
+    capturedAt:row.capturedAt, configHash,
     captureLagMs:row.captureLagMs, signalToCaptureLagMs:row.signalToCaptureLagMs,
     candidateKey, candidateId:signal.id, signalTime:row.signalTime, scanId,
     marketSnapshotId:row.marketSnapshotId, engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',
@@ -688,4 +754,6 @@ function exportFiles(date = 'all', raw = false) {
 }
 module.exports={VERSION,COMPACT_VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,
   settingsHash,computeForwardLabel,resolveDueForwardLabels,exportFiles,prune,
-  liquidationWindows,liquidationWindowTotals,candidateLink,researchGet};
+  liquidationWindows,liquidationWindowTotals,candidateLink,researchGet,
+  _test:{orderFlowFailureReason,appendOrderFlowTerminal,scheduleOrderFlowLabel,pumpOrderFlow,
+    pendingOrderFlow,flowLabelled,flowScheduled}};

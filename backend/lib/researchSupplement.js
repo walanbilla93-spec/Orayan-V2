@@ -7,6 +7,7 @@ const crypto=require('crypto');
 const {StringDecoder}=require('string_decoder');
 const store=require('./store');
 const logger=require('./logger');
+const runtime=require('./runtimeIdentity');
 const capture=require('./researchCapture');
 const {atr}=require('./indicators');
 const {detectStructure}=require('./structure');
@@ -44,7 +45,8 @@ function append(row,at=Date.now()) {
   try {
     fs.mkdirSync(DIR,{recursive:true});
     const hour=new Date(at).toISOString().slice(0,13).replace('T','-');
-    fs.appendFileSync(path.join(DIR,`supplement-${hour}.jsonl`),JSON.stringify(row)+'\n');
+    fs.appendFileSync(path.join(DIR,`supplement-${hour}.jsonl`),
+      JSON.stringify({...runtime.rowFields(),...row})+'\n');
     seen.set(`${row.kind}|${row.eventId}`,at);
     while (seen.size>MAX_SEEN) seen.delete(seen.keys().next().value);
     if (at-lastPrune>3600000) {lastPrune=at;prune(at);}
