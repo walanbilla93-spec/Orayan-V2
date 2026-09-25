@@ -10,6 +10,19 @@ const researchCapture = require('../lib/researchCapture');
 const executor = require('../lib/executor');
 const { GATE_ORDER } = require('../lib/gates');
 const { num } = require('../lib/util');
+const runtime = require('../lib/runtimeIdentity');
+const researchManifest = require('../lib/researchManifest');
+const fs = require('fs');
+
+function researchExportPlan(files=[]) {
+  const watermarkAt=Date.now();
+  const plan=files.map(file=>({path:file,size:fs.existsSync(file)?fs.statSync(file).size:0}));
+  const identity=runtime.exportIdentity(watermarkAt,plan.map(file=>[file.path,file.size]));
+  return {files:plan,headers:{'X-Orayan-Research-Snapshot-Id':identity.snapshotId,
+    'X-Orayan-Research-Watermark-At':String(identity.watermarkAt),
+    'X-Orayan-Process-Boot-Id':identity.processBootId}};
+}
+function researchExportHeaders(){return researchExportPlan().headers;}
 
 /**
  * Attach mark-to-market floating P&L on OPEN trades so the UI is not blind until close.
@@ -55,6 +68,8 @@ const routes = {
     apiKeySet: bybit.keySet(),
     clockOffsetMs: bybit.getClockOffset(),
     running: engine.state.running,
+    processBootId: runtime.processBootId,
+    processStartedAt: runtime.processStartedAt,
   }),
 
   'GET /api/status': async () => engine.getState(),
@@ -153,7 +168,8 @@ const routes = {
     const date = query.date || 'all';
     const raw = query.raw === '1';
     const files = researchCapture.exportFiles(date,raw);
-    return { __files:true, files, contentType:'application/x-ndjson; charset=utf-8',
+    const plan=researchExportPlan(files);
+    return { __files:true, ...plan, contentType:'application/x-ndjson; charset=utf-8',
       filename:`orayan2_${raw ? 'legacy_research_diagnostics' : 'prospective_compact_v4'}_${date}.jsonl` };
   },
 
@@ -161,7 +177,8 @@ const routes = {
     const supplement=require('../lib/researchSupplement');
     supplement.prune();
     const files = supplement.files(query.date || 'all');
-    return { __files:true, files, contentType:'application/x-ndjson; charset=utf-8',
+    const plan=researchExportPlan(files);
+    return { __files:true, ...plan, contentType:'application/x-ndjson; charset=utf-8',
       filename:`orayan2_structure_stop_research_v1_${query.date || 'all'}.jsonl` };
   },
 
@@ -170,7 +187,8 @@ const routes = {
     early.prune();
     const date=query.date||'all';
     const files=early.files(date);
-    return {__files:true,files,contentType:'application/x-ndjson; charset=utf-8',
+    const plan=researchExportPlan(files);
+    return {__files:true,...plan,contentType:'application/x-ndjson; charset=utf-8',
       filename:`orayan2_early_entry_shadow_v1_${date}.jsonl`};
   },
 
@@ -178,14 +196,18 @@ const routes = {
   'GET /api/journal/research/environment/export': async ({ query }) => {
     const format = query.format === 'json' ? 'json' : 'csv';
     const { stream, contentType } = journal.streamResearchEnvironment(format);
-    return { __stream:true, stream, contentType, filename:`orayan2_environment_${Date.now()}.${format}` };
+    return { __stream:true, stream, contentType,headers:researchExportHeaders(),
+      filename:`orayan2_environment_${Date.now()}.${format}` };
   },
 
   'GET /api/journal/research/events/export': async ({ query }) => {
     const format = query.format === 'json' ? 'json' : 'csv';
     const { stream, contentType } = journal.streamResearchEvents(format);
-    return { __stream:true, stream, contentType, filename:`orayan2_research_events_${Date.now()}.${format}` };
+    return { __stream:true, stream, contentType,headers:researchExportHeaders(),
+      filename:`orayan2_research_events_${Date.now()}.${format}` };
   },
+
+  'GET /api/journal/research/manifest': async () => researchManifest.buildManifest(),
 
   'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); engine.clearLastSignals(); return { ok: true }; },
 
