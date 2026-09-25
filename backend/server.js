@@ -9,6 +9,7 @@ const logger = require('./lib/logger');
 const engine = require('./lib/engine');
 const bybit = require('./lib/bybit');
 const journal = require('./lib/journal');
+const runtime = require('./lib/runtimeIdentity');
 
 const PORT = Number(process.env.PORT) || 8080;
 const FRONTEND_DIR = path.resolve(__dirname, '..', 'frontend');
@@ -102,6 +103,7 @@ const server = http.createServer(async (req, res) => {
           'Content-Disposition': `attachment; filename="${result.filename}"`,
           'Cache-Control': 'no-store',
           'Access-Control-Allow-Origin': '*',
+          ...(result.headers || {}),
         });
         await pipeline(result.stream,res);
         return;
@@ -112,9 +114,12 @@ const server = http.createServer(async (req, res) => {
           'Content-Disposition': `attachment; filename="${result.filename}"`,
           'Cache-Control': 'no-store',
           'Access-Control-Allow-Origin': '*',
+          ...(result.headers || {}),
         });
-        for (const file of result.files) {
-          await pipeline(fs.createReadStream(file), res, {end:false});
+        for (const item of result.files) {
+          const file=typeof item==='string'?{path:item,size:fs.statSync(item).size}:item;
+          if (!file.size) continue;
+          await pipeline(fs.createReadStream(file.path,{start:0,end:file.size-1}), res, {end:false});
         }
         return res.end();
       }
@@ -127,6 +132,7 @@ const server = http.createServer(async (req, res) => {
           'Content-Disposition': `attachment; filename="${result.filename}"`,
           'Cache-Control': 'no-store',
           'Access-Control-Allow-Origin': '*',
+          ...(result.headers || {}),
         });
         return res.end(result.body);
       }
@@ -143,7 +149,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  logger.info('server', `Orayan II listening on http://localhost:${PORT}`);
+  logger.info('server', `Orayan II listening on http://localhost:${PORT}`,
+    {processBootId:runtime.processBootId,processStartedAt:runtime.processStartedAt});
   if (!bybit.keySet()) {
     logger.warn('server',
       'BYBIT_API_KEY / BYBIT_API_SECRET are not set. Paper mode works fully; live mode and account balance will not.');
