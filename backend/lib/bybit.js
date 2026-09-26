@@ -24,12 +24,33 @@ const RESEARCH_GAP_MS = 350;
 const MAX_RESEARCH_QUEUE = 16;
 const MAX_CRITICAL_QUEUE = 128;
 const criticalQueue = [], researchQueue = [];
-let pumping = false, researchCooldownUntil = 0;
+let pumping = false, globalResearchCooldownUntil = 0;
+const researchCooldownByEndpoint = new Map();
 let lastCallAt = 0;
 let operationalSink = null;
 
+function cooldownUntil(endpoint) {
+  const now=Date.now();
+  for (const [key,until] of researchCooldownByEndpoint) if (until<=now) researchCooldownByEndpoint.delete(key);
+  return Math.max(globalResearchCooldownUntil, researchCooldownByEndpoint.get(endpoint)||0);
+}
+function maxCooldownUntil() {
+  let out=globalResearchCooldownUntil;
+  for (const until of researchCooldownByEndpoint.values()) out=Math.max(out,until);
+  return out;
+}
+function applyRateLimitCooldown(e,endpoint) {
+  const until=Date.now()+60000;
+  const endpointScoped=e.retCode===10006&&Boolean(endpoint);
+  if (e.status===429) globalResearchCooldownUntil=until;
+  else if (endpointScoped) researchCooldownByEndpoint.set(endpoint,until);
+  else globalResearchCooldownUntil=until;
+  operationalEvent('BYBIT_RATE_LIMIT',{reasonCode:e.retCode===10006?'RATE_LIMIT_10006':'HTTP_ERROR',
+    endpoint,httpStatus:e.status||null,retCode:e.retCode||null,
+    cooldownScope:endpointScoped?'ENDPOINT':'GLOBAL',endpointCooldownUntil:cooldownUntil(endpoint)});
+}
 function operationalEvent(type, detail = {}) {
-  const event = { type, at:Date.now(), researchCooldownUntil,
+  const event = { type, at:Date.now(), researchCooldownUntil:maxCooldownUntil(),
     criticalQueueDepth:criticalQueue.length, researchQueueDepth:researchQueue.length, ...detail };
   try { operationalSink?.(event); } catch (_) { /* telemetry must never affect transport */ }
 }
@@ -41,8 +62,10 @@ async function pump() {
   try {
     while (criticalQueue.length || researchQueue.length) {
       const job=criticalQueue.shift() || researchQueue.shift();
-      if (job.research && Date.now()<researchCooldownUntil) {
-        operationalEvent('RESEARCH_COOLDOWN_REJECTED',{reasonCode:'COOLDOWN_ACTIVE',endpoint:job.endpoint});
+      const jobCooldownUntil=cooldownUntil(job.endpoint);
+      if (job.research && Date.now()<jobCooldownUntil) {
+        operationalEvent('RESEARCH_COOLDOWN_REJECTED',{reasonCode:'COOLDOWN_ACTIVE',endpoint:job.endpoint,
+          cooldownScope:globalResearchCooldownUntil>Date.now()?'GLOBAL':'ENDPOINT',endpointCooldownUntil:jobCooldownUntil});
         job.reject(taggedError('Bybit research cooling down after rate limit','COOLDOWN_ACTIVE'));
         continue;
       }
@@ -55,9 +78,7 @@ async function pump() {
       try {job.resolve(await job.fn());}
       catch(e) {
         if (job.research && (e.status===429 || e.retCode===10006 || /rate.limit/i.test(e.message||'')))
-          { researchCooldownUntil=Date.now()+60000;
-            operationalEvent('BYBIT_RATE_LIMIT',{reasonCode:e.retCode===10006?'RATE_LIMIT_10006':'HTTP_ERROR',
-              endpoint:job.endpoint,httpStatus:e.status||null,retCode:e.retCode||null}); }
+          applyRateLimitCooldown(e,job.endpoint);
         job.reject(e);
       }
     }
@@ -68,8 +89,10 @@ function schedule(fn,{research=false,endpoint=null}={}) {
     operationalEvent('RESEARCH_QUEUE_CAPACITY',{reasonCode:'RESEARCH_QUEUE_CAPACITY',endpoint});
     return Promise.reject(taggedError('Bybit research queue capacity unavailable','RESEARCH_QUEUE_CAPACITY'));
   }
-  if (research && Date.now()<researchCooldownUntil) {
-    operationalEvent('RESEARCH_COOLDOWN_REJECTED',{reasonCode:'COOLDOWN_ACTIVE',endpoint});
+  const endpointCooldownUntil=cooldownUntil(endpoint);
+  if (research && Date.now()<endpointCooldownUntil) {
+    operationalEvent('RESEARCH_COOLDOWN_REJECTED',{reasonCode:'COOLDOWN_ACTIVE',endpoint,
+      cooldownScope:globalResearchCooldownUntil>Date.now()?'GLOBAL':'ENDPOINT',endpointCooldownUntil});
     return Promise.reject(taggedError('Bybit research cooldown active','COOLDOWN_ACTIVE'));
   }
   if (!research && criticalQueue.length>=MAX_CRITICAL_QUEUE) {
@@ -166,9 +189,7 @@ async function withRetry(fn, { attempts = 3, label = 'bybit' } = {}) {
       return await fn();
     } catch (e) {
       lastErr = e;
-      if (e.status===429 || e.retCode===10006) {researchCooldownUntil=Date.now()+60000;
-        operationalEvent('BYBIT_RATE_LIMIT',{reasonCode:e.retCode===10006?'RATE_LIMIT_10006':'HTTP_ERROR',
-          endpoint:label,httpStatus:e.status||null,retCode:e.retCode||null});}
+      if (e.status===429 || e.retCode===10006) applyRateLimitCooldown(e,label);
       const retriable = e.name === 'AbortError'
         || /fetch failed|ECONNRESET|ETIMEDOUT|socket hang up/i.test(e.message || '')
         || e.status === 429 || e.retCode === 10006 || e.retCode === 10016;
@@ -216,7 +237,11 @@ module.exports = {
   privateGet,
   privatePost,
   setOperationalSink: sink => { operationalSink = typeof sink === 'function' ? sink : null; },
-  getOperationalState: () => ({researchCooldownUntil,criticalQueueDepth:criticalQueue.length,
-    researchQueueDepth:researchQueue.length}),
+  getOperationalState: () => ({researchCooldownUntil:maxCooldownUntil(),
+    globalResearchCooldownUntil,researchCooldownByEndpoint:Object.fromEntries(researchCooldownByEndpoint),
+    criticalQueueDepth:criticalQueue.length,researchQueueDepth:researchQueue.length}),
   getClockOffset: () => clockOffsetMs,
+  _test:{schedule,cooldownUntil,applyRateLimitCooldown,
+    reset:()=>{criticalQueue.length=0;researchQueue.length=0;pumping=false;lastCallAt=0;
+      globalResearchCooldownUntil=0;researchCooldownByEndpoint.clear();operationalSink=null;}},
 };
