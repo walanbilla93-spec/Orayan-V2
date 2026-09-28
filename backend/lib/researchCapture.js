@@ -682,7 +682,7 @@ function birth(signal, context) {
     engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',configHash,
     retraceStateShadow:compact.retraceStateShadow||null});
   capMap(candidateKeysById,MAX_CANDIDATE_LINKS);
-  if (continuing && previous.signature === signature) { previous.at=scanAt; return; }
+  if (continuing && previous.signature === signature) { previous.at=scanAt; return null; }
   compact.kind = continuing ? 'candidate_update' : 'candidate_birth';
   compact.episodeId = episodeId;
   compact.episodeOriginAt = originAt;
@@ -706,6 +706,9 @@ function birth(signal, context) {
     capPendingForward();
     scheduleOrderFlowLabel(compact);
   }
+  // The returned row is the exact immutable record just appended above. Research-only
+  // consumers can observe a genuine birth without reconstructing one from a later trade.
+  return update;
 }
 function outcome(candidateId, event, trade, detail={}) {
   try { journal.recordSignalOutcome(candidateId, event, trade, detail); }

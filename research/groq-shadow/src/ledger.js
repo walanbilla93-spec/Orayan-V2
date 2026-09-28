@@ -4,15 +4,72 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
-function ensureParent(file) { fs.mkdirSync(path.dirname(path.resolve(file)), {recursive:true}); }
+const MAX_INDEX_ENTRIES = 50000;
+const MAX_OPEN_REQUESTS = 1024;
+const caches = new Map();
+let scanCount = 0;
 
-function appendImmutable(file, record) {
-  ensureParent(file);
-  const fd = fs.openSync(file, 'a');
+function isInside(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function validateWritePath(file, allowedRoot) {
+  const candidate = path.resolve(file);
+  if (!allowedRoot) return candidate;
+  const root = path.resolve(allowedRoot);
+  if (!isInside(root, candidate)) {
+    const error = new Error('Groq shadow write path is outside the persistent data directory.');
+    error.code = 'GROQ_SHADOW_WRITE_OUTSIDE_DATA_ROOT';
+    throw error;
+  }
+  fs.mkdirSync(root, {recursive:true});
+  const realRoot = fs.realpathSync(root);
+  const relativeParent = path.relative(root, path.dirname(candidate));
+  let current = root;
+  for (const part of relativeParent.split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    if (!fs.existsSync(current)) fs.mkdirSync(current);
+    const realCurrent = fs.realpathSync(current);
+    if (!isInside(realRoot, realCurrent)) {
+      const error = new Error('Groq shadow write path escapes the persistent data directory through a symlink.');
+      error.code = 'GROQ_SHADOW_WRITE_SYMLINK_ESCAPE';
+      throw error;
+    }
+  }
+  if (fs.existsSync(candidate) && fs.lstatSync(candidate).isSymbolicLink()) {
+    const realCandidate = fs.realpathSync(candidate);
+    if (!isInside(realRoot, realCandidate)) {
+      const error = new Error('Groq shadow file symlink escapes the persistent data directory.');
+      error.code = 'GROQ_SHADOW_WRITE_SYMLINK_ESCAPE';
+      throw error;
+    }
+  }
+  return candidate;
+}
+
+function ensureParent(file, options = {}) {
+  const candidate = validateWritePath(file, options.allowedRoot);
+  fs.mkdirSync(path.dirname(candidate), {recursive:true});
+  return candidate;
+}
+
+function appendImmutable(file, record, options = {}) {
+  const candidate = ensureParent(file, options);
+  const fd = fs.openSync(candidate, 'a');
   try {
     fs.writeSync(fd, `${JSON.stringify(record)}\n`, null, 'utf8');
     fs.fsyncSync(fd);
   } finally { fs.closeSync(fd); }
+}
+
+async function appendImmutableAsync(file, record, options = {}) {
+  const candidate = ensureParent(file, options);
+  const handle = await fs.promises.open(candidate, 'a');
+  try {
+    await handle.writeFile(`${JSON.stringify(record)}\n`, 'utf8');
+    await handle.sync();
+  } finally { await handle.close(); }
 }
 
 async function readRecords(file, visit) {
@@ -30,28 +87,142 @@ async function readRecords(file, visit) {
   }
 }
 
-async function ledgerState(file, nowMs = Date.now()) {
-  const day = new Date(nowMs).toISOString().slice(0,10);
-  const minuteCutoff = nowMs - 60000;
-  const requestIds = new Set(), inputHashes = new Set(), candidateInputs = new Map();
-  let dayRequests = 0, dayTokens = 0, minuteRequests = 0, minuteTokens = 0;
-  await readRecords(file, row => {
-    if (row.request_id) requestIds.add(row.request_id);
-    if (row.input_snapshot_hash) inputHashes.add(row.input_snapshot_hash);
-    if (row.candidate_id && row.input_snapshot_hash && !candidateInputs.has(row.candidate_id)) {
-      candidateInputs.set(row.candidate_id,row.input_snapshot_hash);
+function boundedSetAdd(set, value, max = MAX_INDEX_ENTRIES) {
+  if (set.has(value)) set.delete(value);
+  set.add(value);
+  while (set.size > max) set.delete(set.values().next().value);
+}
+
+function boundedMapSet(map, key, value, max = MAX_INDEX_ENTRIES) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, value);
+  while (map.size > max) map.delete(map.keys().next().value);
+}
+
+class LedgerIndex {
+  constructor(file, options = {}) {
+    this.file = path.resolve(file);
+    this.allowedRoot = options.allowedRoot;
+    this.initialized = false;
+    this.loading = null;
+    this.day = null;
+    this.requestIds = new Set();
+    this.terminalRequestIds = new Set();
+    this.candidateInputs = new Map();
+    this.openRequests = new Map();
+    this.dayRequests = 0;
+    this.dayTokens = 0;
+    this.recentRequests = [];
+  }
+
+  clear(day) {
+    this.day = day;
+    this.requestIds.clear();
+    this.terminalRequestIds.clear();
+    this.candidateInputs.clear();
+    this.openRequests.clear();
+    this.dayRequests = 0;
+    this.dayTokens = 0;
+    this.recentRequests = [];
+  }
+
+  apply(row, nowMs) {
+    if (row.request_id) boundedSetAdd(this.requestIds, row.request_id);
+    if (row.candidate_id && row.input_snapshot_hash && !this.candidateInputs.has(row.candidate_id)) {
+      boundedMapSet(this.candidateInputs, row.candidate_id, row.input_snapshot_hash);
     }
-    if (row.record_type !== 'REQUEST_STARTED') return;
-    const requestedMs = Date.parse(row.requested_at_utc || '');
-    const reserved = Number(row.estimated_tokens_reserved) || 0;
-    if (String(row.requested_at_utc || '').startsWith(day)) {
-      dayRequests += 1; dayTokens += reserved;
+    if (row.record_type === 'REQUEST_STARTED' && row.request_id) {
+      boundedMapSet(this.openRequests, row.request_id, row, MAX_OPEN_REQUESTS);
+      const requestedMs = Date.parse(row.requested_at_utc || '');
+      const reserved = Number(row.estimated_tokens_reserved) || 0;
+      if (String(row.requested_at_utc || '').startsWith(this.day)) {
+        this.dayRequests += 1;
+        this.dayTokens += reserved;
+      }
+      if (Number.isFinite(requestedMs)) this.recentRequests.push({at:requestedMs,tokens:reserved});
     }
-    if (Number.isFinite(requestedMs) && requestedMs >= minuteCutoff) {
-      minuteRequests += 1; minuteTokens += reserved;
+    if (row.record_type === 'SHADOW_DECISION' && row.request_id) {
+      boundedSetAdd(this.terminalRequestIds, row.request_id);
+      this.openRequests.delete(row.request_id);
     }
-  });
-  return {requestIds,inputHashes,candidateInputs,dayRequests,dayTokens,minuteRequests,minuteTokens};
+    this.pruneRecent(nowMs);
+  }
+
+  pruneRecent(nowMs) {
+    const cutoff = nowMs - 60000;
+    this.recentRequests = this.recentRequests.filter(item => item.at >= cutoff && item.at <= nowMs);
+  }
+
+  async load(nowMs) {
+    const day = new Date(nowMs).toISOString().slice(0,10);
+    this.clear(day);
+    scanCount += 1;
+    await readRecords(this.file, row => this.apply(row, nowMs));
+    for (const started of [...this.openRequests.values()]) {
+      const completedIso = new Date(nowMs).toISOString();
+      const interrupted = {
+        ...started,
+        record_type:'SHADOW_DECISION',
+        status:'INTERRUPTED_UNKNOWN_OUTCOME',
+        completed_at_utc:completedIso,
+        available_to_system_at_utc:completedIso,
+        latency_ms:null,
+        http_status:null,
+        rate_limit_headers:{},
+        tokens:null,
+        decision:{decision:'ABSTAIN',risk_level:'UNKNOWN',confidence:0,
+          reason_codes:['INTERRUPTED_UNKNOWN_OUTCOME'],evidence_keys:[],
+          missing_or_stale:['Process stopped after request start; the possibly billed request was not retried.'],
+          rationale_short:'Request outcome is unknown after process interruption; automatic retry is forbidden.'},
+      };
+      delete interrupted.estimated_tokens_reserved;
+      await appendImmutableAsync(this.file, interrupted, {allowedRoot:this.allowedRoot});
+      this.apply(interrupted, nowMs);
+    }
+    this.initialized = true;
+  }
+
+  async ensure(nowMs) {
+    const day = new Date(nowMs).toISOString().slice(0,10);
+    if (this.initialized && this.day === day) { this.pruneRecent(nowMs); return this; }
+    if (!this.loading) this.loading = this.load(nowMs).finally(() => { this.loading = null; });
+    await this.loading;
+    return this;
+  }
+
+  state(nowMs) {
+    this.pruneRecent(nowMs);
+    return {
+      requestIds:this.requestIds,
+      terminalRequestIds:this.terminalRequestIds,
+      candidateInputs:this.candidateInputs,
+      dayRequests:this.dayRequests,
+      dayTokens:this.dayTokens,
+      minuteRequests:this.recentRequests.length,
+      minuteTokens:this.recentRequests.reduce((sum,item)=>sum+item.tokens,0),
+    };
+  }
+
+  async append(record, nowMs = Date.now()) {
+    await appendImmutableAsync(this.file, record, {allowedRoot:this.allowedRoot});
+    this.apply(record, nowMs);
+  }
+}
+
+async function ledgerIndex(file, nowMs = Date.now(), options = {}) {
+  const key = path.resolve(file);
+  let index = caches.get(key);
+  if (!index) {
+    index = new LedgerIndex(key, options);
+    caches.set(key, index);
+  } else if (options.allowedRoot) index.allowedRoot = options.allowedRoot;
+  await index.ensure(nowMs);
+  return index;
+}
+
+async function ledgerState(file, nowMs = Date.now(), options = {}) {
+  const index = await ledgerIndex(file, nowMs, options);
+  return index.state(nowMs);
 }
 
 function budgetReason(state, estimatedTokens, config) {
@@ -62,4 +233,5 @@ function budgetReason(state, estimatedTokens, config) {
   return null;
 }
 
-module.exports = {appendImmutable, readRecords, ledgerState, budgetReason};
+module.exports = {appendImmutable,appendImmutableAsync,readRecords,ledgerState,ledgerIndex,budgetReason,validateWritePath,
+  _test:{resetCaches:()=>caches.clear(),scanCount:()=>scanCount,resetScanCount:()=>{scanCount=0;},MAX_INDEX_ENTRIES}};

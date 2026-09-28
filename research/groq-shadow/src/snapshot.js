@@ -77,8 +77,16 @@ function validateSnapshot(snapshot, nowMs = Date.now()) {
     abstain.push('planned_trade.quote_evidence.age_seconds');
   }
   const quoteMs=utcMs(quote?.exchange_timestamp_utc);
-  if(quoteMs==null)abstain.push('planned_trade.quote_evidence.exchange_timestamp_utc');
-  else if(birthMs!=null&&quoteMs>birthMs)errors.push('future_leakage_time:planned_trade.quote_evidence.exchange_timestamp_utc');
+  const localQuoteMs=utcMs(quote?.observed_at_utc);
+  if(quoteMs==null){
+    // Bybit's ticker payload does not include a per-quote exchange timestamp. Accept a fresh,
+    // explicit local receipt only when the unsupported exchange timestamp is disclosed; never
+    // backfill or mislabel the local clock as exchange time.
+    if(quote?.exchange_timestamp_status!=='UNAVAILABLE_BYBIT_TICKER_PAYLOAD')
+      abstain.push('planned_trade.quote_evidence.exchange_timestamp_status');
+    if(localQuoteMs==null)abstain.push('planned_trade.quote_evidence.observed_at_utc');
+    else if(birthMs!=null&&localQuoteMs>birthMs)errors.push('future_leakage_time:planned_trade.quote_evidence.observed_at_utc');
+  } else if(birthMs!=null&&quoteMs>birthMs)errors.push('future_leakage_time:planned_trade.quote_evidence.exchange_timestamp_utc');
 
   const exposure = snapshot.exposure;
   for (const key of ['open_positions_total', 'same_side_count', 'same_side_regime_count', 'same_side_regime_heat_usdt']) {

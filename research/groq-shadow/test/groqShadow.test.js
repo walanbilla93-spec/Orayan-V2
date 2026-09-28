@@ -7,7 +7,8 @@ const os=require('os');
 const path=require('path');
 const {advise,configFromEnv,buildRequest,BoundedShadowQueue}=require('../src/advisor');
 const {postGroq}=require('../src/client');
-const {appendImmutable}=require('../src/ledger');
+const ledgerModule=require('../src/ledger');
+const {appendImmutable}=ledgerModule;
 const {validateSnapshot}=require('../src/snapshot');
 
 function tempLedger(){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-groq-'));return path.join(dir,'ledger.jsonl');}
@@ -83,6 +84,33 @@ test('restart idempotency ignores exact duplicate and flags changed duplicate ID
   assert.equal(conflict.status,'DUPLICATE_CANDIDATE_CONFLICT');
 });
 
+test('restart terminalizes orphan REQUEST_STARTED without repeating transport',async()=>{
+  const cfg=config(),now=Date.parse('2026-09-28T10:00:05Z');
+  let calls=0;
+  await assert.rejects(advise(snapshot(),{config:cfg,mode:'mock',nowMs:now,mockTransport:async()=>{
+    calls+=1;throw new Error('simulated process death after durable start');
+  }}),/simulated process death/);
+  ledgerModule._test.resetCaches();
+  const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:now+1000,mockTransport:async()=>{
+    calls+=1;return okTransport()();
+  }});
+  assert.equal(result.status,'DUPLICATE_IGNORED');
+  assert.equal(calls,1,'ambiguous potentially billed request must never be retried');
+  const rows=fs.readFileSync(cfg.ledger,'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(rows.map(row=>row.status),['REQUEST_STARTED','INTERRUPTED_UNKNOWN_OUTCOME']);
+  assert.equal(rows[1].decision.decision,'ABSTAIN');
+});
+
+test('ledger is scanned once then incrementally cached across repeated candidates',async()=>{
+  const cfg=config(),now=Date.parse('2026-09-28T10:00:05Z');
+  ledgerModule._test.resetCaches();ledgerModule._test.resetScanCount();
+  for(let index=0;index<4;index+=1){
+    const row=snapshot();row.candidate_id=`cached-${index}`;
+    await advise(row,{config:cfg,mode:'mock',nowMs:now+index,mockTransport:okTransport()});
+  }
+  assert.equal(ledgerModule._test.scanCount(),1);
+});
+
 test('absent API key is a persisted abstention and secret is never persisted',async()=>{
   const cfg=config();cfg.apiKey='';
   const result=await advise(snapshot(),{config:cfg,mode:'live',nowMs:Date.parse('2026-09-28T10:00:05Z')});
@@ -105,9 +133,19 @@ test('bounded queue refuses excess work',async()=>{
   release('done');assert.equal(await first,'done');
 });
 
-test('shadow package is isolated from executor, engine and gates',()=>{
+test('shadow worker failure is contained and the bounded queue continues',async()=>{
+  let calls=0;
+  const queue=new BoundedShadowQueue({maxSize:2,worker:async()=>{calls++;if(calls===1)throw Error('upstream exploded');return 'next-ok';}});
+  await assert.rejects(queue.enqueue(snapshot()),/upstream exploded/);
+  assert.equal(await queue.enqueue(snapshot()),'next-ok');
+});
+
+test('shadow package has no executor or gates integration and engine uses a one-way producer',()=>{
   const root=path.resolve(__dirname,'../../..');
-  for(const file of ['backend/lib/executor.js','backend/lib/engine.js','backend/lib/gates.js']){
+  for(const file of ['backend/lib/executor.js','backend/lib/gates.js']){
     assert.doesNotMatch(fs.readFileSync(path.join(root,file),'utf8'),/groq[-_ ]?shadow|GROQ_SHADOW/i);
   }
+  const engine=fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8');
+  assert.match(engine,/groqShadowProducer\.observeBirth\(/);
+  assert.doesNotMatch(engine,/await\s+groqShadowProducer\.observeBirth/);
 });
