@@ -141,14 +141,17 @@ const server = http.createServer(async (req, res) => {
     } catch (e) {
       logger.error('http', `${key} failed`, { error: e.message });
       if(res.headersSent){res.destroy(e);return;}
-      return send(res, 500, { error: e.message }, { 'Access-Control-Allow-Origin': '*' });
+      const status = Number.isInteger(e.statusCode) && e.statusCode >= 400 && e.statusCode <= 599
+        ? e.statusCode : 500;
+      return send(res, status, { error: e.message }, { 'Access-Control-Allow-Origin': '*' });
     }
   }
 
   return serveStatic(req, res, url.pathname);
 });
 
-server.listen(PORT, () => {
+function startServer(port = PORT) {
+  return server.listen(port, () => {
   logger.info('server', `Orayan II listening on http://localhost:${PORT}`,
     {processBootId:runtime.processBootId,processStartedAt:runtime.processStartedAt});
   if (!bybit.keySet()) {
@@ -168,7 +171,10 @@ server.listen(PORT, () => {
       }
     });
   }
-});
+  });
+}
+
+if (require.main === module) startServer();
 
 // Never leave positions unmanaged because of an unhandled rejection.
 process.on('unhandledRejection', (e) => {
@@ -189,3 +195,5 @@ function shutdown(sig) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+module.exports = { server, startServer };
