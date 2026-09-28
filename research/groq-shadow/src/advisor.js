@@ -1,5 +1,7 @@
 'use strict';
 
+const path = require('path');
+
 const {
   SCHEMA_VERSION, PROMPT_VERSION, PROMPT_VARIANT, DEFAULT_MODEL, RESPONSE_SCHEMA,
   SYSTEM_PROMPT, PROMPT_HASH, canonicalJson, sha256,
@@ -13,11 +15,14 @@ function intEnv(env, key, dflt, min, max) {
   return Number.isInteger(value) && value >= min && value <= max ? value : dflt;
 }
 function configFromEnv(env = process.env) {
+  // In the production image this resolves to /app/backend/data. Keep the environment override,
+  // but never default to a working-directory-dependent /data or ./data location.
+  const persistentDefault = path.resolve(__dirname, '..', '..', '..', 'backend', 'data', 'groq-shadow', 'decisions.jsonl');
   return {
     apiKey:env.GROQ_API_KEY || '',
     model:env.GROQ_SHADOW_MODEL || DEFAULT_MODEL,
     allowLive:String(env.GROQ_SHADOW_ALLOW_LIVE || '').toLowerCase() === 'true',
-    ledger:env.GROQ_SHADOW_LEDGER || './data/groq-shadow/decisions.jsonl',
+    ledger:env.GROQ_SHADOW_LEDGER || persistentDefault,
     timeoutMs:intEnv(env,'GROQ_SHADOW_TIMEOUT_MS',15000,1000,60000),
     maxOutputTokens:intEnv(env,'GROQ_SHADOW_MAX_OUTPUT_TOKENS',220,64,1000),
     maxRequestsDay:intEnv(env,'GROQ_SHADOW_MAX_REQUESTS_DAY',700,1,999),

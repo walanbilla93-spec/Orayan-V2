@@ -46,7 +46,8 @@ GROQ_SHADOW_ALLOW_LIVE=true node cli.js --input one-approved-candidate.jsonl --l
 GROQ_API_KEY=                         # secret-backed only; never written to logs/ledger
 GROQ_SHADOW_MODEL=openai/gpt-oss-120b
 GROQ_SHADOW_ALLOW_LIVE=false
-GROQ_SHADOW_LEDGER=/data/groq-shadow/decisions.jsonl
+GROQ_SHADOW_LEDGER=/app/backend/data/groq-shadow/decisions.jsonl
+GROQ_SHADOW_SNAPSHOT_LOG=/app/backend/data/groq-shadow/candidate-snapshots.jsonl # optional fixed-root override
 GROQ_SHADOW_TIMEOUT_MS=15000
 GROQ_SHADOW_MAX_OUTPUT_TOKENS=220
 GROQ_SHADOW_MAX_REQUESTS_DAY=700
@@ -55,6 +56,11 @@ GROQ_SHADOW_MAX_REQUESTS_MINUTE=20
 GROQ_SHADOW_MAX_TOKENS_MINUTE=6000
 GROQ_SHADOW_MAX_QUEUE=32
 ```
+
+The backend automatically observes the canonical `candidate_birth` row and appends its causal
+snapshot to `candidate-snapshots.jsonl`. With live calls disabled the audit still grows, proving
+the producer is connected. With live calls enabled, eligible snapshots enter a bounded one-worker
+queue. Queue failures and every Groq failure are fail-open and cannot reach trading decisions.
 
 The endpoint is fixed to the official OpenAI-compatible Groq Chat Completions endpoint. There are
 no automatic retries. Timeout, 429, 5xx, malformed output, absent key, and budget exhaustion are
@@ -74,3 +80,6 @@ candidate outcome. Compare unchanged Orayan, frozen H1, frozen H2, and Groq on t
 candidates. Report avoided losses, missed winners, net R/USDT delta, profit factor, maximum
 drawdown, coverage, abstention, confidence calibration, latency, tokens, and six-hour/day blocks.
 Keep API failures and budget abstentions in denominators. Do not promote from historical replay.
+
+Production deployment and verification commands are in
+[`docs/GROQ-SHADOW-RUNBOOK.md`](../../docs/GROQ-SHADOW-RUNBOOK.md).

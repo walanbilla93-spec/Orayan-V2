@@ -105,9 +105,19 @@ test('bounded queue refuses excess work',async()=>{
   release('done');assert.equal(await first,'done');
 });
 
-test('shadow package is isolated from executor, engine and gates',()=>{
+test('shadow worker failure is contained and the bounded queue continues',async()=>{
+  let calls=0;
+  const queue=new BoundedShadowQueue({maxSize:2,worker:async()=>{calls++;if(calls===1)throw Error('upstream exploded');return 'next-ok';}});
+  await assert.rejects(queue.enqueue(snapshot()),/upstream exploded/);
+  assert.equal(await queue.enqueue(snapshot()),'next-ok');
+});
+
+test('shadow package has no executor or gates integration and engine uses a one-way producer',()=>{
   const root=path.resolve(__dirname,'../../..');
-  for(const file of ['backend/lib/executor.js','backend/lib/engine.js','backend/lib/gates.js']){
+  for(const file of ['backend/lib/executor.js','backend/lib/gates.js']){
     assert.doesNotMatch(fs.readFileSync(path.join(root,file),'utf8'),/groq[-_ ]?shadow|GROQ_SHADOW/i);
   }
+  const engine=fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8');
+  assert.match(engine,/groqShadowProducer\.observeBirth\(/);
+  assert.doesNotMatch(engine,/await\s+groqShadowProducer\.observeBirth/);
 });

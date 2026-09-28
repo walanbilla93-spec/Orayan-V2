@@ -17,6 +17,7 @@ const marciIndependent = require('./marciIndependent');
 const researchCapture = require('./researchCapture');
 const researchSupplement = require('./researchSupplement');
 const earlyEntryShadow = require('./earlyEntryShadow');
+const groqShadowProducer = require('./groqShadowProducer');
 const { num, uid } = require('./util');
 
 const state = {
@@ -541,16 +542,27 @@ async function scanOnce() {
     });
     const marketSnapshotId = marketSnapshot?.marketSnapshotId || null;
     for (const signal of journalSignals) signal.marketSnapshotId = marketSnapshotId;
+    // Observe the same already-fetched decision-time market state used by the prospective
+    // journal. This is bounded in memory and has no network I/O or execution authority.
+    try { groqShadowProducer.observeEnvironment({ at:scanAt, marketSnapshot, tickers }); }
+    catch (e) { logger.warn('groq-shadow', 'Environment observation failed open', { error:e.message }); }
     const btcObservation = marketObservations.find(x => x?.symbol === 'BTCUSDT');
     const r12s = marketObservations.filter(x => x?.symbol !== 'BTCUSDT' && Number.isFinite(x?.r12))
       .map(x => Math.log1p(x.r12)).sort((a,b) => a-b);
     const universeResearch = { r12Median:r12s.length ? r12s[Math.floor(r12s.length/2)] : null };
     for (const signal of journalSignals) {
-      try { researchCapture.birth(signal, { scanId, scanAt, ticker:tickerBySymbol.get(signal.symbol),
+      let birth = null;
+      try { birth = researchCapture.birth(signal, { scanId, scanAt, ticker:tickerBySymbol.get(signal.symbol),
         candles:researchCandles.get(signal.symbol) || [], settings, snapshot:marketSnapshot,
         btc:{r12:btcObservation?.r12 == null ? null : Math.log1p(btcObservation.r12)}, universe:universeResearch,
         tickerDynamic:tickerResearch.get(signal.symbol) }); }
       catch (e) { logger.warn('research', 'Birth capture failed', { error:e.message, symbol:signal.symbol }); }
+      // Fire-and-forget shadow research at the exact native birth point. The producer writes its
+      // causal audit before queueing; its result is deliberately unavailable to execution.
+      try { groqShadowProducer.observeBirth(signal,birth,{scanAt,settings,
+        ticker:tickerBySymbol.get(signal.symbol),btcRegime,
+        openPositions:[...openTrades(),...pendingTrades()]}); }
+      catch (e) { logger.warn('groq-shadow', 'Candidate handoff failed open', { error:e.message, symbol:signal.symbol }); }
       // Shadow-only sidecar. Its return value is deliberately ignored and cannot affect any
       // candidate, gate, rank, size, portfolio limit, or order path below.
       try { earlyEntryShadow.observeCandidate(signal,{scanAt,settings,snapshot:marketSnapshot,

@@ -13,6 +13,7 @@ const { num } = require('../lib/util');
 const runtime = require('../lib/runtimeIdentity');
 const researchManifest = require('../lib/researchManifest');
 const groqShadowExport = require('../lib/groqShadowExport');
+const groqShadowProducer = require('../lib/groqShadowProducer');
 const fs = require('fs');
 
 function researchExportPlan(files=[]) {
@@ -210,7 +211,10 @@ const routes = {
 
   'GET /api/journal/research/manifest': async () => researchManifest.buildManifest(),
 
-  'GET /api/journal/research/groq-shadow': async () => groqShadowExport.metadata(),
+  'GET /api/journal/research/groq-shadow': async () => ({
+    ...groqShadowExport.metadata(),
+    ...groqShadowProducer.status(),
+  }),
 
   'GET /api/journal/research/groq-shadow/export': async () => {
     const result = groqShadowExport.download();

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=groq-shadow-v1">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230E1520'/><circle cx='16' cy='16' r='8' fill='none' stroke='%234FD1E8' stroke-width='2'/></svg>">
 </head>
 <body>
@@ -99,6 +99,19 @@
         </div>
       </div>
 
+      <div class="panel groq-card" id="groqShadowPanel">
+        <div class="panel-head">
+          <div>
+            <h2>Groq Shadow Research</h2>
+            <p class="panel-sub">Automatic, research-only review of New Orayan candidate births. It never changes trades.</p>
+          </div>
+        </div>
+        <div class="research-download" id="groqShadowDownload" aria-live="polite">
+          <span class="research-download-status" id="groqShadowStatus">Checking Groq shadow status…</span>
+          <button class="btn btn-ghost" id="btnExportGroqShadow" disabled>Download Groq Shadow Data</button>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-head">
           <h2>Live positions</h2>
@@ -123,10 +136,6 @@
             <button class="btn btn-ghost" id="btnExportLegacyResearch">Download legacy research diagnostics (large, if available)</button>
             <button class="btn btn-ghost" id="btnExportResearchEvents">Download research events (CSV)</button>
             <button class="btn btn-danger" id="btnClearSignals" title="Wipe signal journal and live list">Clear signals</button>
-          </div>
-          <div class="research-download" id="groqShadowDownload" aria-live="polite">
-            <span class="research-download-status" id="groqShadowStatus">Checking Groq shadow data…</span>
-            <button class="btn btn-ghost" id="btnExportGroqShadow" disabled>Download Groq Shadow Data</button>
           </div>
         </div>
         <div id="signalList"><div class="empty">No scan yet.</div></div>
@@ -229,6 +238,6 @@
 
 <div class="toast-stack" id="toasts"></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=groq-shadow-v1"></script>
 </body>
 </html>

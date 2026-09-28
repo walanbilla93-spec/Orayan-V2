@@ -117,9 +117,14 @@ async function loadGroqShadowStatus() {
   try {
     const info = await api('/api/journal/research/groq-shadow');
     button.disabled = !info.available;
-    status.textContent = info.available
-      ? `Groq shadow data · ${fmtBytes(info.sizeBytes)} · updated ${fmtDateFull(info.lastUpdatedAt)}`
-      : 'No Groq shadow data has been recorded yet.';
+    const mode = info.enabled ? 'enabled' : 'disabled';
+    const snapshots = info.snapshotAuditAvailable
+      ? `snapshots ${fmtBytes(info.snapshotAuditSizeBytes)} · updated ${fmtDateFull(info.snapshotAuditLastUpdatedAt)}`
+      : 'no candidate snapshots yet';
+    const decisions = info.available
+      ? `decisions ${fmtBytes(info.sizeBytes)} · updated ${fmtDateFull(info.lastUpdatedAt)}`
+      : 'No Groq decisions yet';
+    status.textContent = `Groq ${mode} · ${info.model || 'model unavailable'} · ${snapshots} · ${decisions}`;
   } catch (e) {
     button.disabled = true;
     status.textContent = `Groq shadow data unavailable: ${e.message}`;
