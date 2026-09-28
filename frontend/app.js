@@ -50,6 +50,15 @@ function fmtCompact(n) {
   return v.toFixed(0);
 }
 
+function fmtBytes(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 0) return '—';
+  if (v < 1024) return `${v} B`;
+  if (v < 1024 ** 2) return `${(v / 1024).toFixed(1)} KB`;
+  if (v < 1024 ** 3) return `${(v / (1024 ** 2)).toFixed(1)} MB`;
+  return `${(v / (1024 ** 3)).toFixed(1)} GB`;
+}
+
 function fmtTime(ts) {
   if (!ts) return '—';
   try {
@@ -99,6 +108,22 @@ async function api(path, opts = {}) {
   const json = await res.json().catch(() => ({ error: 'Server returned an unreadable response.' }));
   if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
   return json;
+}
+
+async function loadGroqShadowStatus() {
+  const status = $('#groqShadowStatus');
+  const button = $('#btnExportGroqShadow');
+  if (!status || !button) return;
+  try {
+    const info = await api('/api/journal/research/groq-shadow');
+    button.disabled = !info.available;
+    status.textContent = info.available
+      ? `Groq shadow data · ${fmtBytes(info.sizeBytes)} · updated ${fmtDateFull(info.lastUpdatedAt)}`
+      : 'No Groq shadow data has been recorded yet.';
+  } catch (e) {
+    button.disabled = true;
+    status.textContent = `Groq shadow data unavailable: ${e.message}`;
+  }
 }
 
 function toast(msg, kind = '') {
@@ -804,6 +829,7 @@ function init() {
   $('#btnExportEarlyEntryResearch').addEventListener('click', () => downloadFrom('/api/journal/research/early-entry/export'));
   $('#btnExportLegacyResearch').addEventListener('click', () => downloadFrom('/api/journal/research/prospective/export?raw=1'));
   $('#btnExportResearchEvents').addEventListener('click', () => downloadFrom('/api/journal/research/events/export?format=csv'));
+  $('#btnExportGroqShadow').addEventListener('click', () => downloadFrom('/api/journal/research/groq-shadow/export'));
   $('#btnExportShadowCsv').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=csv'));
   $('#btnExportShadowJson').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=json'));
   $('#btnClearShadow').addEventListener('click', async () => {
@@ -848,8 +874,10 @@ function init() {
   });
 
   refresh();
+  loadGroqShadowStatus();
   renderAccount();
   state.pollTimer = setInterval(refresh, 5000);
+  setInterval(loadGroqShadowStatus, 30000);
   setInterval(renderAccount, 30000);
 }
 

@@ -124,6 +124,10 @@
             <button class="btn btn-ghost" id="btnExportResearchEvents">Download research events (CSV)</button>
             <button class="btn btn-danger" id="btnClearSignals" title="Wipe signal journal and live list">Clear signals</button>
           </div>
+          <div class="research-download" id="groqShadowDownload" aria-live="polite">
+            <span class="research-download-status" id="groqShadowStatus">Checking Groq shadow data…</span>
+            <button class="btn btn-ghost" id="btnExportGroqShadow" disabled>Download Groq Shadow Data</button>
+          </div>
         </div>
         <div id="signalList"><div class="empty">No scan yet.</div></div>
       </div>
