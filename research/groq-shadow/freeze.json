@@ -1,0 +1,24 @@
+{
+  "schema_version": "ORAYAN_GROQ_SHADOW_FREEZE_V1",
+  "prompt_version": "ORAYAN_GROQ_SHADOW_PROMPT_V1",
+  "prompt_variant": "H1_H2_VISIBLE_V1",
+  "model_default": "openai/gpt-oss-120b",
+  "decision_values": ["RETAIN", "SKIP", "ABSTAIN"],
+  "h1": {
+    "freeze_id": "frz_63cba30ec06a8a11e08a",
+    "version": "H1_DIRECTION_REGIME_HEAT_V1",
+    "skip_if_post_count_gte": 4,
+    "skip_if_post_heat_usdt_gte": 2.0
+  },
+  "h2": {
+    "freeze_id": "frz_63cba30ec06a8a11e08a",
+    "version": "H2_BIRTH_TIME_DETERIORATION_V1",
+    "max_current_age_minutes": 20,
+    "baseline_min_gap_minutes": 5,
+    "baseline_max_gap_minutes": 20,
+    "min_alerts": 3,
+    "requires_price_or_breadth_alert": true,
+    "requires_funding_or_oi_alert": true
+  },
+  "promotion_policy": "No promotion from historical replay alone. Require prospective same-candidate comparison across independent time blocks."
+}

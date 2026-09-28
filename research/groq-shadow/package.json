@@ -1,0 +1,11 @@
+{
+  "name": "orayan-groq-shadow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Research-only, decision-time Groq shadow advisor for New Orayan",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dry-run": "node cli.js --dry-run"
+  },
+  "engines": {"node": ">=18.0.0"}
+}
