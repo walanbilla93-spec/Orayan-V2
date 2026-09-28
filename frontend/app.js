@@ -117,6 +117,7 @@ async function loadGroqShadowStatus() {
   try {
     const info = await api('/api/journal/research/groq-shadow');
     button.disabled = !info.available;
+    button.dataset.protected = info.exportProtected ? 'true' : 'false';
     const mode = info.enabled ? 'enabled' : 'disabled';
     const snapshots = info.snapshotAuditAvailable
       ? `snapshots ${fmtBytes(info.snapshotAuditSizeBytes)} · updated ${fmtDateFull(info.snapshotAuditLastUpdatedAt)}`
@@ -825,6 +826,22 @@ function init() {
   });
 
   const downloadFrom = (path) => { window.location.href = path; };
+  const downloadGroqShadow = async () => {
+    const button=$('#btnExportGroqShadow');
+    if(button.dataset.protected!=='true')return downloadFrom('/api/journal/research/groq-shadow/export');
+    const token=prompt('Enter the Groq shadow export token');
+    if(!token)return;
+    try{
+      const response=await fetch('/api/journal/research/groq-shadow/export',
+        {headers:{'X-Groq-Shadow-Export-Token':token}});
+      if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||`Request failed (${response.status})`);}
+      const blob=await response.blob();
+      const disposition=response.headers.get('Content-Disposition')||'';
+      const filename=disposition.match(/filename="([^"]+)"/)?.[1]||'orayan2_groq_shadow_decisions.jsonl';
+      const url=URL.createObjectURL(blob),anchor=document.createElement('a');
+      anchor.href=url;anchor.download=filename;anchor.click();URL.revokeObjectURL(url);
+    }catch(error){toast(error.message,'error');}
+  };
   $('#btnExportTradesCsv').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=csv'));
   $('#btnExportTradesJson').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=json'));
   $('#btnExportSignalsCsv').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=csv'));
@@ -834,7 +851,7 @@ function init() {
   $('#btnExportEarlyEntryResearch').addEventListener('click', () => downloadFrom('/api/journal/research/early-entry/export'));
   $('#btnExportLegacyResearch').addEventListener('click', () => downloadFrom('/api/journal/research/prospective/export?raw=1'));
   $('#btnExportResearchEvents').addEventListener('click', () => downloadFrom('/api/journal/research/events/export?format=csv'));
-  $('#btnExportGroqShadow').addEventListener('click', () => downloadFrom('/api/journal/research/groq-shadow/export'));
+  $('#btnExportGroqShadow').addEventListener('click', downloadGroqShadow);
   $('#btnExportShadowCsv').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=csv'));
   $('#btnExportShadowJson').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=json'));
   $('#btnClearShadow').addEventListener('click', async () => {

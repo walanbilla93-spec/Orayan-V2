@@ -15,6 +15,20 @@ const researchManifest = require('../lib/researchManifest');
 const groqShadowExport = require('../lib/groqShadowExport');
 const groqShadowProducer = require('../lib/groqShadowProducer');
 const fs = require('fs');
+const crypto = require('crypto');
+
+function requireGroqExportAuth(req, env = process.env) {
+  const expected=env.GROQ_SHADOW_EXPORT_TOKEN || '';
+  if(!expected)return false;
+  const bearer=String(req?.headers?.authorization || '').replace(/^Bearer\s+/i,'');
+  const supplied=String(req?.headers?.['x-groq-shadow-export-token'] || bearer || '');
+  const left=Buffer.from(supplied),right=Buffer.from(expected);
+  if(left.length!==right.length || !crypto.timingSafeEqual(left,right)) {
+    const error=new Error('Groq shadow export authorization is required.');
+    error.statusCode=401;error.code='GROQ_SHADOW_EXPORT_UNAUTHORIZED';throw error;
+  }
+  return true;
+}
 
 function researchExportPlan(files=[]) {
   const watermarkAt=Date.now();
@@ -214,9 +228,11 @@ const routes = {
   'GET /api/journal/research/groq-shadow': async () => ({
     ...groqShadowExport.metadata(),
     ...groqShadowProducer.status(),
+    exportProtected:!!process.env.GROQ_SHADOW_EXPORT_TOKEN,
   }),
 
-  'GET /api/journal/research/groq-shadow/export': async () => {
+  'GET /api/journal/research/groq-shadow/export': async ({req}) => {
+    requireGroqExportAuth(req);
     const result = groqShadowExport.download();
     return { __stream: true, ...result };
   },
@@ -263,4 +279,4 @@ const routes = {
   },
 };
 
-module.exports = { routes };
+module.exports = { routes, _test:{requireGroqExportAuth} };

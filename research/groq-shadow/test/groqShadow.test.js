@@ -7,7 +7,8 @@ const os=require('os');
 const path=require('path');
 const {advise,configFromEnv,buildRequest,BoundedShadowQueue}=require('../src/advisor');
 const {postGroq}=require('../src/client');
-const {appendImmutable}=require('../src/ledger');
+const ledgerModule=require('../src/ledger');
+const {appendImmutable}=ledgerModule;
 const {validateSnapshot}=require('../src/snapshot');
 
 function tempLedger(){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-groq-'));return path.join(dir,'ledger.jsonl');}
@@ -81,6 +82,33 @@ test('restart idempotency ignores exact duplicate and flags changed duplicate ID
   const changed=snapshot();changed.score.value=75;
   const conflict=await advise(changed,{config:cfg,mode:'mock',nowMs:now,mockTransport:okTransport()});
   assert.equal(conflict.status,'DUPLICATE_CANDIDATE_CONFLICT');
+});
+
+test('restart terminalizes orphan REQUEST_STARTED without repeating transport',async()=>{
+  const cfg=config(),now=Date.parse('2026-09-28T10:00:05Z');
+  let calls=0;
+  await assert.rejects(advise(snapshot(),{config:cfg,mode:'mock',nowMs:now,mockTransport:async()=>{
+    calls+=1;throw new Error('simulated process death after durable start');
+  }}),/simulated process death/);
+  ledgerModule._test.resetCaches();
+  const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:now+1000,mockTransport:async()=>{
+    calls+=1;return okTransport()();
+  }});
+  assert.equal(result.status,'DUPLICATE_IGNORED');
+  assert.equal(calls,1,'ambiguous potentially billed request must never be retried');
+  const rows=fs.readFileSync(cfg.ledger,'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(rows.map(row=>row.status),['REQUEST_STARTED','INTERRUPTED_UNKNOWN_OUTCOME']);
+  assert.equal(rows[1].decision.decision,'ABSTAIN');
+});
+
+test('ledger is scanned once then incrementally cached across repeated candidates',async()=>{
+  const cfg=config(),now=Date.parse('2026-09-28T10:00:05Z');
+  ledgerModule._test.resetCaches();ledgerModule._test.resetScanCount();
+  for(let index=0;index<4;index+=1){
+    const row=snapshot();row.candidate_id=`cached-${index}`;
+    await advise(row,{config:cfg,mode:'mock',nowMs:now+index,mockTransport:okTransport()});
+  }
+  assert.equal(ledgerModule._test.scanCount(),1);
 });
 
 test('absent API key is a persisted abstention and secret is never persisted',async()=>{

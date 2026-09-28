@@ -7,7 +7,7 @@ const {
   SYSTEM_PROMPT, PROMPT_HASH, canonicalJson, sha256,
 } = require('./constants');
 const {validateSnapshot, compactSnapshot, validateDecision} = require('./snapshot');
-const {appendImmutable, ledgerState, budgetReason} = require('./ledger');
+const {ledgerIndex, budgetReason} = require('./ledger');
 const {postGroq} = require('./client');
 
 function intEnv(env, key, dflt, min, max) {
@@ -70,14 +70,15 @@ async function advise(snapshot, options = {}) {
   const check = validateSnapshot(snapshot, nowMs);
   const compact = compactSnapshot(snapshot);
   const requestId = sha256(`${snapshot?.candidate_id || 'missing'}|${compact.inputHash}|${config.model}|${PROMPT_HASH}|${PROMPT_VARIANT}`);
-  const state = await ledgerState(config.ledger, nowMs);
+  const index = await ledgerIndex(config.ledger, nowMs, {allowedRoot:config.allowedRoot});
+  const state = index.state(nowMs);
   if (state.requestIds.has(requestId)) return {status:'DUPLICATE_IGNORED',request_id:requestId,persisted:false};
   const priorInput = state.candidateInputs.get(snapshot?.candidate_id);
   if (priorInput && priorInput !== compact.inputHash) {
     const decision=abstainDecision(['candidate_id previously recorded with a different input snapshot'],'DUPLICATE_CANDIDATE_CONFLICT');
     const record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'DUPLICATE_CANDIDATE_CONFLICT'}),
       completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,tokens:null,decision};
-    appendImmutable(config.ledger,record);
+    await index.append(record, nowMs);
     return record;
   }
 
@@ -86,7 +87,7 @@ async function advise(snapshot, options = {}) {
     const decision = abstainDecision(reasons, check.valid ? 'INSUFFICIENT_DECISION_TIME_EVIDENCE' : 'INVALID_OR_LEAKY_INPUT');
     const record = {...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'LOCAL_ABSTAIN'}),
       completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,tokens:null,decision};
-    appendImmutable(config.ledger, record);
+    await index.append(record, nowMs);
     return record;
   }
 
@@ -97,7 +98,7 @@ async function advise(snapshot, options = {}) {
     const decision = abstainDecision([exhausted], 'LOCAL_BUDGET_EXHAUSTED');
     const record = {...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'BUDGET_EXHAUSTED'}),
       completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,tokens:null,decision};
-    appendImmutable(config.ledger, record);
+    await index.append(record, nowMs);
     return record;
   }
 
@@ -105,8 +106,8 @@ async function advise(snapshot, options = {}) {
   if (options.mode !== 'live' && options.mode !== 'mock') throw new Error('Mode must be dry-run, mock, or live.');
   if (options.mode === 'live' && !config.allowLive) throw new Error('Live call blocked: set GROQ_SHADOW_ALLOW_LIVE=true only after explicit approval.');
 
-  appendImmutable(config.ledger, {...baseRecord({recordType:'REQUEST_STARTED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'REQUEST_STARTED'}),
-    estimated_tokens_reserved:estimatedTokens});
+  await index.append({...baseRecord({recordType:'REQUEST_STARTED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'REQUEST_STARTED'}),
+    estimated_tokens_reserved:estimatedTokens}, nowMs);
   const started = Date.now();
   const api = options.mode === 'mock'
     ? await options.mockTransport(request)
@@ -129,7 +130,7 @@ async function advise(snapshot, options = {}) {
     http_status:api.httpStatus ?? null,rate_limit_headers:api.headers || {},
     tokens:usage ? {prompt:usage.prompt_tokens??null,completion:usage.completion_tokens??null,total:usage.total_tokens??null} : null,
     decision};
-  appendImmutable(config.ledger, record);
+  await index.append(record, completedMs);
   return record;
 }
 

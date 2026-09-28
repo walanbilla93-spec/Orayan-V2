@@ -10,6 +10,7 @@ const engine = require('./lib/engine');
 const bybit = require('./lib/bybit');
 const journal = require('./lib/journal');
 const runtime = require('./lib/runtimeIdentity');
+const groqShadowProducer = require('./lib/groqShadowProducer');
 
 const PORT = Number(process.env.PORT) || 8080;
 const FRONTEND_DIR = path.resolve(__dirname, '..', 'frontend');
@@ -158,6 +159,12 @@ function startServer(port = PORT) {
     logger.warn('server',
       'BYBIT_API_KEY / BYBIT_API_SECRET are not set. Paper mode works fully; live mode and account balance will not.');
   }
+
+  // Recover durable, nonterminal shadow snapshots after every process/container restart.
+  // This remains one-way research work; recovery cannot affect engine startup or execution.
+  setImmediate(() => groqShadowProducer.initialize()
+    .then(result => logger.info('groq-shadow','Startup recovery complete',result))
+    .catch(e => logger.warn('groq-shadow','Startup recovery failed open',{code:e.code,error:e.message})));
 
   // Resume only when the previous process had a persisted RUN intent. Manual stops and
   // uncaught exceptions clear that intent; deploys/container restarts preserve it.

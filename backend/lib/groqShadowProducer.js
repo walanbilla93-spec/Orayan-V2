@@ -7,17 +7,18 @@ const path = require('path');
 const logger = require('./logger');
 const store = require('./store');
 const groqShadowExport = require('./groqShadowExport');
-const { appendImmutable } = require('../../research/groq-shadow/src/ledger');
+const { appendImmutableAsync, readRecords } = require('../../research/groq-shadow/src/ledger');
 const { advise, BoundedShadowQueue, configFromEnv } = require('../../research/groq-shadow/src/advisor');
-const { FROZEN_RULES, INPUT_SCHEMA_VERSION, DEFAULT_MODEL } = require('../../research/groq-shadow/src/constants');
+const { FROZEN_RULES, INPUT_SCHEMA_VERSION, DEFAULT_MODEL, canonicalJson, sha256 } = require('../../research/groq-shadow/src/constants');
 
 const AUDIT_SCHEMA = 'ORAYAN_GROQ_SNAPSHOT_AUDIT_V1';
 const MAX_ENV_POINTS = 64;
 const MAX_SEEN = 4096;
 const environment = [];
 const seenBirths = new Set();
-let queue = null;
-let queueConfigKey = null;
+let runtime = null;
+let runtimeConfigKey = null;
+let testTransport = null;
 
 function finite(value) {
   const number = Number(value);
@@ -45,7 +46,7 @@ function config(env = process.env) {
     error.code = 'GROQ_SHADOW_SNAPSHOT_OUTSIDE_DATA_ROOT';
     throw error;
   }
-  return { ...result, snapshotAudit: audit };
+  return { ...result, snapshotAudit: audit, allowedRoot: store.DATA_DIR };
 }
 
 function pointFeature(value, observedAt, availableAt, sampleSize) {
@@ -205,25 +206,93 @@ function buildSnapshot(signal, birth, context = {}) {
   };
 }
 
-function appendAudit(cfg, record) {
-  appendImmutable(cfg.snapshotAudit, { audit_schema_version: AUDIT_SCHEMA, recorded_at_utc: new Date().toISOString(), ...record });
+async function appendAudit(cfg, record) {
+  await appendImmutableAsync(cfg.snapshotAudit,
+    { audit_schema_version: AUDIT_SCHEMA, recorded_at_utc: new Date().toISOString(), ...record },
+    { allowedRoot:cfg.allowedRoot });
 }
 
-function getQueue(cfg) {
-  const key = `${cfg.ledger}|${cfg.maxQueue}|${cfg.allowLive}|${cfg.model}`;
-  if (queue && queueConfigKey === key) return queue;
-  queueConfigKey = key;
-  queue = new BoundedShadowQueue({
-    maxSize: cfg.maxQueue,
-    worker: async snapshot => {
-      // Durable evidence is written by the shadow worker, never by the candidate/execution stack.
-      appendAudit(cfg, { record_type: 'CANDIDATE_SNAPSHOT',
-        processing_status: cfg.allowLive ? 'PROCESSING' : 'LIVE_DISABLED', snapshot });
-      if (!cfg.allowLive) return { status:'LIVE_DISABLED', persisted:false };
-      return advise(snapshot, { config: cfg, mode: 'live' });
-    },
-  });
-  return queue;
+function handoffId(snapshot) {
+  return sha256(`${snapshot.candidate_episode_id || ''}|${snapshot.candidate_id}|${canonicalJson(snapshot)}`);
+}
+
+class DurableShadowRuntime {
+  constructor(cfg) {
+    this.cfg = cfg;
+    this.reserved = 0;
+    this.recoveryOwned = new Set();
+    this.recoveryDone = false;
+    this.queue = new BoundedShadowQueue({maxSize:cfg.maxQueue,worker:item=>this.process(item)});
+    this.ready = this.recover().finally(()=>{this.recoveryDone=true;});
+  }
+
+  reserve() {
+    if (this.reserved >= this.cfg.maxQueue) return false;
+    this.reserved += 1;
+    return true;
+  }
+
+  async process(item) {
+    const {id,snapshot} = item;
+    await appendAudit(this.cfg,{record_type:'PROCESSING_EVENT',handoff_id:id,
+      candidate_id:snapshot.candidate_id,processing_status:'PROCESSING'});
+    let result;
+    if (!this.cfg.allowLive) result={status:'LIVE_DISABLED',persisted:false};
+    else result=await advise(snapshot,{config:this.cfg,mode:testTransport?'mock':'live',
+      ...(testTransport?{mockTransport:testTransport}:{})});
+    await appendAudit(this.cfg,{record_type:'PROCESSING_EVENT',handoff_id:id,
+      candidate_id:snapshot.candidate_id,processing_status:result?.status || 'COMPLETED'});
+    return result;
+  }
+
+  async recover() {
+    const outstanding = new Map();
+    await readRecords(this.cfg.snapshotAudit,row=>{
+      if (!row.handoff_id) return;
+      if (row.record_type === 'CANDIDATE_SNAPSHOT' && row.processing_status === 'QUEUED' && row.snapshot) {
+        outstanding.set(row.handoff_id,{id:row.handoff_id,snapshot:row.snapshot});
+      } else if (row.record_type === 'PROCESSING_EVENT' && row.processing_status !== 'PROCESSING') {
+        outstanding.delete(row.handoff_id);
+      }
+    });
+    for (const item of outstanding.values()) {
+      this.recoveryOwned.add(item.id);
+      try { await this.queue.enqueue(item); }
+      catch (error) {
+        logger.warn('groq-shadow','Recovered snapshot remains queued for a later restart',
+          {candidateId:item.snapshot.candidate_id,code:error.code,error:error.message});
+      }
+    }
+    return {recovered:outstanding.size};
+  }
+
+  async accept(snapshot) {
+    const id = handoffId(snapshot);
+    const appendedDuringRecovery=!this.recoveryDone;
+    try {
+      // The fsync is asynchronous: durable evidence reaches disk before in-memory pending work,
+      // without blocking the trading call stack or keeping an unbounded prequeue in memory.
+      await appendAudit(this.cfg,{record_type:'CANDIDATE_SNAPSHOT',handoff_id:id,
+        candidate_id:snapshot.candidate_id,processing_status:'QUEUED',snapshot});
+      await this.ready;
+      if (appendedDuringRecovery && this.recoveryOwned.has(id)) return {status:'RECOVERED_BY_STARTUP',persisted:true};
+      return await this.queue.enqueue({id,snapshot});
+    } finally { this.reserved=Math.max(0,this.reserved-1); }
+  }
+}
+
+function getRuntime(cfg) {
+  const key = `${cfg.ledger}|${cfg.snapshotAudit}|${cfg.maxQueue}|${cfg.allowLive}|${cfg.model}`;
+  if (runtime && runtimeConfigKey === key) return runtime;
+  runtimeConfigKey = key;
+  runtime = new DurableShadowRuntime(cfg);
+  runtime.ready.catch(error=>logger.warn('groq-shadow','Startup recovery failed open',{code:error.code,error:error.message}));
+  return runtime;
+}
+
+function initialize(env = process.env) {
+  const cfg=config(env);
+  return getRuntime(cfg).ready;
 }
 
 function observeBirth(signal, birth, context = {}) {
@@ -238,17 +307,18 @@ function observeBirth(signal, birth, context = {}) {
     logger.warn('groq-shadow', 'Groq shadow path configuration rejected', { code: error.code, error: error.message });
     return false;
   }
+  const currentRuntime=getRuntime(cfg);
+  if(!currentRuntime.reserve()) {
+    logger.warn('groq-shadow','Durable shadow handoff capacity is full',{candidateId:signal.id});
+    return false;
+  }
   const snapshot = buildSnapshot(signal, birth, context);
-  // Defer even the first filesystem write. The engine receives a boolean immediately and cannot
-  // be delayed by disk, queue, budget, network, timeout, parsing, or upstream failure.
+  // Defer the durable append. The engine receives a boolean immediately; after this point the
+  // snapshot is fsynced before it is allowed to enter pending work.
   setImmediate(() => {
-    getQueue(cfg).enqueue(snapshot)
+    currentRuntime.accept(snapshot)
       .then(result => logger.info('groq-shadow', 'Shadow decision recorded', { candidateId: signal.id, status: result?.status }))
       .catch(error => {
-        try { appendAudit(cfg, { record_type: error.code === 'QUEUE_FULL' ? 'CANDIDATE_SNAPSHOT' : 'PROCESSING_EVENT',
-          candidate_id: signal.id, processing_status: error.code || 'WORKER_ERROR',
-          error_class: error.code || error.name || 'Error', ...(error.code === 'QUEUE_FULL' ? {snapshot} : {}) }); }
-        catch (_) { /* a failed audit must still remain fail-open */ }
         logger.warn('groq-shadow', 'Shadow evaluation failed open', { candidateId: signal.id, code: error.code, error: error.message });
       });
   });
@@ -267,12 +337,14 @@ function status(env = process.env) {
   return {
     enabled: cfg.allowLive,
     model: cfg.model || DEFAULT_MODEL,
-    queueDepth: queue ? queue.pending.length + (queue.active ? 1 : 0) : 0,
+    queueDepth: runtime ? runtime.queue.pending.length + (runtime.queue.active ? 1 : 0) : 0,
     snapshotAuditAvailable: !!audit,
     snapshotAuditSizeBytes: audit?.sizeBytes || 0,
     snapshotAuditLastUpdatedAt: audit?.lastUpdatedAt || null,
   };
 }
 
-module.exports = { observeEnvironment, observeBirth, buildSnapshot, status, config,
-  _test: { environment, baselineFor, h2Decision, withinDataRoot, reset: () => { environment.length = 0; seenBirths.clear(); queue = null; queueConfigKey = null; } } };
+module.exports = { observeEnvironment, observeBirth, buildSnapshot, status, config, initialize,
+  _test: { environment, baselineFor, h2Decision, withinDataRoot, handoffId,
+    setTransport:value=>{testTransport=value;}, getRuntime,
+    reset: () => { environment.length = 0; seenBirths.clear(); runtime = null; runtimeConfigKey = null; testTransport = null; } } };
