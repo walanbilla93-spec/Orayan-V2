@@ -7,7 +7,7 @@ const path = require('path');
 const logger = require('./logger');
 const store = require('./store');
 const groqShadowExport = require('./groqShadowExport');
-const { appendImmutableAsync, readRecords } = require('../../research/groq-shadow/src/ledger');
+const { appendImmutableAsync, readRecords, ledgerIndex } = require('../../research/groq-shadow/src/ledger');
 const { advise, BoundedShadowQueue, configFromEnv } = require('../../research/groq-shadow/src/advisor');
 const { FROZEN_RULES, INPUT_SCHEMA_VERSION, DEFAULT_MODEL, canonicalJson, sha256 } = require('../../research/groq-shadow/src/constants');
 
@@ -238,8 +238,16 @@ class DurableShadowRuntime {
       candidate_id:snapshot.candidate_id,processing_status:'PROCESSING'});
     let result;
     if (!this.cfg.allowLive) result={status:'LIVE_DISABLED',persisted:false};
-    else result=await advise(snapshot,{config:this.cfg,mode:testTransport?'mock':'live',
-      ...(testTransport?{mockTransport:testTransport}:{})});
+    else {
+      do {
+        result=await advise(snapshot,{config:this.cfg,mode:testTransport?'mock':'live',
+          ...(testTransport?{mockTransport:testTransport}:{})});
+        if (result?.status === 'BUDGET_DEFERRED') {
+          const waitMs=Math.max(25,Date.parse(result.defer_until_utc)-Date.now());
+          await new Promise(resolve=>setTimeout(resolve,waitMs));
+        }
+      } while (result?.status === 'BUDGET_DEFERRED');
+    }
     await appendAudit(this.cfg,{record_type:'PROCESSING_EVENT',handoff_id:id,
       candidate_id:snapshot.candidate_id,processing_status:result?.status || 'COMPLETED'});
     return result;
@@ -282,7 +290,8 @@ class DurableShadowRuntime {
 }
 
 function getRuntime(cfg) {
-  const key = `${cfg.ledger}|${cfg.snapshotAudit}|${cfg.maxQueue}|${cfg.allowLive}|${cfg.model}`;
+  const key = [cfg.ledger,cfg.snapshotAudit,cfg.maxQueue,cfg.allowLive,cfg.model,cfg.maxOutputTokens,
+    cfg.maxRequestsDay,cfg.maxTokensDay,cfg.maxRequestsMinute,cfg.maxTokensMinute,cfg.maxDeferAgeMs].join('|');
   if (runtime && runtimeConfigKey === key) return runtime;
   runtimeConfigKey = key;
   runtime = new DurableShadowRuntime(cfg);
@@ -290,9 +299,13 @@ function getRuntime(cfg) {
   return runtime;
 }
 
-function initialize(env = process.env) {
+async function initialize(env = process.env) {
   const cfg=config(env);
-  return getRuntime(cfg).ready;
+  const [recovery] = await Promise.all([
+    getRuntime(cfg).ready,
+    ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot}),
+  ]);
+  return recovery;
 }
 
 function observeBirth(signal, birth, context = {}) {
@@ -331,9 +344,10 @@ function statOrNull(file) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
-function status(env = process.env) {
+async function status(env = process.env) {
   const cfg = config(env);
   const audit = statOrNull(cfg.snapshotAudit);
+  const state = await ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot});
   return {
     enabled: cfg.allowLive,
     model: cfg.model || DEFAULT_MODEL,
@@ -341,6 +355,7 @@ function status(env = process.env) {
     snapshotAuditAvailable: !!audit,
     snapshotAuditSizeBytes: audit?.sizeBytes || 0,
     snapshotAuditLastUpdatedAt: audit?.lastUpdatedAt || null,
+    summary:state.state(Date.now()).summary,
   };
 }
 

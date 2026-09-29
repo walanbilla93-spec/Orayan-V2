@@ -3,11 +3,11 @@
 const path = require('path');
 
 const {
-  SCHEMA_VERSION, PROMPT_VERSION, PROMPT_VARIANT, DEFAULT_MODEL, RESPONSE_SCHEMA,
-  SYSTEM_PROMPT, PROMPT_HASH, canonicalJson, sha256,
+  SCHEMA_VERSION, PROMPT_VERSION, PROMPT_VARIANT, RESPONSE_SCHEMA_VERSION, DEFAULT_MODEL, RESPONSE_SCHEMA,
+  SYSTEM_PROMPT, PROMPT_HASH, RESPONSE_SCHEMA_HASH, canonicalJson, sha256,
 } = require('./constants');
-const {validateSnapshot, compactSnapshot, validateDecision} = require('./snapshot');
-const {ledgerIndex, budgetReason} = require('./ledger');
+const {validateSnapshot, compactSnapshot, validateDecision, normalizeDecision} = require('./snapshot');
+const {ledgerIndex, budgetReason, nextMinuteAvailableAt} = require('./ledger');
 const {postGroq} = require('./client');
 
 function intEnv(env, key, dflt, min, max) {
@@ -24,11 +24,12 @@ function configFromEnv(env = process.env) {
     allowLive:String(env.GROQ_SHADOW_ALLOW_LIVE || '').toLowerCase() === 'true',
     ledger:env.GROQ_SHADOW_LEDGER || persistentDefault,
     timeoutMs:intEnv(env,'GROQ_SHADOW_TIMEOUT_MS',15000,1000,60000),
-    maxOutputTokens:intEnv(env,'GROQ_SHADOW_MAX_OUTPUT_TOKENS',220,64,1000),
-    maxRequestsDay:intEnv(env,'GROQ_SHADOW_MAX_REQUESTS_DAY',700,1,999),
-    maxTokensDay:intEnv(env,'GROQ_SHADOW_MAX_TOKENS_DAY',150000,1000,199999),
+    maxOutputTokens:intEnv(env,'GROQ_SHADOW_MAX_OUTPUT_TOKENS',1024,256,4096),
+    maxRequestsDay:intEnv(env,'GROQ_SHADOW_MAX_REQUESTS_DAY',900,1,999),
+    maxTokensDay:intEnv(env,'GROQ_SHADOW_MAX_TOKENS_DAY',180000,1000,199999),
     maxRequestsMinute:intEnv(env,'GROQ_SHADOW_MAX_REQUESTS_MINUTE',20,1,29),
-    maxTokensMinute:intEnv(env,'GROQ_SHADOW_MAX_TOKENS_MINUTE',6000,500,7999),
+    maxTokensMinute:intEnv(env,'GROQ_SHADOW_MAX_TOKENS_MINUTE',7200,500,7999),
+    maxDeferAgeMs:intEnv(env,'GROQ_SHADOW_MAX_DEFER_SECONDS',75,1,300)*1000,
     maxQueue:intEnv(env,'GROQ_SHADOW_MAX_QUEUE',32,1,256),
   };
 }
@@ -37,12 +38,13 @@ function buildRequest(snapshot, config) {
   return {
     model:config.model,
     reasoning_effort:'low',
+    include_reasoning:false,
     max_completion_tokens:config.maxOutputTokens,
     messages:[
       {role:'system',content:SYSTEM_PROMPT},
       {role:'user',content:canonicalJson({prompt_version:PROMPT_VERSION,prompt_variant:PROMPT_VARIANT,candidate:snapshot})},
     ],
-    response_format:{type:'json_schema',json_schema:{name:'orayan_shadow_decision',strict:true,schema:RESPONSE_SCHEMA}},
+    response_format:{type:'json_schema',json_schema:{name:'orayan_shadow_decision_v2',strict:true,schema:RESPONSE_SCHEMA}},
   };
 }
 
@@ -51,7 +53,7 @@ function estimateTokens(request, maxOutputTokens) {
 }
 
 function abstainDecision(reasons, code = 'INSUFFICIENT_DECISION_TIME_EVIDENCE') {
-  return {decision:'ABSTAIN',risk_level:'UNKNOWN',confidence:0,reason_codes:[code],evidence_keys:[],missing_or_stale:reasons.slice(0,8),rationale_short:'Required causal decision-time evidence is missing, stale, unavailable, or invalid.'};
+  return {decision:'ABSTAIN',risk_level:'UNKNOWN',confidence:0,reason_codes:[code],reason_notes:[],evidence_keys:[],missing_or_stale:reasons.slice(0,8),rationale_short:'Required causal decision-time evidence is missing, stale, unavailable, or invalid.'};
 }
 
 function baseRecord({recordType,requestId,snapshot,inputHash,config,nowIso,status}) {
@@ -59,7 +61,8 @@ function baseRecord({recordType,requestId,snapshot,inputHash,config,nowIso,statu
     schema_version:SCHEMA_VERSION,record_type:recordType,request_id:requestId,
     candidate_id:snapshot.candidate_id,candidate_birth_at_utc:snapshot.candidate_birth_at_utc,
     model:config.model,prompt_version:PROMPT_VERSION,prompt_variant:PROMPT_VARIANT,
-    prompt_hash:PROMPT_HASH,input_snapshot_hash:inputHash,status,
+    prompt_hash:PROMPT_HASH,response_schema_version:RESPONSE_SCHEMA_VERSION,response_schema_hash:RESPONSE_SCHEMA_HASH,
+    input_snapshot_hash:inputHash,status,
     requested_at_utc:nowIso,completed_at_utc:null,available_to_system_at_utc:null,
   };
 }
@@ -92,12 +95,31 @@ async function advise(snapshot, options = {}) {
   }
 
   const request = buildRequest(compact.snapshot, config);
+  const requestHash = sha256(canonicalJson(request));
   const estimatedTokens = estimateTokens(request, config.maxOutputTokens);
   const exhausted = budgetReason(state, estimatedTokens, config);
   if (exhausted) {
+    if (exhausted.startsWith('MINUTE_')) {
+      const birthMs = Date.parse(snapshot.candidate_birth_at_utc || '');
+      const deferAgeMs = Number.isFinite(birthMs) ? Math.max(0,nowMs-birthMs) : config.maxDeferAgeMs;
+      if (deferAgeMs < config.maxDeferAgeMs) {
+        const deferUntilMs = Math.min(nextMinuteAvailableAt(state,estimatedTokens,config,nowMs),
+          birthMs + config.maxDeferAgeMs);
+        const record={...baseRecord({recordType:'BUDGET_DEFERRED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'BUDGET_DEFERRED'}),
+          request_hash:requestHash,estimated_tokens_reserved:estimatedTokens,budget_reason:exhausted,
+          defer_until_utc:new Date(deferUntilMs).toISOString()};
+        await index.append(record,nowMs);
+        return {...record,persisted:true};
+      }
+      const decision=abstainDecision([`${exhausted}; deferred candidate exceeded freshness limit`],'ABSTAIN_BUDGET_STALE');
+      const record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'ABSTAIN_BUDGET_STALE'}),
+        request_hash:requestHash,completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,tokens:null,decision};
+      await index.append(record,nowMs);
+      return record;
+    }
     const decision = abstainDecision([exhausted], 'LOCAL_BUDGET_EXHAUSTED');
     const record = {...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'BUDGET_EXHAUSTED'}),
-      completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,tokens:null,decision};
+      request_hash:requestHash,completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,tokens:null,decision};
     await index.append(record, nowMs);
     return record;
   }
@@ -107,17 +129,19 @@ async function advise(snapshot, options = {}) {
   if (options.mode === 'live' && !config.allowLive) throw new Error('Live call blocked: set GROQ_SHADOW_ALLOW_LIVE=true only after explicit approval.');
 
   await index.append({...baseRecord({recordType:'REQUEST_STARTED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'REQUEST_STARTED'}),
-    estimated_tokens_reserved:estimatedTokens}, nowMs);
+    request_hash:requestHash,estimated_tokens_reserved:estimatedTokens}, nowMs);
   const started = Date.now();
   const api = options.mode === 'mock'
     ? await options.mockTransport(request)
     : await postGroq(request,{apiKey:config.apiKey,timeoutMs:config.timeoutMs,fetchImpl:options.fetchImpl});
   const completedMs = options.completedMs ?? Date.now(), completedIso = new Date(completedMs).toISOString();
-  let status = api.status, decision;
+  let status = api.status, decision, normalization = null;
   if (api.ok) {
     let parsed;
     try { parsed = JSON.parse(api.body?.choices?.[0]?.message?.content || ''); }
     catch (_) { status='MALFORMED_JSON'; }
+    const normalized = parsed ? normalizeDecision(parsed) : {decision:parsed,normalization:null};
+    parsed=normalized.decision;normalization=normalized.normalization;
     const decisionErrors = parsed ? validateDecision(parsed,compact.snapshot) : ['response:not_json'];
     if (decisionErrors.length) {
       status='MALFORMED_OUTPUT'; decision=abstainDecision(decisionErrors,'MALFORMED_MODEL_OUTPUT');
@@ -127,7 +151,8 @@ async function advise(snapshot, options = {}) {
   const record = {...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status}),
     completed_at_utc:completedIso,available_to_system_at_utc:completedIso,
     latency_ms:api.latencyMs ?? Math.max(0,Date.now()-started),
-    http_status:api.httpStatus ?? null,rate_limit_headers:api.headers || {},
+    request_hash:requestHash,http_status:api.httpStatus ?? null,rate_limit_headers:api.headers || {},
+    api_error:api.ok ? null : (api.error || {type:null,code:null,message:null}),normalization,
     tokens:usage ? {prompt:usage.prompt_tokens??null,completion:usage.completion_tokens??null,total:usage.total_tokens??null} : null,
     decision};
   await index.append(record, completedMs);

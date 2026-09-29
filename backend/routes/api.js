@@ -225,11 +225,11 @@ const routes = {
 
   'GET /api/journal/research/manifest': async () => researchManifest.buildManifest(),
 
-  'GET /api/journal/research/groq-shadow': async () => ({
-    ...groqShadowExport.metadata(),
-    ...groqShadowProducer.status(),
-    exportProtected:!!process.env.GROQ_SHADOW_EXPORT_TOKEN,
-  }),
+  'GET /api/journal/research/groq-shadow': async () => {
+    const shadowStatus=await groqShadowProducer.status();
+    return {...groqShadowExport.metadata(),...shadowStatus,
+      exportProtected:!!process.env.GROQ_SHADOW_EXPORT_TOKEN};
+  },
 
   'GET /api/journal/research/groq-shadow/export': async ({req}) => {
     requireGroqExportAuth(req);

@@ -9,7 +9,8 @@ const {advise,configFromEnv,buildRequest,BoundedShadowQueue}=require('../src/adv
 const {postGroq}=require('../src/client');
 const ledgerModule=require('../src/ledger');
 const {appendImmutable}=ledgerModule;
-const {validateSnapshot}=require('../src/snapshot');
+const {validateSnapshot,validateDecision}=require('../src/snapshot');
+const {REASON_CODES,RESPONSE_SCHEMA_VERSION}=require('../src/constants');
 
 function tempLedger(){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-groq-'));return path.join(dir,'ledger.jsonl');}
 function snapshot(){
@@ -32,7 +33,7 @@ function snapshot(){
       {name:'market_intelligence_join',status:'OK',available_to_system_at_utc:'2026-09-28T09:58:01.000Z',age_seconds:119}]};
 }
 function config(ledger=tempLedger()){return {...configFromEnv({}),ledger,apiKey:'secret-test-key',allowLive:true};}
-function okTransport(decision={decision:'RETAIN',risk_level:'LOW',confidence:.7,reason_codes:['SUPPORTED'],evidence_keys:['h1.state','h2.state'],missing_or_stale:[],rationale_short:'Causal evidence is adequate for a shadow retain.'}){
+function okTransport(decision={decision:'RETAIN',risk_level:'LOW',confidence:.7,reason_codes:['EVIDENCE_COMPLETE'],reason_notes:[],evidence_keys:['h1.state','h2.state'],missing_or_stale:[],rationale_short:'Causal evidence is adequate for a shadow retain.'}){
   return async()=>({ok:true,status:'OK',httpStatus:200,headers:{},latencyMs:2,body:{usage:{prompt_tokens:300,completion_tokens:40,total_tokens:340},choices:[{message:{content:JSON.stringify(decision)}}]}});
 }
 
@@ -62,15 +63,16 @@ test('timeout, 429 and 5xx are classified without retry',async()=>{
   const abort=Object.assign(new Error('aborted'),{name:'AbortError'});
   assert.equal((await postGroq({}, {apiKey:'x',timeoutMs:10,fetchImpl:async()=>{throw abort;}})).status,'TIMEOUT');
   const response=status=>({ok:false,status,headers:{get:()=>null},text:async()=>'{"error":{}}'});
-  assert.equal((await postGroq({}, {apiKey:'x',timeoutMs:10,fetchImpl:async()=>response(429)})).status,'RATE_LIMITED');
-  assert.equal((await postGroq({}, {apiKey:'x',timeoutMs:10,fetchImpl:async()=>response(503)})).status,'UPSTREAM_5XX');
+  assert.equal((await postGroq({}, {apiKey:'x',timeoutMs:10,fetchImpl:async()=>response(429)})).status,'API_429_RATE_LIMIT');
+  assert.equal((await postGroq({}, {apiKey:'x',timeoutMs:10,fetchImpl:async()=>response(503)})).status,'API_5XX');
 });
 
 test('daily budget exhaustion is recorded instead of dropped',async()=>{
   const cfg=config();cfg.maxRequestsDay=1;
   appendImmutable(cfg.ledger,{record_type:'REQUEST_STARTED',request_id:'prior',candidate_id:'prior',input_snapshot_hash:'prior',requested_at_utc:'2026-09-28T09:00:00.000Z',estimated_tokens_reserved:1});
-  const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:Date.parse('2026-09-28T10:00:05Z'),mockTransport:okTransport()});
+  let calls=0;const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:Date.parse('2026-09-28T10:00:05Z'),mockTransport:async request=>{calls+=1;return okTransport()(request);}});
   assert.equal(result.status,'BUDGET_EXHAUSTED');assert.equal(result.decision.reason_codes[0],'LOCAL_BUDGET_EXHAUSTED');
+  assert.equal(calls,0);
 });
 
 test('restart idempotency ignores exact duplicate and flags changed duplicate ID',async()=>{
@@ -118,11 +120,83 @@ test('absent API key is a persisted abstention and secret is never persisted',as
   assert.doesNotMatch(fs.readFileSync(cfg.ledger,'utf8'),/secret-test-key|Authorization|Bearer/);
 });
 
-test('model is environment-configurable while endpoint and prompt V1 stay frozen',()=>{
+test('model is environment-configurable while endpoint and prompt V2 stay frozen',()=>{
   const cfg=configFromEnv({GROQ_SHADOW_MODEL:'qwen/qwen3.8-27b'});
   const request=buildRequest(snapshot(),cfg);
   assert.equal(request.model,'qwen/qwen3.8-27b');assert.equal(request.response_format.json_schema.strict,true);
-  assert.match(request.messages[1].content,/H1_H2_VISIBLE_V1/);
+  assert.match(request.messages[1].content,/H1_H2_VISIBLE_V2/);
+});
+
+test('gpt-oss-120b request contains only supported fields and strict V2 schema',()=>{
+  const request=buildRequest(snapshot(),configFromEnv({}));
+  assert.deepEqual(Object.keys(request).sort(),['include_reasoning','max_completion_tokens','messages','model','reasoning_effort','response_format']);
+  assert.equal(request.model,'openai/gpt-oss-120b');
+  assert.equal(request.max_completion_tokens,1024);
+  assert.equal(request.reasoning_effort,'low');
+  assert.equal(request.include_reasoning,false);
+  assert.equal(request.response_format.type,'json_schema');
+  assert.equal(request.response_format.json_schema.strict,true);
+  assert.equal(RESPONSE_SCHEMA_VERSION,'ORAYAN_GROQ_SHADOW_RESPONSE_V2');
+});
+
+test('HTTP 400 details are classified, bounded, sanitized and persisted with hashes',async()=>{
+  const longMessage=`Generated JSON does not match schema Bearer secret-test-key gsk_not-a-real-key ${'x'.repeat(800)}`;
+  const transport=async request=>postGroq(request,{apiKey:'secret-test-key',timeoutMs:100,
+    fetchImpl:async()=>({ok:false,status:400,headers:{get:()=>null},text:async()=>JSON.stringify({error:{
+      message:longMessage,type:'invalid_request_error',code:'json_validate_failed'}})})});
+  const cfg=config();const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:Date.parse('2026-09-28T10:00:05Z'),mockTransport:transport});
+  assert.equal(result.status,'API_400_SCHEMA');
+  assert.equal(result.api_error.type,'invalid_request_error');
+  assert.equal(result.api_error.code,'json_validate_failed');
+  assert.ok(result.api_error.message.length<=512);
+  assert.doesNotMatch(result.api_error.message,/secret-test-key|gsk_not-a-real-key/);
+  assert.match(result.request_hash,/^[a-f0-9]{64}$/);
+  assert.match(result.prompt_hash,/^[a-f0-9]{64}$/);
+  assert.match(result.response_schema_hash,/^[a-f0-9]{64}$/);
+  assert.doesNotMatch(fs.readFileSync(cfg.ledger,'utf8'),/secret-test-key|Authorization|Bearer/);
+});
+
+test('every allowed reason code validates against the local V2 contract',()=>{
+  for(const reason of REASON_CODES){
+    const decision={decision:'RETAIN',risk_level:'LOW',confidence:.5,reason_codes:[reason],reason_notes:[],
+      evidence_keys:['h1.state'],missing_or_stale:[],rationale_short:'Bounded causal rationale.'};
+    assert.deepEqual(validateDecision(decision,snapshot()),[],reason);
+  }
+});
+
+test('unknown reason code is normalized without discarding an otherwise valid response',async()=>{
+  const decision={decision:'SKIP',risk_level:'HIGH',confidence:.8,reason_codes:['MODEL_MADE_A_NEW_CODE'],reason_notes:['Model detail'],
+    evidence_keys:['h1.state'],missing_or_stale:[],rationale_short:'Causal evidence supports skip.'};
+  const result=await advise(snapshot(),{config:config(),mode:'mock',nowMs:Date.parse('2026-09-28T10:00:05Z'),mockTransport:okTransport(decision)});
+  assert.equal(result.status,'OK');
+  assert.deepEqual(result.decision.reason_codes,['OTHER_MODEL_REASON']);
+  assert.equal(result.normalization.kind,'UNKNOWN_REASON_CODE');
+});
+
+test('truly invalid structured output still safely abstains',async()=>{
+  const invalid={decision:'BUY_NOW',risk_level:'EXTREME',confidence:2,reason_codes:['EVIDENCE_COMPLETE'],reason_notes:[],
+    evidence_keys:['not.in.snapshot'],missing_or_stale:[],rationale_short:''};
+  const result=await advise(snapshot(),{config:config(),mode:'mock',nowMs:Date.parse('2026-09-28T10:00:05Z'),mockTransport:okTransport(invalid)});
+  assert.equal(result.status,'MALFORMED_OUTPUT');assert.equal(result.decision.decision,'ABSTAIN');
+});
+
+test('minute TPM pressure defers a fresh candidate without an API call',async()=>{
+  const cfg=config(),birth=Date.parse('2026-09-28T10:00:00Z'),now=birth+5000;
+  cfg.maxTokensMinute=7200;cfg.maxDeferAgeMs=75000;
+  appendImmutable(cfg.ledger,{record_type:'REQUEST_STARTED',request_id:'prior',candidate_id:'prior',input_snapshot_hash:'prior',
+    requested_at_utc:new Date(now-1000).toISOString(),estimated_tokens_reserved:7000});
+  let calls=0;const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:now,mockTransport:async()=>{calls+=1;return okTransport()();}});
+  assert.equal(result.status,'BUDGET_DEFERRED');assert.equal(result.record_type,'BUDGET_DEFERRED');assert.equal(calls,0);
+  assert.ok(Date.parse(result.defer_until_utc)>now);
+});
+
+test('minute TPM pressure becomes ABSTAIN_BUDGET_STALE after configured age',async()=>{
+  const cfg=config(),birth=Date.parse('2026-09-28T10:00:00Z'),now=birth+75000;
+  cfg.maxTokensMinute=7200;cfg.maxDeferAgeMs=75000;
+  appendImmutable(cfg.ledger,{record_type:'REQUEST_STARTED',request_id:'prior',candidate_id:'prior',input_snapshot_hash:'prior',
+    requested_at_utc:new Date(now-1000).toISOString(),estimated_tokens_reserved:7000});
+  let calls=0;const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:now,mockTransport:async()=>{calls+=1;return okTransport()();}});
+  assert.equal(result.status,'ABSTAIN_BUDGET_STALE');assert.equal(result.decision.reason_codes[0],'ABSTAIN_BUDGET_STALE');assert.equal(calls,0);
 });
 
 test('bounded queue refuses excess work',async()=>{
