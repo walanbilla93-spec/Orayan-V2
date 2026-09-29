@@ -2,6 +2,36 @@
 
 const {ENDPOINT} = require('./constants');
 
+function boundedText(value, max, secrets = []) {
+  if (typeof value !== 'string') return null;
+  let clean = value;
+  for (const secret of secrets) if (secret) clean=clean.split(String(secret)).join('[REDACTED_SECRET]');
+  clean = clean.replace(/bearer\s+\S+/gi,'[REDACTED_AUTH]')
+    .replace(/\bgsk_[a-z0-9_-]+\b/gi,'[REDACTED_GROQ_KEY]').replace(/\s+/g,' ').trim();
+  return clean ? clean.slice(0,max) : null;
+}
+
+function sanitizedApiError(body, secrets = []) {
+  const error = body && typeof body === 'object' && body.error && typeof body.error === 'object' ? body.error : {};
+  return {
+    type:boundedText(error.type,96,secrets),
+    code:boundedText(error.code,96,secrets),
+    message:boundedText(error.message,512,secrets),
+  };
+}
+
+function classifyApiError(httpStatus, error) {
+  if (httpStatus === 400) {
+    const detail = `${error?.type || ''} ${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+    return /schema|json|response.?format|failed.?generation|structured/.test(detail) ? 'API_400_SCHEMA' : 'API_400_REQUEST';
+  }
+  if (httpStatus === 401) return 'API_401_AUTH';
+  if (httpStatus === 403) return 'API_403_FORBIDDEN';
+  if (httpStatus === 429) return 'API_429_RATE_LIMIT';
+  if (httpStatus >= 500) return 'API_5XX';
+  return `API_${httpStatus || 'UNKNOWN'}`;
+}
+
 async function postGroq(requestBody, {apiKey, timeoutMs, fetchImpl = globalThis.fetch}) {
   if (!apiKey) return {ok:false,status:'API_KEY_ABSENT',httpStatus:null,body:null,headers:{}};
   if (typeof fetchImpl !== 'function') return {ok:false,status:'FETCH_UNAVAILABLE',httpStatus:null,body:null,headers:{}};
@@ -23,13 +53,13 @@ async function postGroq(requestBody, {apiKey, timeoutMs, fetchImpl = globalThis.
       remaining_tokens:response.headers?.get?.('x-ratelimit-remaining-tokens') || null,
     };
     if (response.ok) return {ok:true,status:'OK',httpStatus:response.status,body,headers,latencyMs:Date.now()-started};
-    const status = response.status === 429 ? 'RATE_LIMITED'
-      : response.status >= 500 ? 'UPSTREAM_5XX' : 'API_ERROR';
-    return {ok:false,status,httpStatus:response.status,body,headers,latencyMs:Date.now()-started};
+    const error = sanitizedApiError(body,[apiKey]);
+    const status = classifyApiError(response.status,error);
+    return {ok:false,status,httpStatus:response.status,body,headers,error,latencyMs:Date.now()-started};
   } catch (error) {
     const timeout = error?.name === 'AbortError';
     return {ok:false,status:timeout?'TIMEOUT':'NETWORK_ERROR',httpStatus:null,body:null,headers:{},latencyMs:Date.now()-started};
   } finally { clearTimeout(timer); }
 }
 
-module.exports = {postGroq};
+module.exports = {postGroq,sanitizedApiError,classifyApiError};

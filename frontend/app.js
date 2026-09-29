@@ -125,7 +125,11 @@ async function loadGroqShadowStatus() {
     const decisions = info.available
       ? `decisions ${fmtBytes(info.sizeBytes)} · updated ${fmtDateFull(info.lastUpdatedAt)}`
       : 'No Groq decisions yet';
-    status.textContent = `Groq ${mode} · ${info.model || 'model unavailable'} · ${snapshots} · ${decisions}`;
+    const summary=info.summary || {};
+    const health=`model ${summary.successfulModelDecisions || 0} · local ${summary.localAbstains || 0} · API ${summary.apiErrors || 0} · malformed ${summary.malformedOutputs || 0} · normalized ${summary.normalizedOutputs || 0} · deferred ${summary.budgetDeferred || 0} · stale ${summary.budgetStale || 0} · tokens ${summary.tokens?.total || 0}`;
+    const lastError=summary.lastHttpError?.message
+      ? ` · last ${summary.lastHttpError.status}: ${summary.lastHttpError.message.slice(0,120)}` : '';
+    status.textContent = `Groq ${mode} · ${info.model || 'model unavailable'} · ${snapshots} · ${decisions} · ${health}${lastError}`;
   } catch (e) {
     button.disabled = true;
     status.textContent = `Groq shadow data unavailable: ${e.message}`;

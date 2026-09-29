@@ -1,6 +1,6 @@
 'use strict';
 
-const {INPUT_SCHEMA_VERSION, FROZEN_RULES, canonicalJson, sha256} = require('./constants');
+const {INPUT_SCHEMA_VERSION, FROZEN_RULES, REASON_CODES, canonicalJson, sha256} = require('./constants');
 
 const FEATURE_KEYS = [
   'btc_return_24h', 'eth_return_24h', 'linear_breadth',
@@ -159,15 +159,16 @@ function validateDecision(decision, snapshot) {
   if (!['RETAIN','SKIP','ABSTAIN'].includes(decision.decision)) errors.push('decision:invalid');
   if (!['LOW','MEDIUM','HIGH','UNKNOWN'].includes(decision.risk_level)) errors.push('risk_level:invalid');
   if (!finite(decision.confidence) || decision.confidence < 0 || decision.confidence > 1) errors.push('confidence:invalid');
-  for (const key of ['reason_codes','evidence_keys','missing_or_stale']) {
+  for (const key of ['reason_codes','reason_notes','evidence_keys','missing_or_stale']) {
     if (!Array.isArray(decision[key])) errors.push(`${key}:invalid`);
   }
   if(Array.isArray(decision.reason_codes)){
+    if(!decision.reason_codes.length)errors.push('reason_codes:empty');
     if(decision.reason_codes.length>6)errors.push('reason_codes:too_many');
-    if(decision.reason_codes.some(code=>typeof code!=='string'||!/^[A-Z0-9_]{2,48}$/.test(code)))errors.push('reason_codes:invalid_value');
+    if(decision.reason_codes.some(code=>!REASON_CODES.includes(code)))errors.push('reason_codes:invalid_value');
   }
-  for(const key of ['evidence_keys','missing_or_stale'])if(Array.isArray(decision[key])){
-    if(decision[key].length>8)errors.push(`${key}:too_many`);
+  for(const key of ['reason_notes','evidence_keys','missing_or_stale'])if(Array.isArray(decision[key])){
+    if(decision[key].length>(key==='reason_notes'?6:8))errors.push(`${key}:too_many`);
     if(decision[key].some(value=>typeof value!=='string'||!value.length||value.length>96))errors.push(`${key}:invalid_value`);
   }
   if (!nonempty(decision.rationale_short) || decision.rationale_short.length > 240) errors.push('rationale_short:invalid');
@@ -183,4 +184,17 @@ function validateDecision(decision, snapshot) {
   return errors;
 }
 
-module.exports = {FEATURE_KEYS, validateSnapshot, compactSnapshot, validateDecision, pathExists};
+function normalizeDecision(decision) {
+  if (!isObject(decision) || !Array.isArray(decision.reason_codes)) return {decision, normalization:null};
+  const unknown = [...new Set(decision.reason_codes.filter(code => !REASON_CODES.includes(code)))];
+  if (!unknown.length) return {decision, normalization:null};
+  const known = decision.reason_codes.filter(code => REASON_CODES.includes(code));
+  const normalizedCodes = [...new Set([...known, 'OTHER_MODEL_REASON'])].slice(0,6);
+  const notes = Array.isArray(decision.reason_notes) ? decision.reason_notes.slice(0,6) : [];
+  return {
+    decision:{...decision,reason_codes:normalizedCodes,reason_notes:notes},
+    normalization:{applied:true,kind:'UNKNOWN_REASON_CODE',unknown_reason_codes:unknown.slice(0,6).map(code=>String(code).slice(0,48))},
+  };
+}
+
+module.exports = {FEATURE_KEYS, validateSnapshot, compactSnapshot, validateDecision, normalizeDecision, pathExists};

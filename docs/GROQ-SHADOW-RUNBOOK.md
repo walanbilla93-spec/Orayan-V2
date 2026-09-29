@@ -15,13 +15,35 @@ GROQ_SHADOW_LEDGER=/app/backend/data/groq-shadow/decisions.jsonl
 GROQ_API_KEY=<Northflank secret; retained but unused while dark>
 GROQ_SHADOW_MODEL=openai/gpt-oss-120b
 GROQ_SHADOW_TIMEOUT_MS=15000
-GROQ_SHADOW_MAX_OUTPUT_TOKENS=220
-GROQ_SHADOW_MAX_REQUESTS_DAY=700
-GROQ_SHADOW_MAX_TOKENS_DAY=150000
+GROQ_SHADOW_MAX_OUTPUT_TOKENS=1024
+GROQ_SHADOW_MAX_REQUESTS_DAY=900
+GROQ_SHADOW_MAX_TOKENS_DAY=180000
 GROQ_SHADOW_MAX_REQUESTS_MINUTE=20
-GROQ_SHADOW_MAX_TOKENS_MINUTE=6000
+GROQ_SHADOW_MAX_TOKENS_MINUTE=7200
+GROQ_SHADOW_MAX_DEFER_SECONDS=75
 GROQ_SHADOW_MAX_QUEUE=32
 ```
+
+These defaults retain 10% headroom below the observed organization ceilings of 8,000 TPM,
+1,000 RPD, and 200,000 TPD. The 20 RPM cap is deliberately unchanged and remains below 30 RPM;
+with the observed roughly 2,000 tokens per call, TPM is the binding limit. The 1,024 completion
+allowance includes GPT-OSS reasoning tokens and replaces the undersized 220-token cap. Keep these
+values configurable, one replica only, and do not raise them above the organization limits. A call
+reserves its conservative estimate before I/O, then successful responses reconcile the minute/day
+ledger to Groq's reported total tokens. Errors and interrupted/unknown outcomes retain the full
+reservation rather than assuming unused capacity.
+
+The V2 prompt/response contract became effective 2026-09-29 in implementation commit
+`e50edf4eae5ef1f233328b9c8e496e990fdd7be0`. H1/H2 and candidate eligibility are unchanged.
+The only scheduling change is that an otherwise eligible snapshot may wait up to 75 seconds from
+candidate birth for minute capacity. No later market observation or post-birth outcome is added.
+
+Historical V1 rows cannot reveal the exact 400 subtype because V1 discarded the response body.
+The request used supported GPT-OSS fields, but its 220-token completion ceiling also covered hidden
+reasoning and was far below Groq's documented 1,024-token default; intermittent exhaustion before
+the strict JSON object completed is the principal code-level cause. V2 uses 1,024 and records future
+400s as `API_400_SCHEMA` or `API_400_REQUEST` with sanitized detail, so this diagnosis is directly
+verifiable after activation rather than inferred.
 
 `GROQ_SHADOW_SNAPSHOT_LOG` is optional; its safe default is
 `/app/backend/data/groq-shadow/candidate-snapshots.jsonl`. `GROQ_SHADOW_EXPORT_TOKEN` is optional.
@@ -156,6 +178,22 @@ fi
 wc -l /tmp/groq-shadow-check.jsonl
 ```
 
+The Dashboard summary is backed by the process's bounded ledger index (one initial scan, then
+incremental updates). Verify new rows after activation:
+
+```sh
+node -e 'const fs=require("fs"),p="/app/backend/data/groq-shadow/decisions.jsonl";for(const l of fs.readFileSync(p,"utf8").trim().split(/\n/)){const r=JSON.parse(l);if(r.schema_version==="ORAYAN_GROQ_SHADOW_RECORD_V2")console.log(r.status,r.http_status||"",r.api_error?.code||"",r.api_error?.message||"")}'
+```
+
+- New valid requests should end in `OK`, not unexplained `API_400_REQUEST` or `API_400_SCHEMA`.
+- Any non-2xx row must show bounded `api_error.type`, `code`, and `message` plus request, prompt,
+  input, and response-schema hashes. It must never contain a key, authorization header, or raw body.
+- The Dashboard exposes model decisions, local abstains, API errors, malformed and normalized
+  outputs, deferred/stale counts, last HTTP error summary, and token totals.
+- During a burst, look for `BUDGET_DEFERRED` followed by `REQUEST_STARTED`/`SHADOW_DECISION` for the
+  same request ID. If freshness expires first, expect `ABSTAIN_BUDGET_STALE` and no API call.
+- `BUDGET_EXHAUSTED` for a daily limit remains terminal with no `REQUEST_STARTED`.
+
 ## Rollback and stop conditions
 
 Immediately set `GROQ_SHADOW_ALLOW_LIVE=false` and redeploy if any of these occurs: more than one
@@ -163,7 +201,7 @@ request for a request ID, an orphan not terminalized after restart, repeated ups
 budget-limit violation, queue growth beyond its configured bound, volume/path error, event-loop or
 trading latency regression, Groq output reaching trading logic, or malformed/corrupt evidence.
 
-If code rollback is also required, deploy the prior reviewed main commit
-`21bc6dd525c4220d62b0ed779f5dd9e8c6a1165b` with live mode false. Do not delete, truncate, rewrite,
+If code rollback is also required, deploy the pre-V2 baseline
+`687ca26440b6aae2535a1e5b1c56e502c15b72cc` with live mode false. Do not delete, truncate, rewrite,
 or detach `/app/backend/data`; append-only evidence must survive rollback. Restoring the hardening
 commit later will recover nonterminal snapshots and freeze ambiguous requests without retry.

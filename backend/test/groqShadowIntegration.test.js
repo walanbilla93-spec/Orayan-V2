@@ -106,7 +106,7 @@ test('automatic live path durably hands birth to producer then mock Groq and ter
       'durable queued snapshot must exist before transport starts');
     return {ok:true,status:'OK',httpStatus:200,headers:{},latencyMs:1,
     body:{usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15},choices:[{message:{content:JSON.stringify({
-      decision:'RETAIN',risk_level:'LOW',confidence:.7,reason_codes:['SUPPORTED'],evidence_keys:['h1.state','h2.state'],
+      decision:'RETAIN',risk_level:'LOW',confidence:.7,reason_codes:['EVIDENCE_COMPLETE'],reason_notes:[],evidence_keys:['h1.state','h2.state'],
       missing_or_stale:[],rationale_short:'Causal evidence supports the shadow decision.'})}}]}};});
   try{
     const at=Date.now()-5000,baseAt=at-10*60000;
@@ -142,11 +142,11 @@ test('startup recovers snapshot persisted before processing',async()=>{
     recorded_at_utc:new Date().toISOString(),record_type:'CANDIDATE_SNAPSHOT',handoff_id:id,
     candidate_id:row.candidate_id,processing_status:'QUEUED',snapshot:row},{allowedRoot:store.DATA_DIR});
   producer._test.reset();ledgerModule._test.resetCaches();
-  let calls=0;producer._test.setTransport(async()=>{calls+=1;return {ok:false,status:'UPSTREAM_5XX',httpStatus:503,headers:{},body:null};});
+  let calls=0;producer._test.setTransport(async()=>{calls+=1;return {ok:false,status:'API_5XX',httpStatus:503,headers:{},error:{type:null,code:null,message:null},body:null};});
   await producer.initialize(env);
   const auditRows=fs.readFileSync(cfg.snapshotAudit,'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(auditRows[0].processing_status,'QUEUED');
-  assert.equal(auditRows.at(-1).processing_status,'UPSTREAM_5XX');
+  assert.equal(auditRows.at(-1).processing_status,'API_5XX');
   assert.equal(calls,1);
 });
 

@@ -113,6 +113,13 @@ class LedgerIndex {
     this.dayRequests = 0;
     this.dayTokens = 0;
     this.recentRequests = [];
+    this.summary = this.emptySummary();
+  }
+
+  emptySummary() {
+    return {successfulModelDecisions:0,localAbstains:0,apiErrors:0,malformedOutputs:0,
+      normalizedOutputs:0,budgetDeferred:0,budgetStale:0,
+      tokens:{prompt:0,completion:0,total:0},lastHttpError:null};
   }
 
   clear(day) {
@@ -124,10 +131,13 @@ class LedgerIndex {
     this.dayRequests = 0;
     this.dayTokens = 0;
     this.recentRequests = [];
+    this.summary = this.emptySummary();
   }
 
   apply(row, nowMs) {
-    if (row.request_id) boundedSetAdd(this.requestIds, row.request_id);
+    if (row.request_id && ['REQUEST_STARTED','SHADOW_DECISION'].includes(row.record_type)) {
+      boundedSetAdd(this.requestIds, row.request_id);
+    }
     if (row.candidate_id && row.input_snapshot_hash && !this.candidateInputs.has(row.candidate_id)) {
       boundedMapSet(this.candidateInputs, row.candidate_id, row.input_snapshot_hash);
     }
@@ -139,12 +149,38 @@ class LedgerIndex {
         this.dayRequests += 1;
         this.dayTokens += reserved;
       }
-      if (Number.isFinite(requestedMs)) this.recentRequests.push({at:requestedMs,tokens:reserved});
+      if (Number.isFinite(requestedMs)) this.recentRequests.push({requestId:row.request_id,at:requestedMs,tokens:reserved});
     }
     if (row.record_type === 'SHADOW_DECISION' && row.request_id) {
+      const started = this.openRequests.get(row.request_id);
+      const actualTokens = Number(row.tokens?.total);
+      if (started && Number.isFinite(actualTokens) && actualTokens >= 0) {
+        const reserved = Number(started.estimated_tokens_reserved) || 0;
+        if (String(started.requested_at_utc || '').startsWith(this.day)) this.dayTokens += actualTokens-reserved;
+        const recent = this.recentRequests.find(item=>item.requestId===row.request_id);
+        if (recent) recent.tokens=actualTokens;
+      }
       boundedSetAdd(this.terminalRequestIds, row.request_id);
       this.openRequests.delete(row.request_id);
+      if (row.status === 'OK') this.summary.successfulModelDecisions += 1;
+      if (['LOCAL_ABSTAIN','BUDGET_EXHAUSTED','ABSTAIN_BUDGET_STALE','API_KEY_ABSENT',
+        'DUPLICATE_CANDIDATE_CONFLICT','INTERRUPTED_UNKNOWN_OUTCOME'].includes(row.status)) {
+        this.summary.localAbstains += 1;
+      }
+      if (row.status === 'ABSTAIN_BUDGET_STALE') this.summary.budgetStale += 1;
+      if (['MALFORMED_JSON','MALFORMED_OUTPUT'].includes(row.status)) this.summary.malformedOutputs += 1;
+      if (row.normalization?.applied) this.summary.normalizedOutputs += 1;
+      if (Number(row.http_status) >= 400 || /^API_/.test(row.status || '')) {
+        this.summary.apiErrors += 1;
+        this.summary.lastHttpError = {httpStatus:row.http_status ?? null,status:row.status,
+          code:row.api_error?.code || null,message:row.api_error?.message || null,
+          at:row.completed_at_utc || row.requested_at_utc || null};
+      }
+      for (const key of ['prompt','completion','total']) {
+        this.summary.tokens[key] += Number(row.tokens?.[key]) || 0;
+      }
     }
+    if (row.record_type === 'BUDGET_DEFERRED') this.summary.budgetDeferred += 1;
     this.pruneRecent(nowMs);
   }
 
@@ -200,6 +236,8 @@ class LedgerIndex {
       dayTokens:this.dayTokens,
       minuteRequests:this.recentRequests.length,
       minuteTokens:this.recentRequests.reduce((sum,item)=>sum+item.tokens,0),
+      recentRequests:this.recentRequests.map(item=>({...item})),
+      summary:JSON.parse(JSON.stringify(this.summary)),
     };
   }
 
@@ -233,5 +271,20 @@ function budgetReason(state, estimatedTokens, config) {
   return null;
 }
 
-module.exports = {appendImmutable,appendImmutableAsync,readRecords,ledgerState,ledgerIndex,budgetReason,validateWritePath,
+function nextMinuteAvailableAt(state, estimatedTokens, config, nowMs) {
+  let requests = (state.recentRequests || []).length;
+  let tokens = (state.recentRequests || []).reduce((sum,item)=>sum+item.tokens,0);
+  if (requests < config.maxRequestsMinute && tokens + estimatedTokens <= config.maxTokensMinute) return nowMs;
+  const recent = [...(state.recentRequests || [])].sort((a,b)=>a.at-b.at);
+  for (const item of recent) {
+    requests -= 1;
+    tokens -= item.tokens;
+    if (requests < config.maxRequestsMinute && tokens + estimatedTokens <= config.maxTokensMinute) {
+      return Math.max(nowMs,item.at + 60025);
+    }
+  }
+  return nowMs + 60025;
+}
+
+module.exports = {appendImmutable,appendImmutableAsync,readRecords,ledgerState,ledgerIndex,budgetReason,nextMinuteAvailableAt,validateWritePath,
   _test:{resetCaches:()=>caches.clear(),scanCount:()=>scanCount,resetScanCount:()=>{scanCount=0;},MAX_INDEX_ENTRIES}};
