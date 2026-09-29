@@ -149,9 +149,17 @@ class LedgerIndex {
         this.dayRequests += 1;
         this.dayTokens += reserved;
       }
-      if (Number.isFinite(requestedMs)) this.recentRequests.push({at:requestedMs,tokens:reserved});
+      if (Number.isFinite(requestedMs)) this.recentRequests.push({requestId:row.request_id,at:requestedMs,tokens:reserved});
     }
     if (row.record_type === 'SHADOW_DECISION' && row.request_id) {
+      const started = this.openRequests.get(row.request_id);
+      const actualTokens = Number(row.tokens?.total);
+      if (started && Number.isFinite(actualTokens) && actualTokens >= 0) {
+        const reserved = Number(started.estimated_tokens_reserved) || 0;
+        if (String(started.requested_at_utc || '').startsWith(this.day)) this.dayTokens += actualTokens-reserved;
+        const recent = this.recentRequests.find(item=>item.requestId===row.request_id);
+        if (recent) recent.tokens=actualTokens;
+      }
       boundedSetAdd(this.terminalRequestIds, row.request_id);
       this.openRequests.delete(row.request_id);
       if (row.status === 'OK') this.summary.successfulModelDecisions += 1;

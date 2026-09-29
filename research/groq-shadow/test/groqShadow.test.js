@@ -113,6 +113,15 @@ test('ledger is scanned once then incrementally cached across repeated candidate
   assert.equal(ledgerModule._test.scanCount(),1);
 });
 
+test('successful usage reconciles conservative token reservation',async()=>{
+  const cfg=config(),now=Date.parse('2026-09-28T10:00:05Z');
+  const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:now,completedMs:now+1,mockTransport:okTransport()});
+  const state=await ledgerModule.ledgerState(cfg.ledger,now);
+  assert.equal(result.tokens.total,340);
+  assert.equal(state.dayTokens,340);
+  assert.equal(state.minuteTokens,340);
+});
+
 test('absent API key is a persisted abstention and secret is never persisted',async()=>{
   const cfg=config();cfg.apiKey='';
   const result=await advise(snapshot(),{config:cfg,mode:'live',nowMs:Date.parse('2026-09-28T10:00:05Z')});
