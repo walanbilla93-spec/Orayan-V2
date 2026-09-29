@@ -1,9 +1,19 @@
 {
-  "schema_version": "ORAYAN_GROQ_SHADOW_FREEZE_V1",
-  "prompt_version": "ORAYAN_GROQ_SHADOW_PROMPT_V1",
-  "prompt_variant": "H1_H2_VISIBLE_V1",
+  "schema_version": "ORAYAN_GROQ_SHADOW_FREEZE_V2",
+  "prompt_version": "ORAYAN_GROQ_SHADOW_PROMPT_V2",
+  "prompt_variant": "H1_H2_VISIBLE_V2",
+  "response_schema_version": "ORAYAN_GROQ_SHADOW_RESPONSE_V2",
+  "effective_at_utc": "2026-09-29T07:06:19.000Z",
+  "introduced_by_commit": "e50edf4eae5ef1f233328b9c8e496e990fdd7be0",
   "model_default": "openai/gpt-oss-120b",
   "decision_values": ["RETAIN", "SKIP", "ABSTAIN"],
+  "reason_codes": [
+    "EVIDENCE_COMPLETE", "EVIDENCE_INCOMPLETE", "DATA_MISSING", "DATA_STALE",
+    "DATA_INCONSISTENT", "DIRECTIONAL_DETERIORATION", "FUNDING_CROWDING",
+    "OPEN_INTEREST_DECLINE", "EXPOSURE_CONCENTRATION", "REGIME_RISK",
+    "QUOTE_QUALITY_RISK", "STOP_DISTANCE_RISK", "RISK_ACCEPTABLE",
+    "MODEL_UNCERTAINTY", "INSUFFICIENT_DECISION_TIME_EVIDENCE", "OTHER_MODEL_REASON"
+  ],
   "h1": {
     "freeze_id": "frz_63cba30ec06a8a11e08a",
     "version": "H1_DIRECTION_REGIME_HEAT_V1",

@@ -1,4 +1,4 @@
-# New Orayan Groq shadow advisor V1
+# New Orayan Groq shadow advisor V2
 
 Research only. This directory is deliberately independent from `backend/lib/engine.js`,
 `executor.js`, gates, risk, sizing, SL/TP, Marci, and Gemini. It consumes newline-delimited,
@@ -49,11 +49,12 @@ GROQ_SHADOW_ALLOW_LIVE=false
 GROQ_SHADOW_LEDGER=/app/backend/data/groq-shadow/decisions.jsonl
 GROQ_SHADOW_SNAPSHOT_LOG=/app/backend/data/groq-shadow/candidate-snapshots.jsonl # optional fixed-root override
 GROQ_SHADOW_TIMEOUT_MS=15000
-GROQ_SHADOW_MAX_OUTPUT_TOKENS=220
-GROQ_SHADOW_MAX_REQUESTS_DAY=700
-GROQ_SHADOW_MAX_TOKENS_DAY=150000
+GROQ_SHADOW_MAX_OUTPUT_TOKENS=1024
+GROQ_SHADOW_MAX_REQUESTS_DAY=900
+GROQ_SHADOW_MAX_TOKENS_DAY=180000
 GROQ_SHADOW_MAX_REQUESTS_MINUTE=20
-GROQ_SHADOW_MAX_TOKENS_MINUTE=6000
+GROQ_SHADOW_MAX_TOKENS_MINUTE=7200
+GROQ_SHADOW_MAX_DEFER_SECONDS=75
 GROQ_SHADOW_MAX_QUEUE=32
 ```
 
@@ -61,11 +62,20 @@ The backend automatically observes the canonical `candidate_birth` row and appen
 snapshot to `candidate-snapshots.jsonl`. With live calls disabled the audit still grows, proving
 the producer is connected. With live calls enabled, eligible snapshots enter a bounded one-worker
 queue. Queue failures and every Groq failure are fail-open and cannot reach trading decisions.
+Temporary minute-budget pressure appends a `BUDGET_DEFERRED` record and keeps the causal snapshot in
+the same one-worker queue. It is called when capacity returns, or terminally recorded as
+`ABSTAIN_BUDGET_STALE` once its birth-time age exceeds the configured defer limit. Daily exhaustion
+remains immediately terminal and never calls Groq.
 
 The endpoint is fixed to the official OpenAI-compatible Groq Chat Completions endpoint. There are
 no automatic retries. Timeout, 429, 5xx, malformed output, absent key, and budget exhaustion are
 persisted as `ABSTAIN` statuses. A `REQUEST_STARTED` row is fsynced before network I/O; after a
 restart, its deterministic request ID prevents a silent repeat request.
+
+V2 uses strict JSON Schema on GPT-OSS with a bounded reason-code enum plus short `reason_notes`.
+Unknown reason codes in an otherwise valid response normalize to `OTHER_MODEL_REASON` and are
+explicitly marked in the ledger. Non-2xx rows retain only bounded, sanitized error type/code/message
+and request/prompt/schema hashes; credentials, request headers, and raw error bodies are excluded.
 
 ## Append-only ledger
 
