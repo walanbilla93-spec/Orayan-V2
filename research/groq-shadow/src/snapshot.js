@@ -16,15 +16,37 @@ function utcMs(v) {
   const ms = Date.parse(v);
   return Number.isFinite(ms) ? ms : null;
 }
-function pathExists(root, path) {
+
+// Supports safe dot paths and numeric array indexes, e.g.
+// h2.alerts[0], h2.features.linear_breadth.delta, sources[1].status.
+// No prototype traversal or arbitrary expressions are accepted.
+function pathExists(root, rawPath) {
+  if (typeof rawPath !== 'string' || !rawPath.length || rawPath.length > 256) return false;
+  if (/(^|\.)(__proto__|prototype|constructor)(\.|$|\[)/.test(rawPath)) return false;
+
+  const tokens = [];
+  const segmentRe = /(?:^|\.)([A-Za-z0-9_]+)|\[(\d+)\]/g;
+  let match, consumed = 0;
+  while ((match = segmentRe.exec(rawPath)) !== null) {
+    if (match.index !== consumed) return false;
+    tokens.push(match[1] !== undefined ? match[1] : Number(match[2]));
+    consumed = segmentRe.lastIndex;
+  }
+  if (!tokens.length || consumed !== rawPath.length) return false;
+
   let cur = root;
-  for (const part of String(path).split('.')) {
-    if (!isObject(cur) && !Array.isArray(cur)) return false;
-    if (!Object.prototype.hasOwnProperty.call(cur, part)) return false;
-    cur = cur[part];
+  for (const token of tokens) {
+    if (typeof token === 'number') {
+      if (!Array.isArray(cur) || token < 0 || token >= cur.length) return false;
+      cur = cur[token];
+      continue;
+    }
+    if ((!isObject(cur) && !Array.isArray(cur)) || !Object.prototype.hasOwnProperty.call(cur, token)) return false;
+    cur = cur[token];
   }
   return cur !== undefined;
 }
+
 function scanForbidden(value, path = '', found = []) {
   if (Array.isArray(value)) {
     value.forEach((item, index) => scanForbidden(item, `${path}[${index}]`, found));
@@ -79,9 +101,6 @@ function validateSnapshot(snapshot, nowMs = Date.now()) {
   const quoteMs=utcMs(quote?.exchange_timestamp_utc);
   const localQuoteMs=utcMs(quote?.observed_at_utc);
   if(quoteMs==null){
-    // Bybit's ticker payload does not include a per-quote exchange timestamp. Accept a fresh,
-    // explicit local receipt only when the unsupported exchange timestamp is disclosed; never
-    // backfill or mislabel the local clock as exchange time.
     if(quote?.exchange_timestamp_status!=='UNAVAILABLE_BYBIT_TICKER_PAYLOAD')
       abstain.push('planned_trade.quote_evidence.exchange_timestamp_status');
     if(localQuoteMs==null)abstain.push('planned_trade.quote_evidence.observed_at_utc');

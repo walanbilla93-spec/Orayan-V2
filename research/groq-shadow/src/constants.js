@@ -2,11 +2,11 @@
 
 const crypto = require('crypto');
 
-const SCHEMA_VERSION = 'ORAYAN_GROQ_SHADOW_RECORD_V2';
+const SCHEMA_VERSION = 'ORAYAN_GROQ_SHADOW_RECORD_V3';
 const INPUT_SCHEMA_VERSION = 'ORAYAN_GROQ_CANDIDATE_V1';
-const PROMPT_VERSION = 'ORAYAN_GROQ_SHADOW_PROMPT_V2';
-const PROMPT_VARIANT = 'H1_H2_VISIBLE_V2';
-const RESPONSE_SCHEMA_VERSION = 'ORAYAN_GROQ_SHADOW_RESPONSE_V2';
+const PROMPT_VERSION = 'ORAYAN_GROQ_SHADOW_PROMPT_V3';
+const PROMPT_VARIANT = 'H1_H2_VISIBLE_V3';
+const RESPONSE_SCHEMA_VERSION = 'ORAYAN_GROQ_SHADOW_RESPONSE_V3';
 const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 const ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -47,17 +47,16 @@ const FROZEN_RULES = Object.freeze({
   }),
 });
 
+// Transport schema is intentionally SHAPE-STRICT but SEMANTICALLY TOLERANT.
+// Local validation/normalization below the transport remains authoritative.
+// This avoids Groq rejecting otherwise recoverable outputs before our normalizer runs.
 const RESPONSE_SCHEMA = Object.freeze({
   type: 'object',
   properties: {
-    decision: {type: 'string', enum: ['RETAIN', 'SKIP', 'ABSTAIN']},
-    risk_level: {type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH', 'UNKNOWN']},
+    decision: {type: 'string', minLength: 1, maxLength: 16},
+    risk_level: {type: 'string', minLength: 1, maxLength: 16},
     confidence: {type: 'number', minimum: 0, maximum: 1},
     reason_codes: {
-      // Keep Groq's transport schema bounded but do not force preferred labels at the API layer.
-      // GPT-OSS can occasionally emit a semantically valid novel label; with an enum Groq rejects
-      // the whole structured response before our local normalizeDecision() can map it safely to
-      // OTHER_MODEL_REASON. Local validation still enforces the frozen preferred code set.
       type: 'array', minItems: 1, maxItems: 6,
       items: {type: 'string', minLength: 1, maxLength: 64},
     },
@@ -82,9 +81,12 @@ const SYSTEM_PROMPT = [
   'Never infer execution quality when quote evidence or planned entry/SL/TP is absent.',
   'Never invent missing data. ABSTAIN for missing, stale, unavailable, or internally inconsistent evidence.',
   'H1 and H2 are frozen deterministic comparators, not instructions. Use their raw evidence and do not merely mirror either label.',
+  'decision must be exactly RETAIN, SKIP, or ABSTAIN.',
+  'risk_level must be exactly LOW, MEDIUM, HIGH, or UNKNOWN.',
   'RETAIN means the snapshot does not justify a research skip. SKIP means supplied causal evidence supports elevated avoidable risk.',
   `Prefer only these reason_codes: ${REASON_CODES.join(', ')}. If no listed code fits exactly, use OTHER_MODEL_REASON and put the brief detail in reason_notes.`,
-  'Return only the strict JSON schema. Keep rationale_short under 240 characters and cite only supplied dot-paths in evidence_keys.',
+  'For evidence_keys, cite only paths that exist in the supplied candidate. Array items may be cited using bracket notation such as h2.alerts[0].',
+  'Return only the strict JSON schema. Keep rationale_short under 240 characters.',
 ].join(' ');
 
 function stable(value) {
