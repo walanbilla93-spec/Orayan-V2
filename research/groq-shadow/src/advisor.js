@@ -15,8 +15,6 @@ function intEnv(env, key, dflt, min, max) {
   return Number.isInteger(value) && value >= min && value <= max ? value : dflt;
 }
 function configFromEnv(env = process.env) {
-  // In the production image this resolves to /app/backend/data. Keep the environment override,
-  // but never default to a working-directory-dependent /data or ./data location.
   const persistentDefault = path.resolve(__dirname, '..', '..', '..', 'backend', 'data', 'groq-shadow', 'decisions.jsonl');
   return {
     apiKey:env.GROQ_API_KEY || '',
@@ -25,6 +23,7 @@ function configFromEnv(env = process.env) {
     ledger:env.GROQ_SHADOW_LEDGER || persistentDefault,
     timeoutMs:intEnv(env,'GROQ_SHADOW_TIMEOUT_MS',15000,1000,60000),
     maxOutputTokens:intEnv(env,'GROQ_SHADOW_MAX_OUTPUT_TOKENS',1024,256,4096),
+    budgetCompletionTokens:intEnv(env,'GROQ_SHADOW_BUDGET_COMPLETION_TOKENS',450,128,1024),
     maxRequestsDay:intEnv(env,'GROQ_SHADOW_MAX_REQUESTS_DAY',900,1,999),
     maxTokensDay:intEnv(env,'GROQ_SHADOW_MAX_TOKENS_DAY',180000,1000,199999),
     maxRequestsMinute:intEnv(env,'GROQ_SHADOW_MAX_REQUESTS_MINUTE',20,1,29),
@@ -44,12 +43,13 @@ function buildRequest(snapshot, config) {
       {role:'system',content:SYSTEM_PROMPT},
       {role:'user',content:canonicalJson({prompt_version:PROMPT_VERSION,prompt_variant:PROMPT_VARIANT,candidate:snapshot})},
     ],
-    response_format:{type:'json_schema',json_schema:{name:'orayan_shadow_decision_v2',strict:true,schema:RESPONSE_SCHEMA}},
+    response_format:{type:'json_schema',json_schema:{name:'orayan_shadow_decision',strict:true,schema:RESPONSE_SCHEMA}},
   };
 }
 
-function estimateTokens(request, maxOutputTokens) {
-  return Math.ceil(Buffer.byteLength(JSON.stringify(request),'utf8')/3.5) + maxOutputTokens;
+function estimateTokens(request, completionReserveTokens = 450) {
+  const promptEstimate = Math.ceil(Buffer.byteLength(JSON.stringify(request),'utf8')/3.5);
+  return promptEstimate + completionReserveTokens;
 }
 
 function abstainDecision(reasons, code = 'INSUFFICIENT_DECISION_TIME_EVIDENCE') {
@@ -96,7 +96,8 @@ async function advise(snapshot, options = {}) {
 
   const request = buildRequest(compact.snapshot, config);
   const requestHash = sha256(canonicalJson(request));
-  const estimatedTokens = estimateTokens(request, config.maxOutputTokens);
+  const completionReserveTokens = Math.min(config.budgetCompletionTokens, config.maxOutputTokens);
+  const estimatedTokens = estimateTokens(request, completionReserveTokens);
   const exhausted = budgetReason(state, estimatedTokens, config);
   if (exhausted) {
     if (exhausted.startsWith('MINUTE_')) {
@@ -106,7 +107,8 @@ async function advise(snapshot, options = {}) {
         const deferUntilMs = Math.min(nextMinuteAvailableAt(state,estimatedTokens,config,nowMs),
           birthMs + config.maxDeferAgeMs);
         const record={...baseRecord({recordType:'BUDGET_DEFERRED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'BUDGET_DEFERRED'}),
-          request_hash:requestHash,estimated_tokens_reserved:estimatedTokens,budget_reason:exhausted,
+          request_hash:requestHash,estimated_tokens_reserved:estimatedTokens,
+          completion_tokens_reserved:completionReserveTokens,budget_reason:exhausted,
           defer_until_utc:new Date(deferUntilMs).toISOString()};
         await index.append(record,nowMs);
         return {...record,persisted:true};
@@ -124,12 +126,16 @@ async function advise(snapshot, options = {}) {
     return record;
   }
 
-  if (options.mode === 'dry-run') return {status:'DRY_RUN',request_id:requestId,request,estimated_tokens_reserved:estimatedTokens,persisted:false};
+  if (options.mode === 'dry-run') return {
+    status:'DRY_RUN',request_id:requestId,request,estimated_tokens_reserved:estimatedTokens,
+    completion_tokens_reserved:completionReserveTokens,persisted:false
+  };
   if (options.mode !== 'live' && options.mode !== 'mock') throw new Error('Mode must be dry-run, mock, or live.');
   if (options.mode === 'live' && !config.allowLive) throw new Error('Live call blocked: set GROQ_SHADOW_ALLOW_LIVE=true only after explicit approval.');
 
   await index.append({...baseRecord({recordType:'REQUEST_STARTED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'REQUEST_STARTED'}),
-    request_hash:requestHash,estimated_tokens_reserved:estimatedTokens}, nowMs);
+    request_hash:requestHash,estimated_tokens_reserved:estimatedTokens,
+    completion_tokens_reserved:completionReserveTokens}, nowMs);
   const started = Date.now();
   const api = options.mode === 'mock'
     ? await options.mockTransport(request)
