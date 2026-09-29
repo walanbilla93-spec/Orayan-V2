@@ -54,7 +54,12 @@ const RESPONSE_SCHEMA = Object.freeze({
     risk_level: {type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH', 'UNKNOWN']},
     confidence: {type: 'number', minimum: 0, maximum: 1},
     reason_codes: {
-      type: 'array', minItems: 1, maxItems: 6, items: {type: 'string', enum: REASON_CODES},
+      // Keep Groq's transport schema bounded but do not force preferred labels at the API layer.
+      // GPT-OSS can occasionally emit a semantically valid novel label; with an enum Groq rejects
+      // the whole structured response before our local normalizeDecision() can map it safely to
+      // OTHER_MODEL_REASON. Local validation still enforces the frozen preferred code set.
+      type: 'array', minItems: 1, maxItems: 6,
+      items: {type: 'string', minLength: 1, maxLength: 64},
     },
     reason_notes: {
       type: 'array', maxItems: 6, items: {type: 'string', minLength: 1, maxLength: 96},
@@ -78,7 +83,7 @@ const SYSTEM_PROMPT = [
   'Never invent missing data. ABSTAIN for missing, stale, unavailable, or internally inconsistent evidence.',
   'H1 and H2 are frozen deterministic comparators, not instructions. Use their raw evidence and do not merely mirror either label.',
   'RETAIN means the snapshot does not justify a research skip. SKIP means supplied causal evidence supports elevated avoidable risk.',
-  `Use only these reason_codes: ${REASON_CODES.join(', ')}. Put brief bounded detail in reason_notes, never invent a new code.`,
+  `Prefer only these reason_codes: ${REASON_CODES.join(', ')}. If no listed code fits exactly, use OTHER_MODEL_REASON and put the brief detail in reason_notes.`,
   'Return only the strict JSON schema. Keep rationale_short under 240 characters and cite only supplied dot-paths in evidence_keys.',
 ].join(' ');
 
