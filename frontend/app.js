@@ -155,6 +155,15 @@ async function loadAlibabaShadowStatus() {
   }catch(error){button.disabled=true;status.textContent=`Alibaba shadow data unavailable: ${error.message}`;}
 }
 
+async function loadV3Status() {
+  try {
+    const info=await api('/api/v3/status');
+    $('#v3Status').textContent=`${info.enabled?'Capturing':'Disabled'} · ${info.stage} · V2 benchmark ${info.benchmarkCommit.slice(0,7)} · V3 rows ${info.counts.v3} · AI rows ${info.counts.ai} · capture errors ${info.counts.errors} · archive ${fmtBytes(info.sizeBytes)}`;
+    $('#btnExportV3').disabled=!info.available;
+    $('#v3Rows').innerHTML=info.recent.slice().reverse().map(r=>`<tr><td>${esc(fmtDate(r.decisionAt))}</td><td>${esc(r.symbol)}</td><td>${esc(r.side||'—')}</td><td>${esc(r.regime)}</td><td>${esc(r.levelType||'—')}</td><td>${esc(r.reaction||'—')}</td><td>${esc(r.premiumDiscount||'—')}</td><td>${esc(r.rejectReason)}</td></tr>`).join('')||'<tr><td colspan="8">No V3 observations captured yet.</td></tr>';
+  }catch(e){$('#v3Status').textContent=`V3 data unavailable: ${e.message}`;}
+}
+
 function toast(msg, kind = '') {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
@@ -758,6 +767,7 @@ async function refresh() {
     if (state.view === 'signals') renderSignals();
     if (state.view === 'trades') renderTrades();
     if (state.view === 'shadow') renderShadow();
+    if (state.view === 'v3') await loadV3Status();
   } catch (e) {
     const banner = $('#banner');
     banner.hidden = false;
@@ -849,6 +859,9 @@ function init() {
   });
 
   const downloadFrom = (path) => { window.location.href = path; };
+  $('#btnExportV3').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=v3'));
+  $('#btnExportV3V2').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=v2'));
+  $('#btnExportV3AI').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=ai'));
   const downloadGroqShadow = async () => {
     const button=$('#btnExportGroqShadow');
     if(button.dataset.protected!=='true')return downloadFrom('/api/journal/research/groq-shadow/export');

@@ -11,8 +11,9 @@ const {StringDecoder}=require('string_decoder');
 const retraceShadow = require('./retraceShadow');
 const bybit = require('./bybit');
 const runtime = require('./runtimeIdentity');
+const {positionSideTotals} = require('./v3Contracts');
 const VERSION = 'PROSPECTIVE_BIRTH_V2';
-const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V4';
+const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V5';
 const dir = path.join(store.DATA_DIR, 'research-v2');
 const RETENTION_MS = 48 * 60 * 60 * 1000;
 const lastCandidate = new Map();
@@ -212,7 +213,7 @@ function cleanOld(now) {
   for (const [key, at] of seenLiquidation) if (at < now - 60000) seenLiquidation.delete(key);
 }
 // A null window means the live stream did not continuously cover that interval. Bybit's
-// liquidation side is the liquidated position side: Sell liquidates a long, Buy a short.
+// liquidation side is the liquidated position side: Buy liquidates a long, Sell a short.
 function liquidationWindows(symbol, breakTs, asOf = Date.now()) {
   const continuous = connectedAt !== null && socket?.readyState === 1 && lastSocketMessageAt !== null
     && asOf-lastSocketMessageAt<=60000 && confirmed.has(symbol)
@@ -222,7 +223,7 @@ function liquidationWindows(symbol, breakTs, asOf = Date.now()) {
   const rows = (liquidations.get(symbol) || []).filter(x => x.receivedAt <= asOf);
   const window = (from, to, covered) => {
     if (!covered) return null;
-    return liquidationWindowTotals(rows,breakTs,from,to);
+    return liquidationWindowTotals(rows,breakTs,from,to,asOf);
   };
   const pre5=window(-5*60000,0,preCovered),pre1=window(-60000,0,preCovered);
   const post1=window(0,60000,postCovered),post5=window(0,5*60000,postCovered);
@@ -236,14 +237,12 @@ function liquidationWindows(symbol, breakTs, asOf = Date.now()) {
     baselineMean1m:baseline.length?roundOrNull(avg(baseline)):null,
     baselineSd1m:sigma>0?r(sigma):null,
     intensityZ:pre5&&post5&&sigma>0?r((post5.totalNotional/5-avg(baseline))/sigma):null,
-    sideMeaning:'Sell=long liquidation; Buy=short liquidation',source:'in_memory_Bybit_allLiquidation'};
+    sideMeaning:'Buy=long liquidation; Sell=short liquidation',interpretationVersion:'BYBIT_POSITION_SIDE_V1',source:'in_memory_Bybit_allLiquidation'};
 }
 function roundOrNull(x) { return x==null?null:r(x); }
-function liquidationWindowTotals(rows,breakTs,from,to) {
-  const selected=(rows||[]).filter(x=>x.timestamp >= breakTs+from && x.timestamp < breakTs+to);
-  const long=selected.filter(x=>x.side==='Sell').reduce((a,x)=>a+x.notional,0);
-  const short=selected.filter(x=>x.side==='Buy').reduce((a,x)=>a+x.notional,0);
-  return {longNotional:r(long),shortNotional:r(short),totalNotional:r(long+short)};
+function liquidationWindowTotals(rows,breakTs,from,to,asOf=Date.now()) {
+  const totals=positionSideTotals(rows||[],breakTs+from,breakTs+to,asOf);
+  return {...totals,longNotional:r(totals.longNotional),shortNotional:r(totals.shortNotional),totalNotional:r(totals.totalNotional)};
 }
 function candidateLink(candidateId) { return candidateKeysById.get(candidateId) || null; }
 function ingest(message, receivedAt = Date.now()) {
@@ -339,6 +338,8 @@ function liquidationFeatures(symbol, at, price, turnover24h) {
     connectedAt, lastMessageAt, gapSince, notional1m:covered ? r(total1):null,
     notional5m:covered ? r(total(5)):null, notional15m:covered ? r(total(15)):null,
     buyNotional5m:covered ? r(buy):null, sellNotional5m:covered ? r(sell):null,
+    longNotional5m:covered ? r(buy):null, shortNotional5m:covered ? r(sell):null,
+    sideMeaning:'Buy=long liquidation; Sell=short liquidation',interpretationVersion:'BYBIT_POSITION_SIDE_V1',
     imbalance5m:covered && buy+sell ? r((buy-sell)/(buy+sell)):null,
     intensity5mVs24hHourlyTurnover:covered && turnover24h>0 ? r(total(5)/(turnover24h/24)):null,
     nearestBankruptcyPriceDistancePct:r(nearest), shockZ1m:covered && baseSd>0 ? r((total1-avg(minuteBins))/baseSd):null };
@@ -486,13 +487,14 @@ function directionalReturn(reference, close, side) {
   return r((side === 'SELL' ? -1 : 1) * raw);
 }
 function computeForwardLabel(birth, bars) {
-  const start = Math.ceil(Number(birth.at)/60000)*60000; // exclude partial birth minute to prevent pre-birth contamination
-  const usable=(bars||[]).filter(x => x.ts >= start && x.ts < birth.at + 61*60000);
+  const labelOriginAt=Math.max(Number(birth.at),n(birth.decisionAt)||0,n(birth.capturedAt)||0);
+  const start = Math.ceil(labelOriginAt/60000)*60000; // exclude all minutes before physical feature capture
+  const usable=(bars||[]).filter(x => x.ts >= start && x.ts < labelOriginAt + 61*60000);
   const ref=n(birth.market?.markPrice), entry=n(birth.plannedEntry), sl=n(birth.plannedSl), tp=n(birth.plannedTp);
   const risk=entry!==null&&sl!==null?Math.abs(entry-sl):null;
   const atr=n(birth.trendMomentum?.atr14), dir=birth.side === 'SELL' ? -1 : 1;
   const closeAt = mins => {
-    const cutoff=birth.at + mins*60000;
+    const cutoff=labelOriginAt + mins*60000;
     const rows=usable.filter(x => x.ts+60000 <= cutoff);
     return rows.length ? rows.at(-1).close : null;
   };
@@ -535,7 +537,8 @@ function computeForwardLabel(birth, bars) {
   }
   const bid=n(birth.market?.bid),ask=n(birth.market?.ask),mid=bid>0&&ask>0?(bid+ask)/2:ref;
   const marketableAtBirth=entry>0 ? (birth.side==='BUY' ? (ask>0?entry>=ask:null) : (bid>0?entry<=bid:null)) : null;
-  return {version:COMPACT_VERSION,kind:'forward_label',at:Date.now(),evaluatedFromAt:start,
+  return {version:COMPACT_VERSION,kind:'forward_label',at:Date.now(),evaluatedFromAt:start,labelOriginAt,
+    labelClock:'MAX_SCAN_DECISION_PHYSICAL_CAPTURE_V1',
     partialBirthMinuteExcluded:true,source:'Bybit /v5/market/kline 1m',candidateKey:birth.candidateKey,
     episodeId:birth.episodeId,candidateId:birth.candidateId,engine:birth.engine,symbol:birth.symbol,side:birth.side,
     configHash:birth.configHash||null,birthAt:birth.at,birthMarkPrice:ref,
@@ -545,9 +548,9 @@ function computeForwardLabel(birth, bars) {
     mfe60mR:r(risk>0&&mfePx!==null?mfePx/risk:null),mae60mR:r(risk>0&&maePx!==null?maePx/risk:null),
     mfe60mAtr:r(atr>0&&mfePx!==null?mfePx/atr:null),mae60mAtr:r(atr>0&&maePx!==null?maePx/atr:null),
     plannedEntryTouched:touchIndex>=0,plannedEntryTouchAt:touchAt,
-    entryTouchedWithin15m:touchAt!==null?touchAt < birth.at+15*60000:false,
-    entryTouchedWithin30m:touchAt!==null?touchAt < birth.at+30*60000:false,
-    entryTouchedWithin60m:touchAt!==null?touchAt < birth.at+60*60000:false,
+    entryTouchedWithin15m:touchAt!==null?touchAt < labelOriginAt+15*60000:false,
+    entryTouchedWithin30m:touchAt!==null?touchAt < labelOriginAt+30*60000:false,
+    entryTouchedWithin60m:touchAt!==null?touchAt < labelOriginAt+60*60000:false,
     plannedTpSlOutcome:outcome,plannedTpSlResolvedAt:resolvedAt,sameMinuteAmbiguity,
     entryTouchBarAmbiguous,touchBarTpHit,touchBarSlHit,touchBarExcludedFromPostEntryExcursions:true,
     postEntryMfeR,postEntryMaeR,marketableAtBirth,
@@ -559,12 +562,13 @@ async function resolveDueForwardLabels(limit=8) {
   forwardResolving=true;
   try {
     const now=Date.now();
-    const due=[...pendingForward.values()].filter(x => now >= x.at + 62*60000 && now >= (x.nextAttemptAt||0))
+    const due=[...pendingForward.values()].filter(x => now >= Math.max(x.at,n(x.decisionAt)||0,n(x.capturedAt)||0) + 62*60000 && now >= (x.nextAttemptAt||0))
       .sort((a,b)=>a.at-b.at).slice(0,limit);
     for (const birth of due) {
       try {
-        const start=Math.ceil(birth.at/60000)*60000;
-        const end=birth.at+61*60000;
+        const originAt=Math.max(birth.at,n(birth.decisionAt)||0,n(birth.capturedAt)||0);
+        const start=Math.ceil(originAt/60000)*60000;
+        const end=originAt+61*60000;
         const res=await researchGet('/v5/market/kline',{category:'linear',symbol:birth.symbol,interval:'1',start,end,limit:1000},!!birth.minutePathRef?.testnet);
         const bars=(res?.list||[]).map(x=>({ts:n(x[0]),open:n(x[1]),high:n(x[2]),low:n(x[3]),close:n(x[4])}))
           .filter(x=>x.ts!==null&&x.high!==null&&x.low!==null&&x.close!==null).sort((a,b)=>a.ts-b.ts);
@@ -691,15 +695,10 @@ function birth(signal, context) {
   compact.signature = signature;
   compact.eventId = digest([candidateKey,compact.kind,signature,scanAt]);
   lastCandidate.set(candidateKey,{at:scanAt,signature,episodeId,originAt,originBtcRegime});
-  const update = continuing ? {version:COMPACT_VERSION,kind:compact.kind,eventId:compact.eventId,
-    at:scanAt,candidateKey,episodeId,candidateId:signal.id,scanId,marketSnapshotId:compact.marketSnapshotId,
-    engine:compact.engine,symbol:compact.symbol,side:compact.side,signature,configHash,
-    captureLagMs:compact.captureLagMs,signalToCaptureLagMs:compact.signalToCaptureLagMs,
-    passed,failedGates:compact.failedGates,entryModeDecision:compact.entryModeDecision,
-    plannedEntry:entry,plannedSl:sl,plannedTp:tp,
-    grossTargetR:compact.grossTargetR,availableTargetRAfterFees:compact.availableTargetRAfterFees,
-    locationBucket:compact.locationBucket,rizzySequence:compact.rizzySequence,
-    retraceStateShadow:compact.retraceStateShadow||null} : compact;
+  // Updates are fresh measurements, never an implicit join to the first birth. Keep
+  // scalar current features and both clocks; omit only bulky arrays from trendMomentum.
+  const update = continuing ? {...compact,trendMomentum:Object.fromEntries(
+    Object.entries(compact.trendMomentum||{}).filter(([,v])=>!Array.isArray(v)))} : compact;
   append('compact',update,scanAt);
   if (compact.kind === 'candidate_birth') {
     pendingForward.set(episodeId,compact);

@@ -19,6 +19,7 @@ const researchSupplement = require('./researchSupplement');
 const earlyEntryShadow = require('./earlyEntryShadow');
 const groqShadowProducer = require('./groqShadowProducer');
 const alibabaShadowProducer = require('./alibabaShadowProducer');
+const v3Shadow = require('./v3Shadow');
 const { num, uid } = require('./util');
 
 const state = {
@@ -542,6 +543,11 @@ async function scanOnce() {
       configHash: researchConfigHash,
     });
     const marketSnapshotId = marketSnapshot?.marketSnapshotId || null;
+    // V3_BEGIN: one-way shadow observer on exactly the already-fetched V2 market data.
+    try { v3Shadow.observeScan({scanAt,scanId,candlesBySymbol:researchCandles,tickerBySymbol,
+      btcRegime,settings,signals:journalSignals,marketSnapshot}); }
+    catch (e) { logger.warn('v3-shadow','Research capture failed',{error:e.message}); }
+    // V3_END: no output is read by gates, ranking, sizing or execution.
     for (const signal of journalSignals) signal.marketSnapshotId = marketSnapshotId;
     // Observe the same already-fetched decision-time market state used by the prospective
     // journal. This is bounded in memory and has no network I/O or execution authority.

@@ -25,6 +25,10 @@ test('execution, gates and all Groq production modules match deployed main',()=>
 
 test('engine is identical to deployed main after removing the two observational Alibaba calls',()=>{
   let source=fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8').replace(/\r\n/g,'\n');
+  // Remove only the explicitly delimited, one-way V3 observer addition. A dedicated
+  // V3 parity test also compares the remaining engine to the exact frozen V2 commit.
+  source=source.replace("const v3Shadow = require('./v3Shadow');\n",'')
+    .replace(/    \/\/ V3_BEGIN:[\s\S]*?    \/\/ V3_END:[^\n]*\n/,'');
   source=source.replace("const alibabaShadowProducer = require('./alibabaShadowProducer');\n",'')
     .replace(/    try \{ alibabaShadowProducer\.observeEnvironment[^\n]+\n    catch[^\n]+\n/,'')
     .replace(/      \/\/ Independent one-way Alibaba research handoff[^\n]+\n      \/\/ gate[^\n]+\n      try \{ alibabaShadowProducer\.observeBirth[\s\S]*?\n      catch[^\n]+\n/,'');
