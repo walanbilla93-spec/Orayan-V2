@@ -112,8 +112,11 @@ class ShadowJournal {
     const setupId=hash([VERSION,row.configHash,row.symbol,row.side,row.closedBarOpenAt,row.geometry?.reactionLevel?.id]);
     if(row.v3Decision==='ACCEPT_SHADOW') {
       const duplicate=previous?.lastAdmittedSetup===setupId || [...this.activeTrades.values(),...this.recentTrades].some(t=>t.tradeId===setupId);
-      if(duplicate)row={...row,v3Decision:'REJECT',rejectReason:'SHADOW_SETUP_ALREADY_TRACKED'};
-      else if(this.activeTrades.size>=trades.MAX_ACTIVE)row={...row,v3Decision:'REJECT',rejectReason:'SHADOW_CAPACITY_LIMIT'};
+      if(duplicate)row={...row,v3Decision:'REJECT',rejectReason:'SHADOW_SETUP_ALREADY_TRACKED',
+        outcomeLabels:{status:'NO_NEW_TRADE_EXISTING_SETUP',shadowTradeId:setupId,channel:'trades'}};
+      else if(this.activeTrades.size>=trades.MAX_ACTIVE)row={...row,v3Decision:'REJECT',rejectReason:'SHADOW_CAPACITY_LIMIT',
+        outcomeLabels:{status:'NOT_EVALUATED_CAPACITY_LIMIT',shadowTradeId:null,channel:'trades'}};
+      else row={...row,outcomeLabels:{status:'SEPARATE_SHADOW_TRADE_LIFECYCLE',shadowTradeId:setupId,channel:'trades'}};
     }
     const signature=hash([row.closedBarOpenAt,row.regime,row.rejectReason,
       row.v2Decision.map(p=>[p.side,p.passed,p.failed]),row.research?.selected?.id,VERSION,
