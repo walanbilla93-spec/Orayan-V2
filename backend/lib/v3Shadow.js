@@ -7,6 +7,7 @@ const levels=require('./v3Levels');
 const corrected=require('./signals_trend_v30');
 const location=require('./locationResearch');
 const {redact}=require('../../research/alibaba-shadow/src/security');
+const runtime=require('./runtimeIdentity');
 const VERSION='ORAYAN_V3_TRANCHE1';
 const BENCHMARK='d7f2ba802a4b4204fad70bf502c6f996f76aabc4';
 const frozen=require('./v3Benchmark.json');
@@ -14,6 +15,8 @@ const MAX_KEYS=512,MAX_RECENT=24,MAX_ROW_BYTES=65536,RETENTION_MS=96*3600000;
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?
   Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
 const hash=value=>crypto.createHash('sha256').update(JSON.stringify(stable(value))).digest('hex').slice(0,24);
+const implementationHash=crypto.createHash('sha256').update(['v3Shadow.js','v3Contracts.js','v3Levels.js','signals_trend_v30.js']
+  .map(file=>fs.readFileSync(path.join(__dirname,file),'utf8').replace(/\r\n/g,'\n')).join('\n')).digest('hex');
 function plan(signal) {return signal?{candidateId:signal.id,side:signal.side,entry:signal.entry,sl:signal.sl,tp:signal.tp,
   score:signal.score,rr:signal.rr,passed:signal.gates?.passed??null,failed:signal.gates?.failed||[]}:null;}
 
@@ -76,7 +79,7 @@ class ShadowJournal {
     }
   }
   append(channel,row) {
-    const line=JSON.stringify(redact(row))+'\n';
+    const line=JSON.stringify(redact({...runtime.rowFields(),implementationHash,...row}))+'\n';
     if(Buffer.byteLength(line)>MAX_ROW_BYTES)throw Error('V3_ROW_TOO_LARGE');
     const file=path.join(this.dir,`${channel}-${new Date(row.capturedAt).toISOString().slice(0,13).replace('T','-')}.jsonl`);
     // One complete immutable row at a time; no accumulated candle arrays or write queue.
@@ -164,7 +167,7 @@ class ShadowJournal {
           requestId:r.request_id,candidateId:r.candidate_id,episodeId:episode?.episodeId??null,
           outputAt:Number.isFinite(outputAt)?outputAt:null,capturedAt:now,status:r.status,
           output:r.decision||null,availableAfterDecision:true,
-          agreedWithV2:link && link.passed!==null && ['TAKE','SKIP'].includes(verdict)?(verdict==='TAKE')===link.passed:null,
+          agreedWithV2:link && link.passed!==null && ['RETAIN','SKIP'].includes(verdict)?(verdict==='RETAIN')===link.passed:null,
           agreedWithV3:null,agreementReason:'V3_EXECUTABLE_GEOMETRY_NOT_IMPLEMENTED',executionAuthority:false});
       }catch(_){this.counts.errors++;}
     }

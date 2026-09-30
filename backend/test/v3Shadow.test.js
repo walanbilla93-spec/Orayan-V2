@@ -116,11 +116,12 @@ test('AI annotations read incrementally, redact secrets, and never become determ
   j.record(row(),'scan',Date.now());fs.writeFileSync(file,'');j.observeAI('Alibaba',file);
   process.env.V3_TEST_SECRET='test-private-key-12345';t.after(()=>delete process.env.V3_TEST_SECRET);
   fs.appendFileSync(file,JSON.stringify({record_type:'SHADOW_DECISION',candidate_id:'v2-test',model:'qwen',status:'OK',
-    available_to_system_at_utc:new Date().toISOString(),decision:{decision:'TAKE',rationale_short:'test-private-key-12345'}})+'\n');
+    available_to_system_at_utc:new Date().toISOString(),decision:{decision:'RETAIN',rationale_short:'test-private-key-12345'}})+'\n');
   j.observeAI('Alibaba',file);j.observeAI('Alibaba',file);
   assert.equal(j.counts.ai,1);const text=fs.readFileSync(j.files('ai')[0].path,'utf8'),r=JSON.parse(text);
   assert.equal(text.includes('test-private-key-12345'),false);assert.equal(r.agreedWithV2,true);
   assert.equal(r.agreedWithV3,null);assert.equal(r.executionAuthority,false);
+  assert.ok(r.processBootId);assert.equal(r.implementationHash.length,64);
 });
 test('V2 strategy/execution/settings and AI modules are byte-identical to benchmark',()=>{
   for(const file of ['signals.js','signals_trend.js','signals_structure.js','gates.js','risk.js','executor.js','settings.js',

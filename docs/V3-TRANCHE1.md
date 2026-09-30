@@ -40,6 +40,8 @@ Trend leg count uses the existing EMA21/55-cross directional-pivot research meth
 
 `backend/data/v3-shadow/` contains separate hourly `v2-*`, `v3-*`, and `ai-*` JSONL files with output types V2_SIGNAL, V3_SHADOW_SIGNAL and AI_RESEARCH_CONTEXT. V2 rows are matched observations for meaningful V3 updates; the existing full V2 journal remains the authoritative complete V2 signal stream. Native V2 absence is recorded instead of suppressing V3 observations.
 
+Rows also identify process boot/start and a SHA-256 fingerprint of the V3 implementation, so repaired shadow builds remain attributable. AI agreement uses the providers' actual RETAIN/SKIP/ABSTAIN semantics; abstention is not agreement or disagreement. Total capture errors are retained across deployments; last-scan errors identify current health.
+
 The separate V3 Analysis tab downloads each channel independently. The server pipelines files at fixed byte watermarks with backpressure; it never reads a full archive into memory for an export. Existing data download panels remain intact.
 
 AI providers keep their original context and request logic. V3 incrementally observes completed outputs from existing ledgers, logging timestamp, provider, model, original output and available exact-candidate V2 agreement. Local abstains retain their status. V3 agreement remains null with an explicit reason while executable geometry is unavailable. Outputs do not feed V3 decisions. Decision rows mark AI context unavailable at their decision clock; later AI records must be joined as later annotations, never backfilled as known-at-decision predictors. Only current/birth native candidate links are kept; unmatched outputs retain null agreement. No additional AI requests are made by V3.
