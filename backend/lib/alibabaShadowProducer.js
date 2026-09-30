@@ -10,6 +10,8 @@ const alibabaShadowExport = require('./alibabaShadowExport');
 const { appendImmutableAsync, readRecords, ledgerIndex } = require('../../research/alibaba-shadow/src/ledger');
 const { advise, BoundedShadowQueue, configFromEnv } = require('../../research/alibaba-shadow/src/advisor');
 const { FROZEN_RULES, INPUT_SCHEMA_VERSION, DEFAULT_MODEL, canonicalJson, sha256 } = require('../../research/alibaba-shadow/src/constants');
+const {validateSnapshot}=require('../../research/alibaba-shadow/src/snapshot');
+const {redact}=require('../../research/alibaba-shadow/src/security');
 
 const AUDIT_SCHEMA = 'ORAYAN_ALIBABA_SNAPSHOT_AUDIT_V1';
 const MAX_ENV_POINTS = 64;
@@ -21,11 +23,12 @@ let runtimeConfigKey = null;
 let testTransport = null;
 
 function finite(value) {
+  if(value==null||value==='')return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
 function timeMs(value){const number=finite(value);if(number!=null)return number;const parsed=Date.parse(value||'');return Number.isFinite(parsed)?parsed:null;}
-function iso(ms) { return Number.isFinite(Number(ms)) ? new Date(Number(ms)).toISOString() : null; }
+function iso(ms) { return ms!=null && Number.isFinite(Number(ms)) ? new Date(Number(ms)).toISOString() : null; }
 function regimeLabel(value) {
   return typeof value === 'string' ? value : value?.regime || value?.label || 'UNKNOWN';
 }
@@ -54,7 +57,7 @@ function pointFeature(value, observedAt, availableAt, sampleSize) {
   return { value: finite(value), observedAt: finite(observedAt), availableAt: finite(availableAt), sampleSize: finite(sampleSize) };
 }
 
-function compactMarketSnapshot(snapshot) {
+function compactMarketSnapshot(snapshot, availableAt=snapshot?.observedAt) {
   if(!snapshot)return null;
   return {market_snapshot_id:snapshot.marketSnapshotId||null,timeframe:snapshot.timeframe||null,
     breadth_current:finite(snapshot.directionalBreadth),breadth_momentum:finite(snapshot.breadthMomentum),
@@ -65,7 +68,7 @@ function compactMarketSnapshot(snapshot) {
     median_realised_vol_20:finite(snapshot.medianRealisedVol20),btc_return_1:finite(snapshot.btcReturn1),
     btc_return_3:finite(snapshot.btcReturn3),btc_realised_vol_20:finite(snapshot.btcRealisedVol20),
     btc_shock_z:finite(snapshot.btcShockZ),btc_shock_state:snapshot.btcShockState||'UNKNOWN',
-    observed_at_utc:iso(finite(snapshot.observedAt)),available_to_system_at_utc:iso(finite(snapshot.observedAt))};
+    observed_at_utc:iso(finite(snapshot.observedAt)),available_to_system_at_utc:iso(finite(availableAt))};
 }
 
 function observeEnvironment({ at = Date.now(), marketSnapshot, tickers = [], btcRegime } = {}) {
@@ -85,7 +88,7 @@ function observeEnvironment({ at = Date.now(), marketSnapshot, tickers = [], btc
     btc_return_medium: pointFeature(marketSnapshot?.btcReturn3, marketSnapshot?.observedAt, at),
     regime:{label:regimeLabel(btcRegime||marketSnapshot?.btcRegime),strength:finite(btcRegime?.strength),
       observedAt:finite(btcRegime?.observedAt),availableAt:at},
-    marketContext:compactMarketSnapshot(marketSnapshot),
+    marketContext:compactMarketSnapshot(marketSnapshot,at),
   };
   environment.push(point);
   while (environment.length > MAX_ENV_POINTS) environment.shift();
@@ -164,8 +167,8 @@ function h2Decision(features, side) {
 }
 
 function buildSnapshot(signal, birth, context = {}) {
-  const birthAt = finite(birth?.at ?? birth?.decisionAt ?? context.scanAt) || Date.now();
-  const current = environment.at(-1) || null;
+  const birthAt = finite(birth?.decisionAt ?? birth?.at ?? context.scanAt) || Date.now();
+  const current = environment.findLast(point => point.at <= birthAt) || null;
   const baseline = baselineFor(birthAt);
   const featureNames = ['btc_return_24h', 'eth_return_24h', 'linear_breadth', 'btc_funding_rate',
     'eth_funding_rate', 'btc_open_interest', 'eth_open_interest'];
@@ -192,13 +195,13 @@ function buildSnapshot(signal, birth, context = {}) {
   const stopPct = entry > 0 && stopDistance != null ? 100 * stopDistance / entry : null;
   const quoteComplete = ['bid', 'ask', 'markPrice'].every(key => finite(context.ticker?.[key]) != null);
   const candidateMarket=birth?.market||{};
-  const currentMarket=current?.marketContext||compactMarketSnapshot(context.marketSnapshot);
+  const currentMarket=current?.marketContext||null;
   const sources = [
     { name: 'new_orayan_birth', status: 'OK', available_to_system_at_utc: iso(birthAt), age_seconds: 0 },
     { name: 'market_environment_scan', status: current ? 'OK' : 'NOT_AVAILABLE',
       available_to_system_at_utc: iso(current?.at), age_seconds: current ? Math.max(0, (birthAt - current.at) / 1000) : null },
   ];
-  return {
+  return redact({
     schema_version: INPUT_SCHEMA_VERSION,
     candidate_id: signal.id,
     candidate_episode_id: birth?.episodeId || null,
@@ -277,7 +280,7 @@ function buildSnapshot(signal, birth, context = {}) {
     reason_flags: [signal.signalSource, signal.structureEvent, signal.entryPath].filter(Boolean),
     risk_flags: [...new Set([...(signal.gates?.failed || []), ...(h1Reasons || [])])],
     sources,
-  };
+  });
 }
 
 async function appendAudit(cfg, record) {
@@ -313,7 +316,7 @@ class DurableShadowRuntime {
     await appendAudit(this.cfg,{record_type:'PROCESSING_EVENT',handoff_id:id,
       candidate_id:snapshot.candidate_id,processing_status:'PROCESSING'});
     let result;
-    if (!this.cfg.allowLive) result={status:'LIVE_DISABLED',persisted:false};
+    if (!this.cfg.allowLive) result=await advise(snapshot,{config:this.cfg,mode:'live'});
     else {
       do {
         result=await advise(snapshot,{config:this.cfg,mode:testTransport?'mock':'live',
@@ -334,7 +337,8 @@ class DurableShadowRuntime {
     await readRecords(this.cfg.snapshotAudit,row=>{
       if (!row.handoff_id) return;
       if (row.record_type === 'CANDIDATE_SNAPSHOT' && row.processing_status === 'QUEUED' && row.snapshot) {
-        if(!this.snapshotIds.has(row.handoff_id)){this.snapshotIds.add(row.handoff_id);this.snapshotCount+=1;}
+        if(!this.snapshotIds.has(row.handoff_id)){this.snapshotIds.add(row.handoff_id);this.snapshotCount+=1;
+          while(this.snapshotIds.size>MAX_SEEN)this.snapshotIds.delete(this.snapshotIds.values().next().value);}
         outstanding.set(row.handoff_id,{id:row.handoff_id,snapshot:row.snapshot});
       } else if (row.record_type === 'PROCESSING_EVENT' && row.processing_status !== 'PROCESSING') {
         outstanding.delete(row.handoff_id);
@@ -345,7 +349,7 @@ class DurableShadowRuntime {
       try { await this.queue.enqueue(item); }
       catch (error) {
         logger.warn('alibaba-shadow','Recovered snapshot remains queued for a later restart',
-          {candidateId:item.snapshot.candidate_id,code:error.code,error:error.message});
+          redact({candidateId:item.snapshot.candidate_id,code:error.code,error:error.message}));
       }
     }
     return {recovered:outstanding.size};
@@ -359,7 +363,8 @@ class DurableShadowRuntime {
       // without blocking the trading call stack or keeping an unbounded prequeue in memory.
       await appendAudit(this.cfg,{record_type:'CANDIDATE_SNAPSHOT',handoff_id:id,
         candidate_id:snapshot.candidate_id,processing_status:'QUEUED',snapshot});
-      if(!this.snapshotIds.has(id)){this.snapshotIds.add(id);this.snapshotCount+=1;}
+      if(!this.snapshotIds.has(id)){this.snapshotIds.add(id);this.snapshotCount+=1;
+        while(this.snapshotIds.size>MAX_SEEN)this.snapshotIds.delete(this.snapshotIds.values().next().value);}
       await this.ready;
       if (appendedDuringRecovery && this.recoveryOwned.has(id)) return {status:'RECOVERED_BY_STARTUP',persisted:true};
       return await this.queue.enqueue({id,snapshot});
@@ -373,7 +378,7 @@ function getRuntime(cfg) {
   if (runtime && runtimeConfigKey === key) return runtime;
   runtimeConfigKey = key;
   runtime = new DurableShadowRuntime(cfg);
-  runtime.ready.catch(error=>logger.warn('alibaba-shadow','Startup recovery failed open',{code:error.code,error:error.message}));
+  runtime.ready.catch(error=>logger.warn('alibaba-shadow','Startup recovery failed open',redact({code:error.code,error:error.message})));
   return runtime;
 }
 
@@ -395,22 +400,31 @@ function observeBirth(signal, birth, context = {}) {
   let cfg;
   try { cfg = config(); }
   catch (error) {
-    logger.warn('alibaba-shadow', 'Alibaba shadow path configuration rejected', { code: error.code, error: error.message });
+    logger.warn('alibaba-shadow', 'Alibaba shadow path configuration rejected', redact({ code: error.code, error: error.message }));
     return false;
   }
   const currentRuntime=getRuntime(cfg);
   if(!currentRuntime.reserve()) {
-    logger.warn('alibaba-shadow','Durable shadow handoff capacity is full',{candidateId:signal.id});
+    logger.warn('alibaba-shadow','Durable shadow handoff capacity is full',redact({candidateId:signal.id}));
     return false;
   }
   const snapshot = buildSnapshot(signal, birth, context);
+  const check=validateSnapshot(snapshot,Date.now());
+  if(!check.valid){
+    currentRuntime.reserved=Math.max(0,currentRuntime.reserved-1);
+    // Retain the rejection provenance, without persisting invalid/post-birth feature values.
+    setImmediate(()=>appendAudit(cfg,{record_type:'SNAPSHOT_REJECTED',candidate_id:snapshot.candidate_id,
+      processing_status:'INVALID_CAUSAL_SNAPSHOT',errors:check.errors})
+      .catch(error=>logger.warn('alibaba-shadow','Snapshot rejection write failed',redact({code:error.code,error:error.message}))));
+    return false;
+  }
   // Defer the durable append. The engine receives a boolean immediately; after this point the
   // snapshot is fsynced before it is allowed to enter pending work.
   setImmediate(() => {
     currentRuntime.accept(snapshot)
-      .then(result => logger.info('alibaba-shadow', 'Shadow decision recorded', { candidateId: signal.id, status: result?.status }))
+      .then(result => logger.info('alibaba-shadow', 'Shadow decision recorded', redact({ candidateId: signal.id, status: result?.status })))
       .catch(error => {
-        logger.warn('alibaba-shadow', 'Shadow evaluation failed open', { candidateId: signal.id, code: error.code, error: error.message });
+        logger.warn('alibaba-shadow', 'Shadow evaluation failed open', redact({ candidateId: signal.id, code: error.code, error: error.message }));
       });
   });
   return true;
@@ -435,6 +449,10 @@ async function status(env = process.env) {
     snapshotAuditSizeBytes: audit?.sizeBytes || 0,
     snapshotAuditLastUpdatedAt: audit?.lastUpdatedAt || null,
     summary:state.state(Date.now()).summary,
+    budget:{dayUtc:state.day,requests:state.dayRequests,tokens:state.dayTokens,costUsd:state.dayCostUsd,
+      maxRequests:cfg.maxRequestsDay,maxTokens:cfg.maxTokensDay,maxCostUsd:cfg.maxCostUsdDay},
+    providerRequestsStarted:state.dayRequests,
+    liveAllowed:cfg.allowLive,
   };
 }
 

@@ -168,7 +168,7 @@ function startServer(port = PORT) {
     .catch(e => logger.warn('groq-shadow','Startup recovery failed open',{code:e.code,error:e.message})));
   setImmediate(() => alibabaShadowProducer.initialize()
     .then(result => logger.info('alibaba-shadow','Startup recovery complete',result))
-    .catch(e => logger.warn('alibaba-shadow','Startup recovery failed open',{code:e.code,error:e.message})));
+    .catch(e => logger.warn('alibaba-shadow','Startup recovery failed open',{code:e.code})));
 
   // Resume only when the previous process had a persisted RUN intent. Manual stops and
   // uncaught exceptions clear that intent; deploys/container restarts preserve it.

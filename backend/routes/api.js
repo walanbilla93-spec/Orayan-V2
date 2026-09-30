@@ -264,6 +264,11 @@ const routes = {
     return {__stream:true,...result};
   },
 
+  'GET /api/journal/research/alibaba-shadow/snapshots/export': async ({req}) => {
+    requireAlibabaExportAuth(req);
+    return {__stream:true,...alibabaShadowExport.download({kind:'snapshots'})};
+  },
+
   'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); engine.clearLastSignals(); return { ok: true }; },
 
   'POST /api/control/start': async () => engine.start(),

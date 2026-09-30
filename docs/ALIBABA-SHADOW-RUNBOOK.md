@@ -47,6 +47,28 @@ without reviewing `ALIBABA_SHADOW_V1.freeze.json` and the test results.
 6. Confirm `decisions.jsonl` has no `REQUEST_STARTED` row and Alibaba usage did not increase.
 7. Verify no future timestamp, outcome/PnL key, credential, raw log, or full symbol-state dump exists.
 8. Exercise the optional-token NDJSON export and confirm it streams rather than buffering.
+9. Restart and compare pre-restart snapshot and decision file hashes/sizes. Confirm recovered
+   status still reports snapshots, zero `providerRequestsStarted`, and zero token/cost usage.
+10. Stop at this checkpoint. Enabling live calls requires a separate operator instruction.
+
+Dark births create a `LIVE_DISABLED` decision and a separate frozen snapshot. The advisor checks
+the live gate even when called directly. Requests are never started in dark mode.
+
+Status: `GET /api/journal/research/alibaba-shadow`. Decisions:
+`GET /api/journal/research/alibaba-shadow/export`. Snapshots:
+`GET /api/journal/research/alibaba-shadow/snapshots/export`. Both exports use the optional
+`X-Alibaba-Shadow-Export-Token` header and a fixed persistent path; tokens never belong in URLs.
+
+Run the complete suite from the repository root:
+`node --test backend/test/*.test.js research/groq-shadow/test/*.test.js research/alibaba-shadow/test/*.test.js`.
+The isolation tests pin execution/gates and Groq production source to deployed main `506a729`.
+
+Birth-time rules use the native `decisionAt` value, prefer the most recent environment observation
+whose actual receipt was no later than that birth, and deep-copy the selected values. Summaries
+assembled after a birth are unavailable to it. Optional Market Intelligence/Gemini inputs remain
+explicitly unavailable when no timestamped pre-birth input exists; this implementation does not
+fetch a later briefing or open a new provider connection. Missing numbers remain null. Invalid
+future-bearing snapshots are rejected before audit persistence, retaining rejection paths only.
 
 ## 4. Canary
 
@@ -60,6 +82,13 @@ as unknown outcomes to prevent duplicate billing.
 429/5xx responses are recorded once with bounded sanitized details. There are no automatic network
 retries. Minute pressure may defer within the configured causal freshness window; expiry becomes an
 abstention. Daily request/token/cost exhaustion is terminal for that candidate.
+
+The dollar guard reserves input by a conservative UTF-8 byte upper bound plus protocol allowance
+and output by the full generation ceiling, regardless of the smaller traffic estimate. Requests
+are confined to the first 32K context pricing tier. Missing/invalid provider usage retains the
+reservation. Stale queued work abstains after the defer window. Interrupted requests retain
+reserved billing and are not replayed, including across model configuration changes. Only one
+runtime process may own these files; multiple replicas/processes are unsupported in V1.
 
 ## 5. Rollback
 

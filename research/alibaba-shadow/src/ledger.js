@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { redact } = require('./security');
 
 const MAX_INDEX_ENTRIES = 50000;
 const MAX_OPEN_REQUESTS = 1024;
@@ -58,7 +59,7 @@ function appendImmutable(file, record, options = {}) {
   const candidate = ensureParent(file, options);
   const fd = fs.openSync(candidate, 'a');
   try {
-    fs.writeSync(fd, `${JSON.stringify(record)}\n`, null, 'utf8');
+    fs.writeSync(fd, `${JSON.stringify(redact(record, options.secrets))}\n`, null, 'utf8');
     fs.fsyncSync(fd);
   } finally { fs.closeSync(fd); }
 }
@@ -67,7 +68,7 @@ async function appendImmutableAsync(file, record, options = {}) {
   const candidate = ensureParent(file, options);
   const handle = await fs.promises.open(candidate, 'a');
   try {
-    await handle.writeFile(`${JSON.stringify(record)}\n`, 'utf8');
+    await handle.writeFile(`${JSON.stringify(redact(record, options.secrets))}\n`, 'utf8');
     await handle.sync();
   } finally { await handle.close(); }
 }
@@ -82,7 +83,8 @@ async function readRecords(file, visit) {
     if (!line.trim()) continue;
     let row;
     try { row = JSON.parse(line); }
-    catch (error) { error.message = `Malformed ledger JSON at line ${lineNumber}: ${error.message}`; throw error; }
+    catch (_) { throw Object.assign(new Error(`Malformed Alibaba ledger JSON at line ${lineNumber}.`),
+      {code:'ALIBABA_LEDGER_CORRUPT'}); }
     await visit(row, lineNumber);
   }
 }
@@ -108,6 +110,7 @@ class LedgerIndex {
     this.day = null;
     this.requestIds = new Set();
     this.terminalRequestIds = new Set();
+    this.startedCandidates = new Set();
     this.candidateInputs = new Map();
     this.openRequests = new Map();
     this.dayRequests = 0;
@@ -127,6 +130,7 @@ class LedgerIndex {
     this.day = day;
     this.requestIds.clear();
     this.terminalRequestIds.clear();
+    this.startedCandidates.clear();
     this.candidateInputs.clear();
     this.openRequests.clear();
     this.dayRequests = 0;
@@ -144,6 +148,7 @@ class LedgerIndex {
       boundedMapSet(this.candidateInputs, row.candidate_id, row.input_snapshot_hash);
     }
     if (row.record_type === 'REQUEST_STARTED' && row.request_id) {
+      if(row.candidate_id)boundedSetAdd(this.startedCandidates,row.candidate_id);
       boundedMapSet(this.openRequests, row.request_id, row, MAX_OPEN_REQUESTS);
       const requestedMs = Date.parse(row.requested_at_utc || '');
       const reserved = Number(row.estimated_tokens_reserved) || 0;
@@ -172,6 +177,7 @@ class LedgerIndex {
         if(recent)recent.costUsd=actualCost;
       }
       boundedSetAdd(this.terminalRequestIds, row.request_id);
+      if(row.candidate_id)boundedSetAdd(this.startedCandidates,row.candidate_id);
       this.openRequests.delete(row.request_id);
       if (row.status === 'OK') this.summary.successfulModelDecisions += 1;
       if (['LOCAL_ABSTAIN','BUDGET_EXHAUSTED','ABSTAIN_BUDGET_STALE','API_KEY_ABSENT',
@@ -202,11 +208,12 @@ class LedgerIndex {
   }
 
   async load(nowMs) {
+    const recovering = !this.initialized;
     const day = new Date(nowMs).toISOString().slice(0,10);
     this.clear(day);
     scanCount += 1;
     await readRecords(this.file, row => this.apply(row, nowMs));
-    for (const started of [...this.openRequests.values()]) {
+    for (const started of recovering ? [...this.openRequests.values()] : []) {
       const completedIso = new Date(nowMs).toISOString();
       const interrupted = {
         ...started,
@@ -244,6 +251,7 @@ class LedgerIndex {
     return {
       requestIds:this.requestIds,
       terminalRequestIds:this.terminalRequestIds,
+      startedCandidates:this.startedCandidates,
       candidateInputs:this.candidateInputs,
       dayRequests:this.dayRequests,
       dayTokens:this.dayTokens,

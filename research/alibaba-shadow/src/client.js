@@ -33,7 +33,8 @@ function endpointFor(baseUrl=DEFAULT_BASE_URL) {
   const official=url.hostname==='dashscope-intl.aliyuncs.com'||
     url.hostname==='trial.ap-southeast-1.maas.aliyuncs.com'||
     /^[a-z0-9-]+\.ap-southeast-1\.maas\.aliyuncs\.com$/i.test(url.hostname);
-  if(url.protocol!=='https:'||!official||!url.pathname.replace(/\/$/,'').endsWith('/compatible-mode/v1')){
+  if(url.protocol!=='https:'||!official||url.username||url.password||url.search||url.hash||
+    url.port||url.pathname.replace(/\/$/,'')!=='/compatible-mode/v1'){
     throw Object.assign(new Error('Alibaba base URL must be an official Singapore OpenAI-compatible endpoint.'),
       {code:'ALIBABA_BASE_URL_NOT_SINGAPORE'});
   }

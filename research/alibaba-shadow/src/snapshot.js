@@ -1,6 +1,7 @@
 'use strict';
 
 const {INPUT_SCHEMA_VERSION, FROZEN_RULES, REASON_CODES, canonicalJson, sha256} = require('./constants');
+const { redact } = require('./security');
 
 const FEATURE_KEYS = [
   'btc_return_24h', 'eth_return_24h', 'linear_breadth',
@@ -186,7 +187,7 @@ function validateSnapshot(snapshot, nowMs = Date.now()) {
 }
 
 function compactSnapshot(snapshot) {
-  const clean = JSON.parse(canonicalJson(snapshot));
+  const clean = JSON.parse(canonicalJson(redact(snapshot)));
   return {snapshot:clean, inputHash:sha256(canonicalJson(clean))};
 }
 
@@ -232,6 +233,11 @@ function validateDecision(decision, snapshot) {
 
 function normalizeDecision(decision) {
   if (!isObject(decision) || !Array.isArray(decision.reason_codes)) return {decision, normalization:null};
+  // Normalization cannot repair a malformed shape by truncating oversized/non-string arrays.
+  if (!decision.reason_codes.length || decision.reason_codes.length > 6 ||
+      decision.reason_codes.some(code => typeof code !== 'string' || !code.length || code.length > 64)) {
+    return {decision, normalization:null};
+  }
   const unknown = [...new Set(decision.reason_codes.filter(code => !REASON_CODES.includes(code)))];
   if (!unknown.length) return {decision, normalization:null};
   const known = decision.reason_codes.filter(code => REASON_CODES.includes(code));

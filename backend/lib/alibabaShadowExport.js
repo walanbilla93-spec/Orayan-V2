@@ -21,9 +21,11 @@ function isInside(root, candidate) {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
 }
 
-function ledgerPath({ env = process.env, dataRoot = store.DATA_DIR } = {}) {
+function ledgerPath({ env = process.env, dataRoot = store.DATA_DIR, kind = 'decisions' } = {}) {
   const root = path.resolve(dataRoot);
-  const configured = env.ALIBABA_SHADOW_LEDGER || DEFAULT_RELATIVE_LEDGER;
+  const configured = kind==='snapshots'
+    ? env.ALIBABA_SHADOW_SNAPSHOTS || path.join('alibaba-shadow','candidate-snapshots.jsonl')
+    : env.ALIBABA_SHADOW_LEDGER || DEFAULT_RELATIVE_LEDGER;
   const candidate = path.isAbsolute(configured)
     ? path.resolve(configured)
     : path.resolve(root, configured);
@@ -88,9 +90,9 @@ function download(options = {}) {
     throw new AlibabaShadowExportError(404, 'ALIBABA_SHADOW_LEDGER_MISSING', 'Alibaba shadow data is not available yet.');
   }
   return {
-    stream: fsImpl.createReadStream(file.path, { highWaterMark: 64 * 1024 }),
+    stream: fsImpl.createReadStream(file.path, { highWaterMark: 64 * 1024, end:file.sizeBytes-1 }),
     contentType: CONTENT_TYPE,
-    filename: `orayan2_alibaba_shadow_decisions_${timestampForFilename(options.now)}.jsonl`,
+    filename: `orayan2_alibaba_shadow_${options.kind==='snapshots'?'snapshots':'decisions'}_${timestampForFilename(options.now)}.jsonl`,
     headers: { 'Content-Length': String(file.sizeBytes) },
   };
 }

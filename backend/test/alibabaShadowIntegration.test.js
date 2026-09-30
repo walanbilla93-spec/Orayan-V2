@@ -62,7 +62,10 @@ test('live-disabled one-way handoff durably records the queue without a provider
   try{const at=Date.now()-5000;seed(at);assert.equal(producer.observeBirth(signal(),birth(at),context(at)),true);
     assert.equal(fs.existsSync(snapshots),false,'engine handoff returns before disk I/O');
     await waitFor(()=>fs.existsSync(snapshots)&&fs.readFileSync(snapshots,'utf8').includes('LIVE_DISABLED'));
-    assert.equal(fs.existsSync(decisions),false);
+    await waitFor(()=>fs.existsSync(decisions));
+    const rows=fs.readFileSync(decisions,'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(rows.map(row=>row.status),['LIVE_DISABLED']);
+    assert.equal(rows.some(row=>row.record_type==='REQUEST_STARTED'),false);
   }finally{for(const [key,value] of Object.entries(old)){const envKey=key==='ledger'?'ALIBABA_SHADOW_LEDGER':key==='snapshots'?'ALIBABA_SHADOW_SNAPSHOTS':'ALIBABA_SHADOW_ALLOW_LIVE';
     if(value===undefined)delete process.env[envKey];else process.env[envKey]=value;}}
 });
@@ -104,4 +107,58 @@ test('protected streaming export and dashboard panel work without exposing secre
 test('export path is confined to the persistent data root',()=>{
   assert.throws(()=>shadowExport.ledgerPath({env:{ALIBABA_SHADOW_LEDGER:path.resolve(store.DATA_DIR,'..','outside.jsonl')},
     dataRoot:store.DATA_DIR}),error=>error.statusCode===403);
+});
+
+test('native decision time wins over scan time and later environment observations cannot join',()=>{
+  const at=Date.parse('2026-09-29T10:10:00Z');seed(at);
+  producer.observeEnvironment({at:at+1000,marketSnapshot:market(at+1000,999),
+    tickers:[ticker('BTCUSDT',at+1000),ticker('ETHUSDT',at+1000)]});
+  const row=producer.buildSnapshot(signal(),{...birth(at-5000),decisionAt:at},context(at));
+  assert.equal(row.candidate_birth_at_utc,new Date(at).toISOString());
+  assert.equal(row.market_context.current.breadth_current,10);
+  assert.equal(validateSnapshot(row,at+2000).valid,true);
+});
+
+test('snapshot captures independent values and redacts credentials in optional context',()=>{
+  const at=Date.now()-5000;seed(at);
+  const oldKey=process.env.ALIBABA_API_KEY;process.env.ALIBABA_API_KEY='secret-sentinel-123';
+  try{
+    const flags=['TEST'],input=signal({gates:{failed:flags},signalSource:'secret-sentinel-123'});
+    const row=producer.buildSnapshot(input,birth(at),context(at,{marketIntelligence:{availableAt:at-1000,
+      text:'secret-sentinel-123',observations:['Bearer token-sentinel']}}));
+    flags.push('LATER_FLAG');input.score=0;producer._test.environment.at(-1).marketContext.breadth_current=999;
+    assert.equal(row.score.value,75);assert.equal(row.market_context.current.breadth_current,10);
+    assert.equal(row.risk_flags.includes('LATER_FLAG'),false);
+    assert.doesNotMatch(JSON.stringify(row),/secret-sentinel-123|token-sentinel/);
+    assert.equal(row.market_context.benchmark_returns.eth_short,null);
+  }finally{if(oldKey===undefined)delete process.env.ALIBABA_API_KEY;else process.env.ALIBABA_API_KEY=oldKey;}
+});
+
+test('missing numeric values remain null and cannot masquerade as zero evidence',()=>{
+  const at=Date.now()-5000;seed(at);
+  const row=producer.buildSnapshot(signal({entry:null,atr:null}),birth(at),context(at,{ticker:{observedAt:null}}));
+  assert.equal(row.planned_trade.entry,null);assert.equal(row.planned_trade.quote_evidence.bid,null);
+  assert.equal(row.planned_trade.quote_evidence.observed_at_utc,null);
+  assert.equal(row.planned_trade.quote_evidence.available,false);
+});
+
+test('snapshot and decision files survive restart with no dark-mode calls or duplicate decisions',async()=>{
+  const env={...process.env,ALIBABA_SHADOW_ALLOW_LIVE:'false',
+    ALIBABA_SHADOW_LEDGER:path.join(FIXTURE_ROOT,'persist','decisions.jsonl'),
+    ALIBABA_SHADOW_SNAPSHOTS:path.join(FIXTURE_ROOT,'persist','snapshots.jsonl')};
+  const at=Date.now()-5000;seed(at);const row=producer.buildSnapshot(signal(),birth(at),context(at));
+  const cfg=producer.config(env),id=producer._test.handoffId(row);
+  ledger.appendImmutable(cfg.snapshotAudit,{record_type:'CANDIDATE_SNAPSHOT',handoff_id:id,
+    candidate_id:row.candidate_id,processing_status:'QUEUED',snapshot:row},{allowedRoot:store.DATA_DIR});
+  let calls=0;producer._test.setTransport(async()=>{calls+=1;});
+  await producer.initialize(env);
+  const bytes=fs.readFileSync(cfg.snapshotAudit,'utf8'),decisions=fs.readFileSync(cfg.ledger,'utf8');
+  producer._test.reset();ledger._test.resetCaches();producer._test.setTransport(async()=>{calls+=1;});
+  await producer.initialize(env);const status=await producer.status(env);
+  assert.equal(fs.readFileSync(cfg.snapshotAudit,'utf8'),bytes);assert.equal(fs.readFileSync(cfg.ledger,'utf8'),decisions);
+  assert.equal(status.snapshots,1);assert.equal(status.providerRequestsStarted,0);assert.equal(status.budget.costUsd,0);
+  assert.equal(calls,0);
+  const exported=shadowExport.download({env,kind:'snapshots'});let content='';
+  exported.stream.on('data',chunk=>content+=chunk);await once(exported.stream,'end');
+  assert.equal(content,bytes);assert.match(exported.filename,/snapshots/);
 });

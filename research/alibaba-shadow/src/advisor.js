@@ -7,6 +7,7 @@ const {SCHEMA_VERSION,PROMPT_VERSION,PROMPT_VARIANT,RESPONSE_SCHEMA_VERSION,DEFA
 const {validateSnapshot,compactSnapshot,validateDecision,normalizeDecision}=require('./snapshot');
 const {ledgerIndex,budgetReason,nextMinuteAvailableAt}=require('./ledger');
 const {postAlibaba}=require('./client');
+const {redact}=require('./security');
 
 function intEnv(env,key,dflt,min,max){const value=Number(env[key]??dflt);return Number.isInteger(value)&&value>=min&&value<=max?value:dflt;}
 function numberEnv(env,key,dflt,min,max){const value=Number(env[key]??dflt);return Number.isFinite(value)&&value>=min&&value<=max?value:dflt;}
@@ -63,6 +64,7 @@ function baseRecord({recordType,requestId,snapshot,inputHash,config,nowIso,statu
 
 async function advise(snapshot,options={}){
   const config=options.config||configFromEnv(),nowMs=options.nowMs??Date.now(),nowIso=new Date(nowMs).toISOString();
+  snapshot=redact(snapshot,[config.apiKey]);
   const check=validateSnapshot(snapshot,nowMs),compact=compactSnapshot(snapshot);
   const requestId=sha256(`${snapshot?.candidate_id||'missing'}|${compact.inputHash}|${config.model}|${PROMPT_HASH}|${PROMPT_VARIANT}`);
   const index=await ledgerIndex(config.ledger,nowMs,{allowedRoot:config.allowedRoot}),state=index.state(nowMs);
@@ -74,6 +76,21 @@ async function advise(snapshot,options={}){
       status:'DUPLICATE_CANDIDATE_CONFLICT'}),completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,
       tokens:null,estimated_cost_usd:0,decision};await index.append(record,nowMs);return record;
   }
+  if(state.startedCandidates.has(snapshot.candidate_id))return {status:'DUPLICATE_IGNORED',request_id:requestId,persisted:false};
+  if(options.mode==='live'&&(!config.allowLive||!config.apiKey)){
+    const blockedStatus=config.allowLive?'API_KEY_ABSENT':'LIVE_DISABLED';
+    const record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,
+      status:blockedStatus}),completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,
+      tokens:null,estimated_cost_usd:0,decision:abstainDecision(['Provider requests are disabled or no key is configured.'],blockedStatus)};
+    await index.append(record,nowMs);return record;
+  }
+  const birthMs=Date.parse(snapshot.candidate_birth_at_utc||'');
+  if(Number.isFinite(birthMs)&&nowMs-birthMs>config.maxDeferAgeMs){
+    const record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,
+      status:'ABSTAIN_BUDGET_STALE'}),completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,
+      tokens:null,estimated_cost_usd:0,decision:abstainDecision(['Candidate exceeded the request freshness window.'],'ABSTAIN_BUDGET_STALE')};
+    await index.append(record,nowMs);return record;
+  }
   if(!check.valid||check.abstainReasons.length){
     const reasons=[...check.errors,...check.abstainReasons];
     const decision=abstainDecision(reasons,check.valid?'INSUFFICIENT_DECISION_TIME_EVIDENCE':'INVALID_OR_LEAKY_INPUT');
@@ -83,9 +100,19 @@ async function advise(snapshot,options={}){
   }
 
   const request=buildRequest(compact.snapshot,config),requestHash=sha256(canonicalJson(request));
+  const promptTokenBound=Buffer.byteLength(JSON.stringify(request),'utf8')+256;
+  if(promptTokenBound+config.maxOutputTokens>32768){
+    const record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,
+      status:'LOCAL_ABSTAIN'}),completed_at_utc:nowIso,available_to_system_at_utc:nowIso,latency_ms:0,tokens:null,
+      estimated_cost_usd:0,decision:abstainDecision(['Snapshot exceeds the conservatively bounded pricing/context tier.'],'INPUT_TOKEN_LIMIT')};
+    await index.append(record,nowMs);return record;
+  }
   const completionReserveTokens=Math.min(config.budgetCompletionTokens,config.maxOutputTokens);
   const promptEstimate=estimatePromptTokens(request),estimatedTokens=promptEstimate+completionReserveTokens;
-  const estimatedCostReserved=estimatedCostUsd(promptEstimate,completionReserveTokens,config);
+  // Tokens use the configured traffic estimate; the dollar cap reserves the full generation
+  // ceiling and a conservative UTF-8 byte bound for input so long completions cannot cross it.
+  const estimatedCostReserved=estimatedCostUsd(promptTokenBound,
+    config.maxOutputTokens,config);
   const exhausted=!config.pricingKnown?'UNKNOWN_MODEL_PRICING':budgetReason(state,estimatedTokens,estimatedCostReserved,config);
   if(exhausted){
     if(exhausted.startsWith('MINUTE_')){
@@ -111,7 +138,6 @@ async function advise(snapshot,options={}){
   if(options.mode==='dry-run')return {status:'DRY_RUN',request_id:requestId,request,estimated_tokens_reserved:estimatedTokens,
     estimated_cost_usd_reserved:estimatedCostReserved,completion_tokens_reserved:completionReserveTokens,persisted:false};
   if(!['live','mock'].includes(options.mode))throw new Error('Mode must be dry-run, mock, or live.');
-  if(options.mode==='live'&&!config.allowLive)throw new Error('Live call blocked: ALIBABA_SHADOW_ALLOW_LIVE must remain false until canary approval.');
 
   await index.append({...baseRecord({recordType:'REQUEST_STARTED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,
     status:'REQUEST_STARTED'}),request_hash:requestHash,estimated_tokens_reserved:estimatedTokens,
@@ -127,16 +153,19 @@ async function advise(snapshot,options={}){
     if(errors.length){status='MALFORMED_OUTPUT';decision=abstainDecision(errors,'MALFORMED_MODEL_OUTPUT');}else decision=parsed;
   }else decision=abstainDecision([api.status],api.status);
   const usage=api.body?.usage||null;
-  const tokens=usage?{prompt:usage.prompt_tokens??usage.input_tokens??null,
+  let tokens=usage?{prompt:usage.prompt_tokens??usage.input_tokens??null,
     completion:usage.completion_tokens??usage.output_tokens??null,total:usage.total_tokens??null}:null;
   if(tokens&&tokens.total==null&&Number.isFinite(tokens.prompt)&&Number.isFinite(tokens.completion))tokens.total=tokens.prompt+tokens.completion;
+  if(tokens&&(!Number.isInteger(tokens.prompt)||tokens.prompt<0||!Number.isInteger(tokens.completion)||tokens.completion<0||
+    !Number.isInteger(tokens.total)||tokens.total!==tokens.prompt+tokens.completion))tokens=null;
   const actualCost=tokens?estimatedCostUsd(tokens.prompt,tokens.completion,config):estimatedCostReserved;
   const record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status}),
     completed_at_utc:completedIso,available_to_system_at_utc:completedIso,latency_ms:api.latencyMs??Math.max(0,Date.now()-started),
     request_hash:requestHash,http_status:api.httpStatus??null,rate_limit_headers:api.headers||{},
     api_error:api.ok?null:(api.error||{type:null,code:null,message:null}),normalization,tokens,
     estimated_cost_usd:actualCost,pricing_usd_per_million:{input:config.inputUsdPerMillion,output:config.outputUsdPerMillion},decision};
-  await index.append(record,completedMs);return record;
+  const safeRecord=redact(record,[config.apiKey]);
+  await index.append(safeRecord,completedMs);return safeRecord;
 }
 
 class BoundedShadowQueue{

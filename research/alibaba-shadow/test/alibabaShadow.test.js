@@ -152,3 +152,73 @@ test('package has no executor or gates integration and engine does not await the
   const engine=fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8');
   assert.match(engine,/alibabaShadowProducer\.observeBirth\(/);assert.doesNotMatch(engine,/await\s+alibabaShadowProducer\.observeBirth/);
 });
+
+test('live=false blocks the direct advisor with zero starts, tokens, cost, and fetch calls',async()=>{
+  const cfg={...config(),allowLive:false};let calls=0;
+  const result=await advise(snapshot(),{config:cfg,mode:'live',nowMs:Date.parse('2026-09-28T10:00:05Z'),
+    fetchImpl:async()=>{calls+=1;throw Error('must never call');}});
+  const state=await ledger.ledgerState(cfg.ledger,Date.parse('2026-09-28T10:00:05Z'));
+  assert.equal(result.status,'LIVE_DISABLED');assert.equal(calls,0);
+  assert.equal(state.dayRequests,0);assert.equal(state.dayTokens,0);assert.equal(state.dayCostUsd,0);
+  assert.doesNotMatch(fs.readFileSync(cfg.ledger,'utf8'),/REQUEST_STARTED/);
+});
+
+test('cost cap reserves the complete output ceiling even when traffic reserve is smaller',async()=>{
+  const cfg=config();const now=Date.parse('2026-09-28T10:00:05Z');let calls=0;
+  const dry=await advise(snapshot(),{config:cfg,mode:'dry-run',nowMs:now});
+  cfg.maxCostUsdDay=dry.estimated_cost_usd_reserved-.000001;
+  const blocked=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:now,mockTransport:async()=>{calls+=1;}});
+  assert.equal(blocked.status,'BUDGET_EXHAUSTED');assert.equal(calls,0);
+  assert.ok(dry.estimated_cost_usd_reserved>=estimatedCostUsd(0,cfg.maxOutputTokens,cfg));
+});
+
+test('unknown usage retains conservative billing and model changes never replay a candidate',async()=>{
+  const cfg=config(),now=Date.parse('2026-09-28T10:00:05Z');let calls=0;
+  const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:now,
+    mockTransport:async()=>{calls+=1;return okTransport(decision(),{prompt_tokens:-1,completion_tokens:400})();}});
+  assert.equal(result.tokens,null);
+  const state=await ledger.ledgerState(cfg.ledger,now);
+  assert.ok(state.dayCostUsd>0);assert.ok(state.dayTokens>0);
+  ledger._test.resetCaches();
+  const duplicate=await advise(snapshot(),{config:{...cfg,model:'qwen3.7-plus'},mode:'mock',nowMs:now,
+    mockTransport:async()=>{calls+=1;}});
+  assert.equal(duplicate.status,'DUPLICATE_IGNORED');assert.equal(calls,1);
+});
+
+test('UTC rollover does not terminalize an active request as a crash',async()=>{
+  const file=tempLedger(),before=Date.parse('2026-09-28T23:59:59Z'),after=before+2000;
+  const index=await ledger.ledgerIndex(file,before);
+  await index.append({record_type:'REQUEST_STARTED',request_id:'midnight',candidate_id:'midnight',
+    requested_at_utc:new Date(before).toISOString(),estimated_tokens_reserved:1000,estimated_cost_usd_reserved:.001},before);
+  await index.ensure(after);
+  assert.equal(index.openRequests.has('midnight'),true);
+  assert.doesNotMatch(fs.readFileSync(file,'utf8'),/INTERRUPTED_UNKNOWN_OUTCOME/);
+  await index.append({record_type:'SHADOW_DECISION',request_id:'midnight',candidate_id:'midnight',status:'OK',
+    tokens:{prompt:500,completion:100,total:600},estimated_cost_usd:.00003},after);
+  assert.equal(index.openRequests.size,0);assert.equal(index.dayCostUsd,0);
+});
+
+test('successful model prose, headers, and malformed ledger errors never expose credentials',async()=>{
+  const cfg=config(),now=Date.parse('2026-09-28T10:00:05Z');
+  const result=await advise(snapshot(),{config:cfg,mode:'mock',nowMs:now,mockTransport:async()=>{
+    const api=await okTransport(decision({rationale_short:`Review ${cfg.apiKey}`}))();
+    api.headers={request_id:cfg.apiKey};return api;}});
+  assert.doesNotMatch(JSON.stringify(result)+fs.readFileSync(cfg.ledger,'utf8'),/sk-secret-test-key/);
+  const broken=tempLedger();fs.writeFileSync(broken,'{"key":"sensitive-value", broken');
+  await assert.rejects(ledger.readRecords(broken,()=>{}),error=>
+    error.code==='ALIBABA_LEDGER_CORRUPT'&&!error.message.includes('sensitive-value'));
+});
+
+test('oversized or non-string reason arrays fail strict validation instead of normalization repair',async()=>{
+  for(const codes of [Array(7).fill('novel'),[123]]){
+    const row=await advise(snapshot(),{config:config(),mode:'mock',nowMs:Date.parse('2026-09-28T10:00:05Z'),
+      mockTransport:okTransport(decision({reason_codes:codes}))});
+    assert.equal(row.status,'MALFORMED_OUTPUT');
+  }
+});
+
+test('stale restart work abstains without a provider call',async()=>{
+  let calls=0;const result=await advise(snapshot(),{config:config(),mode:'mock',nowMs:Date.parse('2026-09-28T10:02:00Z'),
+    mockTransport:async()=>{calls+=1;}});
+  assert.equal(result.status,'ABSTAIN_BUDGET_STALE');assert.equal(calls,0);
+});

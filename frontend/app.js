@@ -142,6 +142,9 @@ async function loadAlibabaShadowStatus() {
   try{
     const info=await api('/api/journal/research/alibaba-shadow');
     button.disabled=!info.available;button.dataset.protected=info.exportProtected?'true':'false';
+    const snapshotsButton=$('#btnExportAlibabaSnapshots');
+    snapshotsButton.disabled=!info.snapshotAuditAvailable;
+    snapshotsButton.dataset.protected=button.dataset.protected;
     const summary=info.summary||{},tokens=summary.tokens||{},last=summary.lastHttpError;
     const snapshotText=info.snapshots?`snapshots ${info.snapshots}`:'no candidate snapshots yet';
     const decisions=info.available?`ledger ${fmtBytes(info.sizeBytes)}`:'no decisions yet';
@@ -862,12 +865,14 @@ function init() {
       anchor.href=url;anchor.download=filename;anchor.click();URL.revokeObjectURL(url);
     }catch(error){toast(error.message,'error');}
   };
-  const downloadAlibabaShadow=async()=>{
-    const button=$('#btnExportAlibabaShadow');
-    if(button.dataset.protected!=='true')return downloadFrom('/api/journal/research/alibaba-shadow/export');
+  const downloadAlibabaShadow=async(event)=>{
+    const button=event.currentTarget;
+    const endpoint=button.id==='btnExportAlibabaSnapshots'
+      ? '/api/journal/research/alibaba-shadow/snapshots/export' : '/api/journal/research/alibaba-shadow/export';
+    if(button.dataset.protected!=='true')return downloadFrom(endpoint);
     const token=prompt('Enter the Alibaba shadow export token');if(!token)return;
     try{
-      const response=await fetch('/api/journal/research/alibaba-shadow/export',
+      const response=await fetch(endpoint,
         {headers:{'X-Alibaba-Shadow-Export-Token':token}});
       if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||`Request failed (${response.status})`);}
       const blob=await response.blob(),disposition=response.headers.get('Content-Disposition')||'';
@@ -887,6 +892,7 @@ function init() {
   $('#btnExportResearchEvents').addEventListener('click', () => downloadFrom('/api/journal/research/events/export?format=csv'));
   $('#btnExportGroqShadow').addEventListener('click', downloadGroqShadow);
   $('#btnExportAlibabaShadow').addEventListener('click',downloadAlibabaShadow);
+  $('#btnExportAlibabaSnapshots').addEventListener('click',downloadAlibabaShadow);
   $('#btnExportShadowCsv').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=csv'));
   $('#btnExportShadowJson').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=json'));
   $('#btnClearShadow').addEventListener('click', async () => {
