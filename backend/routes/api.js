@@ -16,6 +16,7 @@ const groqShadowExport = require('../lib/groqShadowExport');
 const groqShadowProducer = require('../lib/groqShadowProducer');
 const alibabaShadowExport = require('../lib/alibabaShadowExport');
 const alibabaShadowProducer = require('../lib/alibabaShadowProducer');
+const v3Shadow = require('../lib/v3Shadow');
 const fs = require('fs');
 const crypto = require('crypto');
 
@@ -239,6 +240,9 @@ const routes = {
   },
 
   'GET /api/journal/research/manifest': async () => researchManifest.buildManifest(),
+
+  'GET /api/v3/status': async () => v3Shadow.status(),
+  'GET /api/v3/export': async ({query}) => v3Shadow.download(query.channel||'v3'),
 
   'GET /api/journal/research/groq-shadow': async () => {
     const shadowStatus=await groqShadowProducer.status();

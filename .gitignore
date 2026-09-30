@@ -7,6 +7,7 @@ backend/data/*.json
 backend/data/*.tmp
 backend/data/*.corrupt.*
 backend/data/research-v2/
+backend/data/v3-shadow/
 
 *.log
 .DS_Store
