@@ -216,7 +216,8 @@ class ShadowJournal {
             const bars=res.list.map(r=>({ts:Number(r[0]),open:Number(r[1]),high:Number(r[2]),low:Number(r[3]),close:Number(r[4])}))
               .sort((a,b)=>a.ts-b.ts);
             const result=trades.step(next,bars,now);next=result.trade;
-            if(!bars.length && now-start>180000){next.status='DATA_GAP';next.outcome='EMPTY_PATH';result.events.push('DATA_GAP');}
+            if(!bars.length && now-start>180000){next.status='DATA_GAP';next.outcome='EMPTY_PATH';
+              next.fundingStatus='UNKNOWN_PATH';next.netPnl=null;next.outcomeComplete=false;result.events.push('DATA_GAP');}
             if(result.events.length) {
               this.tradeEvent(next,result.events,Date.now());
               for(const [event,key] of [['FILLED','filled'],['CLOSED','closed'],['CANCELLED','cancelled'],['EXPIRED','expired'],['DATA_GAP','incomplete']])

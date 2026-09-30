@@ -9,7 +9,7 @@ function create(row,id,capturedAt) {
     capturedAt,eligibleFromAt:Math.ceil(origin/MINUTE)*MINUTE,expiresAt:origin+g.entryWindowMin*MINUTE,
     geometry:g,status:'PENDING',lastBarAt:null,filledAt:null,entryPrice:null,quantity:null,
     closedAt:null,exitPrice:null,outcome:null,ambiguous:false,ambiguityCount:0,mfePerUnit:0,maePerUnit:0,
-    fundingStatus:'PENDING',fundingModel:g.costs.funding,executionAllowed:false,
+    fundingStatus:'PENDING',fundingModel:g.costs.funding,executionAllowed:false,outcomeComplete:false,
     excursionPrecision:'COMPLETED_NON_TERMINAL_BAR_LOWER_BOUND'};
 }
 function close(t,price,bar,reason,atOpen=false) {
@@ -20,6 +20,7 @@ function close(t,price,bar,reason,atOpen=false) {
   t.entryFee=t.quantity*t.entryPrice*c.entryFeePct/100;t.exitFee=t.quantity*price*c.exitFeePct/100;
   t.fees=t.entryFee+t.exitFee;t.netPnlBeforeFunding=t.grossPnl-t.fees;
   t.netPnl=null;t.realizedRBeforeFunding=t.netPnlBeforeFunding/t.plannedRiskUsdt;
+  t.unrealizedNetBeforeFunding=null;
   t.holdMs=t.closedAt-t.filledAt;
 }
 function step(input,bars,now) {
@@ -75,6 +76,11 @@ function step(input,bars,now) {
   if(t.status==='PENDING' && now>=t.expiresAt && expected>=t.expiresAt) {
     t.status='EXPIRED';t.outcome='NO_FILL_BEFORE_EXPIRY';events.push('EXPIRED');
   }
+  if(['CANCELLED','EXPIRED'].includes(t.status)) {
+    t.grossPnl=0;t.fees=0;t.netPnlBeforeFunding=0;t.netPnl=0;t.fundingCost=0;
+    t.fundingStatus='NOT_APPLICABLE';t.outcomeComplete=true;
+  }
+  if(t.status==='DATA_GAP'){t.fundingStatus='UNKNOWN_PATH';t.netPnl=null;t.outcomeComplete=false;}
   if(t.lastBarAt!==input.lastBarAt && !events.length)events.push('MARK');
   return {trade:t,events};
 }
@@ -94,6 +100,7 @@ function funding(input,rows,availableAt) {
   }
   t.fundingStatus='SETTLED_RATE_MODELLED';t.fundingEvents=events;t.fundingCost=cost;t.fundingAvailableAt=availableAt;
   t.netPnl=t.netPnlBeforeFunding-cost;t.realizedR=t.netPnl/t.plannedRiskUsdt;
+  t.outcomeComplete=true;
   t.mfeR=t.mfePerUnit*t.quantity/t.plannedRiskUsdt;t.maeR=t.maePerUnit*t.quantity/t.plannedRiskUsdt;
   return t;
 }

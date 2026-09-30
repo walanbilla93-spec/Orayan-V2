@@ -57,6 +57,7 @@ test('no pre-capture or forming-bar fills; next full minute pays taker fees and 
 test('entry gap must revalidate cost-adjusted geometry before opening a shadow trade',()=>{
   const t=trade(),r=step(t,[bar(at+m,114,114.5,113,114)],at+2*m);
   assert.equal(r.trade.status,'CANCELLED');assert.equal(r.trade.outcome,'NEXT_OPEN_GEOMETRY_REJECTED');assert.equal(r.trade.filledAt,null);
+  assert.equal(r.trade.netPnl,0);assert.equal(r.trade.fundingStatus,'NOT_APPLICABLE');assert.equal(r.trade.outcomeComplete,true);
 });
 test('tick and lot constraints cancel undersized fills without increasing risk',()=>{
   const t=trade();t.geometry.minOrderQty=10;const r=step(t,[bar(at+m)],at+2*m);
