@@ -8,6 +8,7 @@ backend/data/*.tmp
 backend/data/*.corrupt.*
 backend/data/research-v2/
 backend/data/v3-shadow/
+backend/data/v3-shadow-compact-v1/
 
 *.log
 .DS_Store

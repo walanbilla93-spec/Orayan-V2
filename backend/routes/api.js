@@ -242,6 +242,8 @@ const routes = {
   'GET /api/journal/research/manifest': async () => researchManifest.buildManifest(),
 
   'GET /api/v3/status': async () => v3Shadow.status(),
+  'GET /api/v3/summary': async () => ({__file:true,contentType:'application/json',
+    filename:'orayan_v3_summary.json',body:JSON.stringify(v3Shadow.summary(),null,2)}),
   'GET /api/v3/export': async ({query}) => v3Shadow.download(query.channel||'v3'),
 
   'GET /api/journal/research/groq-shadow': async () => {
