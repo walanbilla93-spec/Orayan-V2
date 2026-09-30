@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=groq-shadow-v1">
+<link rel="stylesheet" href="styles.css?v=alibaba-shadow-v1">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230E1520'/><circle cx='16' cy='16' r='8' fill='none' stroke='%234FD1E8' stroke-width='2'/></svg>">
 </head>
 <body>
@@ -109,6 +109,19 @@
         <div class="research-download" id="groqShadowDownload" aria-live="polite">
           <span class="research-download-status" id="groqShadowStatus">Checking Groq shadow status…</span>
           <button class="btn btn-ghost" id="btnExportGroqShadow" disabled>Download Groq Shadow Data</button>
+        </div>
+      </div>
+
+      <div class="panel alibaba-card" id="alibabaShadowPanel">
+        <div class="panel-head">
+          <div>
+            <h2>Alibaba Shadow Research</h2>
+            <p class="panel-sub">Independent Qwen review of the same New Orayan births. Research-only; it never changes trades.</p>
+          </div>
+        </div>
+        <div class="research-download" id="alibabaShadowDownload" aria-live="polite">
+          <span class="research-download-status" id="alibabaShadowStatus">Checking Alibaba shadow status…</span>
+          <button class="btn btn-ghost" id="btnExportAlibabaShadow" disabled>Download Alibaba Shadow Data</button>
         </div>
       </div>
 
@@ -238,6 +251,6 @@
 
 <div class="toast-stack" id="toasts"></div>
 
-<script src="app.js?v=groq-shadow-v1"></script>
+<script src="app.js?v=alibaba-shadow-v1"></script>
 </body>
 </html>

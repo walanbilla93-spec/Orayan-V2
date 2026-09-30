@@ -11,6 +11,7 @@ const bybit = require('./lib/bybit');
 const journal = require('./lib/journal');
 const runtime = require('./lib/runtimeIdentity');
 const groqShadowProducer = require('./lib/groqShadowProducer');
+const alibabaShadowProducer = require('./lib/alibabaShadowProducer');
 
 const PORT = Number(process.env.PORT) || 8080;
 const FRONTEND_DIR = path.resolve(__dirname, '..', 'frontend');
@@ -165,6 +166,9 @@ function startServer(port = PORT) {
   setImmediate(() => groqShadowProducer.initialize()
     .then(result => logger.info('groq-shadow','Startup recovery complete',result))
     .catch(e => logger.warn('groq-shadow','Startup recovery failed open',{code:e.code,error:e.message})));
+  setImmediate(() => alibabaShadowProducer.initialize()
+    .then(result => logger.info('alibaba-shadow','Startup recovery complete',result))
+    .catch(e => logger.warn('alibaba-shadow','Startup recovery failed open',{code:e.code,error:e.message})));
 
   // Resume only when the previous process had a persisted RUN intent. Manual stops and
   // uncaught exceptions clear that intent; deploys/container restarts preserve it.

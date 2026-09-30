@@ -136,6 +136,22 @@ async function loadGroqShadowStatus() {
   }
 }
 
+async function loadAlibabaShadowStatus() {
+  const status=$('#alibabaShadowStatus'),button=$('#btnExportAlibabaShadow');
+  if(!status||!button)return;
+  try{
+    const info=await api('/api/journal/research/alibaba-shadow');
+    button.disabled=!info.available;button.dataset.protected=info.exportProtected?'true':'false';
+    const summary=info.summary||{},tokens=summary.tokens||{},last=summary.lastHttpError;
+    const snapshotText=info.snapshots?`snapshots ${info.snapshots}`:'no candidate snapshots yet';
+    const decisions=info.available?`ledger ${fmtBytes(info.sizeBytes)}`:'no decisions yet';
+    const counters=`model ${summary.successfulModelDecisions||0} · local ${summary.localAbstains||0} · API ${summary.apiErrors||0} · malformed ${summary.malformedOutputs||0} · normalized ${summary.normalizedOutputs||0} · deferred ${summary.budgetDeferred||0} · stale ${summary.budgetStale||0}`;
+    const usage=`tokens ${tokens.prompt||0}/${tokens.completion||0}/${tokens.total||0} · cost $${Number(summary.estimatedCostUsd||0).toFixed(6)}`;
+    const error=last?` · last ${last.status}${last.message?`: ${last.message.slice(0,120)}`:''}`:'';
+    status.textContent=`Alibaba ${info.enabled?'enabled':'disabled'} · ${info.model||'model unavailable'} · ${snapshotText} · ${decisions} · ${counters} · ${usage}${error}`;
+  }catch(error){button.disabled=true;status.textContent=`Alibaba shadow data unavailable: ${error.message}`;}
+}
+
 function toast(msg, kind = '') {
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
@@ -846,6 +862,20 @@ function init() {
       anchor.href=url;anchor.download=filename;anchor.click();URL.revokeObjectURL(url);
     }catch(error){toast(error.message,'error');}
   };
+  const downloadAlibabaShadow=async()=>{
+    const button=$('#btnExportAlibabaShadow');
+    if(button.dataset.protected!=='true')return downloadFrom('/api/journal/research/alibaba-shadow/export');
+    const token=prompt('Enter the Alibaba shadow export token');if(!token)return;
+    try{
+      const response=await fetch('/api/journal/research/alibaba-shadow/export',
+        {headers:{'X-Alibaba-Shadow-Export-Token':token}});
+      if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||`Request failed (${response.status})`);}
+      const blob=await response.blob(),disposition=response.headers.get('Content-Disposition')||'';
+      const filename=disposition.match(/filename="([^"]+)"/)?.[1]||'orayan2_alibaba_shadow_decisions.jsonl';
+      const url=URL.createObjectURL(blob),anchor=document.createElement('a');anchor.href=url;anchor.download=filename;
+      anchor.click();URL.revokeObjectURL(url);
+    }catch(error){toast(error.message,'error');}
+  };
   $('#btnExportTradesCsv').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=csv'));
   $('#btnExportTradesJson').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=json'));
   $('#btnExportSignalsCsv').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=csv'));
@@ -856,6 +886,7 @@ function init() {
   $('#btnExportLegacyResearch').addEventListener('click', () => downloadFrom('/api/journal/research/prospective/export?raw=1'));
   $('#btnExportResearchEvents').addEventListener('click', () => downloadFrom('/api/journal/research/events/export?format=csv'));
   $('#btnExportGroqShadow').addEventListener('click', downloadGroqShadow);
+  $('#btnExportAlibabaShadow').addEventListener('click',downloadAlibabaShadow);
   $('#btnExportShadowCsv').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=csv'));
   $('#btnExportShadowJson').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=json'));
   $('#btnClearShadow').addEventListener('click', async () => {
@@ -901,9 +932,11 @@ function init() {
 
   refresh();
   loadGroqShadowStatus();
+  loadAlibabaShadowStatus();
   renderAccount();
   state.pollTimer = setInterval(refresh, 5000);
   setInterval(loadGroqShadowStatus, 30000);
+  setInterval(loadAlibabaShadowStatus,30000);
   setInterval(renderAccount, 30000);
 }
 

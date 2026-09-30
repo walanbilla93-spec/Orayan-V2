@@ -14,6 +14,8 @@ const runtime = require('../lib/runtimeIdentity');
 const researchManifest = require('../lib/researchManifest');
 const groqShadowExport = require('../lib/groqShadowExport');
 const groqShadowProducer = require('../lib/groqShadowProducer');
+const alibabaShadowExport = require('../lib/alibabaShadowExport');
+const alibabaShadowProducer = require('../lib/alibabaShadowProducer');
 const fs = require('fs');
 const crypto = require('crypto');
 
@@ -26,6 +28,19 @@ function requireGroqExportAuth(req, env = process.env) {
   if(left.length!==right.length || !crypto.timingSafeEqual(left,right)) {
     const error=new Error('Groq shadow export authorization is required.');
     error.statusCode=401;error.code='GROQ_SHADOW_EXPORT_UNAUTHORIZED';throw error;
+  }
+  return true;
+}
+
+function requireAlibabaExportAuth(req,env=process.env){
+  const expected=env.ALIBABA_SHADOW_EXPORT_TOKEN||'';
+  if(!expected)return false;
+  const bearer=String(req?.headers?.authorization||'').replace(/^Bearer\s+/i,'');
+  const supplied=String(req?.headers?.['x-alibaba-shadow-export-token']||bearer||'');
+  const left=Buffer.from(supplied),right=Buffer.from(expected);
+  if(left.length!==right.length||!crypto.timingSafeEqual(left,right)){
+    const error=new Error('Alibaba shadow export authorization is required.');
+    error.statusCode=401;error.code='ALIBABA_SHADOW_EXPORT_UNAUTHORIZED';throw error;
   }
   return true;
 }
@@ -237,6 +252,18 @@ const routes = {
     return { __stream: true, ...result };
   },
 
+  'GET /api/journal/research/alibaba-shadow': async () => {
+    const shadowStatus=await alibabaShadowProducer.status();
+    return {...alibabaShadowExport.metadata(),...shadowStatus,
+      exportProtected:!!process.env.ALIBABA_SHADOW_EXPORT_TOKEN};
+  },
+
+  'GET /api/journal/research/alibaba-shadow/export': async ({req}) => {
+    requireAlibabaExportAuth(req);
+    const result=alibabaShadowExport.download();
+    return {__stream:true,...result};
+  },
+
   'POST /api/journal/signals/clear': async () => { journal.clearSignalHistory(); engine.clearLastSignals(); return { ok: true }; },
 
   'POST /api/control/start': async () => engine.start(),
@@ -279,4 +306,4 @@ const routes = {
   },
 };
 
-module.exports = { routes, _test:{requireGroqExportAuth} };
+module.exports = { routes, _test:{requireGroqExportAuth,requireAlibabaExportAuth} };

@@ -49,11 +49,12 @@ live trading and the account-balance panel need API keys.
 
 ---
 
-## The one environment variable rule
+## Environment configuration
 
-`BYBIT_API_KEY` and `BYBIT_API_SECRET` are the only environment configuration. Every other knob —
-mode, timeframe, universe, all nine gates, sizing, leverage, circuit breakers — is set in the
-Settings tab and stored server-side in `backend/data/settings.json`.
+`BYBIT_API_KEY` and `BYBIT_API_SECRET` are the only trading credentials. Every trading knob—mode,
+timeframe, universe, all nine gates, sizing, leverage, and circuit breakers—is set in the Settings
+tab and stored server-side. Optional research sidecars use separate deployment-only credentials and
+hard safety caps; see `.env.example` and the relevant runbook. They never alter trading settings.
 
 **Settings store only what you have actually changed**, not a full snapshot. Effective config =
 built-in defaults + your overrides. This matters: with a full-snapshot design, a value saved once

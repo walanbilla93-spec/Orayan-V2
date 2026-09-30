@@ -5,10 +5,28 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # The ONLY configuration outside the UI. Fill these in below, or in a
-      # sibling .env file (copy .env.example to .env) — either works.
+      # Trading credentials plus deployment-only research safety controls.
       BYBIT_API_KEY: ${BYBIT_API_KEY:-}
       BYBIT_API_SECRET: ${BYBIT_API_SECRET:-}
+      ALIBABA_SHADOW_ALLOW_LIVE: ${ALIBABA_SHADOW_ALLOW_LIVE:-false}
+      ALIBABA_API_KEY: ${ALIBABA_API_KEY:-}
+      ALIBABA_SHADOW_MODEL: ${ALIBABA_SHADOW_MODEL:-qwen3.7-flash}
+      ALIBABA_SHADOW_BASE_URL: ${ALIBABA_SHADOW_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}
+      ALIBABA_SHADOW_LEDGER: ${ALIBABA_SHADOW_LEDGER:-/app/backend/data/alibaba-shadow/decisions.jsonl}
+      ALIBABA_SHADOW_SNAPSHOTS: ${ALIBABA_SHADOW_SNAPSHOTS:-/app/backend/data/alibaba-shadow/candidate-snapshots.jsonl}
+      ALIBABA_SHADOW_TIMEOUT_MS: ${ALIBABA_SHADOW_TIMEOUT_MS:-20000}
+      ALIBABA_SHADOW_MAX_OUTPUT_TOKENS: ${ALIBABA_SHADOW_MAX_OUTPUT_TOKENS:-600}
+      ALIBABA_SHADOW_BUDGET_COMPLETION_TOKENS: ${ALIBABA_SHADOW_BUDGET_COMPLETION_TOKENS:-450}
+      ALIBABA_SHADOW_MAX_REQUESTS_MINUTE: ${ALIBABA_SHADOW_MAX_REQUESTS_MINUTE:-10}
+      ALIBABA_SHADOW_MAX_TOKENS_MINUTE: ${ALIBABA_SHADOW_MAX_TOKENS_MINUTE:-100000}
+      ALIBABA_SHADOW_MAX_REQUESTS_DAY: ${ALIBABA_SHADOW_MAX_REQUESTS_DAY:-500}
+      ALIBABA_SHADOW_MAX_TOKENS_DAY: ${ALIBABA_SHADOW_MAX_TOKENS_DAY:-3250000}
+      ALIBABA_SHADOW_MAX_COST_USD_DAY: ${ALIBABA_SHADOW_MAX_COST_USD_DAY:-1}
+      ALIBABA_SHADOW_MAX_QUEUE: ${ALIBABA_SHADOW_MAX_QUEUE:-32}
+      ALIBABA_SHADOW_MAX_DEFER_SECONDS: ${ALIBABA_SHADOW_MAX_DEFER_SECONDS:-75}
+      ALIBABA_SHADOW_EXPORT_TOKEN: ${ALIBABA_SHADOW_EXPORT_TOKEN:-}
+      ALIBABA_SHADOW_INPUT_USD_PER_MILLION: ${ALIBABA_SHADOW_INPUT_USD_PER_MILLION:-}
+      ALIBABA_SHADOW_OUTPUT_USD_PER_MILLION: ${ALIBABA_SHADOW_OUTPUT_USD_PER_MILLION:-}
     volumes:
       # Persist settings + trade history on the host, outside the container,
       # so `docker compose down` / rebuilds never lose them.

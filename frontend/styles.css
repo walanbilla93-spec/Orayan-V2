@@ -233,6 +233,9 @@ body::before {
 .groq-card { border-color: rgba(79, 209, 232, 0.35); }
 .groq-card .panel-head > div { display: grid; gap: 5px; }
 .groq-card .research-download { padding-top: 2px; border-top: 0; }
+.alibaba-card { border-color: rgba(247, 147, 30, 0.42); }
+.alibaba-card .panel-head > div { display: grid; gap: 5px; }
+.alibaba-card .research-download { padding-top: 2px; border-top: 0; }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 
