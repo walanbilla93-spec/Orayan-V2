@@ -5,6 +5,7 @@ WORKDIR /app
 COPY backend ./backend
 COPY frontend ./frontend
 COPY research/groq-shadow ./research/groq-shadow
+COPY research/alibaba-shadow ./research/alibaba-shadow
 RUN cd backend && npm install --omit=dev --no-audit --no-fund
 
 # Settings and trade history persist here — mounted as a volume in docker-compose.yml
@@ -17,6 +18,5 @@ ENV NODE_OPTIONS=--max-old-space-size=352
 ENV PORT=8080
 EXPOSE 8080
 
-# Bybit API key/secret are the only env vars this app reads — passed in at `docker run`
-# or via docker-compose.yml, never baked into the image.
+# Secrets and deployment safety caps are passed at runtime and never baked into the image.
 CMD ["node", "backend/server.js"]

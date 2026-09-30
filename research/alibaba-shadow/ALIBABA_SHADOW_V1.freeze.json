@@ -1,0 +1,33 @@
+{
+  "freeze_id": "ALIBABA_SHADOW_V1",
+  "effective_at_utc": "2026-09-30T05:48:26Z",
+  "baseline_main_sha": "506a729f113c7d9b66ffad1076be342afbea0355",
+  "model": "qwen3.7-flash",
+  "region": "Singapore",
+  "base_url": "https://ws-8fj48454cwchxwq2.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+  "transport_output_mode": "json_object",
+  "thinking_enabled": false,
+  "prompt_version": "ORAYAN_ALIBABA_SHADOW_PROMPT_V1",
+  "prompt_hash_sha256": "0bffcbb48913408f745eea2ff3070736614b5fa537ea418d6445f3f67dc5f582",
+  "response_schema_version": "ORAYAN_ALIBABA_SHADOW_RESPONSE_V1",
+  "response_schema_hash_sha256": "246ee818df47689f35b592d2d40eb9cf82e7108c7770395b1deed55411541980",
+  "snapshot_schema_version": "ORAYAN_ALIBABA_CANDIDATE_V1",
+  "snapshot_schema_hash_sha256": "82cb55b5cd5d3fffce7d28c0fbf87ca3d74c20fdba94480017e4570cdef238b9",
+  "pricing_usd_per_million_tokens": {"input": 0.03, "output": 0.13},
+  "provider_rate_limits": {"rpm": 15000, "tpm_including_input_and_output": 5000000},
+  "local_safety_defaults": {
+    "cost_reservation": "UTF-8 byte input upper bound plus 256 protocol tokens and full max_output_tokens",
+    "maximum_pricing_context_tokens": 32768,
+    "snapshot_availability": "actual observation receipt; never scan-start backdating",
+    "requests_per_minute": 10,
+    "tokens_per_minute": 100000,
+    "requests_per_day": 500,
+    "tokens_per_day": 3250000,
+    "estimated_cost_usd_per_day": 1,
+    "max_queue": 32,
+    "max_defer_seconds": 75,
+    "worker_concurrency": 1
+  },
+  "authority": "RESEARCH_ONLY_NO_TRADING_AUTHORITY",
+  "no_trading_authority_statement": "Alibaba output is append-only prospective research. It cannot enter, skip, rank, size, modify, close, or otherwise affect a trade, any gate, any circuit breaker, Marci, Groq, or Gemini Market Intelligence."
+}

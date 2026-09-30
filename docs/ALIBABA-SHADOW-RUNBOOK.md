@@ -1,13 +1,22 @@
-# Alibaba Shadow V1 runbook
+# Alibaba shadow runbook
 
-Alibaba Shadow is research-only and has no trading authority. Deploy with
-`ALIBABA_SHADOW_ALLOW_LIVE=false`; do not enable a canary without explicit operator approval.
+This is a new prospective, append-only experiment. It has no trading authority and does not alter
+H1, H2, Groq history, Marci, Gemini Market Intelligence, or any execution behavior.
 
-## Dark environment
+## 1. Account and region
+
+1. Complete the Alibaba Cloud account profile and activate Model Studio in **Singapore**.
+2. Confirm `qwen3.7-flash` is available and inspect the account's actual quota/expiry.
+3. Enable **Free Quota Only** during initial validation if the console offers it.
+4. Create a general pay-as-you-go Singapore API key. Do not use Token Plan/Coding Plan keys.
+5. Prefer a workspace-specific Singapore base URL for production; the shared international URL is
+   the reviewed default.
+
+## 2. Dark-deploy environment
 
 ```text
-ALIBABA_API_KEY=<secret>
 ALIBABA_SHADOW_ALLOW_LIVE=false
+ALIBABA_API_KEY=<secret>
 ALIBABA_SHADOW_MODEL=qwen3.7-flash
 ALIBABA_SHADOW_BASE_URL=https://ws-8fj48454cwchxwq2.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 ALIBABA_SHADOW_LEDGER=/app/backend/data/alibaba-shadow/decisions.jsonl
@@ -25,20 +34,72 @@ ALIBABA_SHADOW_MAX_DEFER_SECONDS=75
 ALIBABA_SHADOW_EXPORT_TOKEN=<optional separate secret>
 ```
 
-The workspace-specific Singapore endpoint is preferred over the legacy shared DashScope endpoint.
-Keep one replica and the existing persistent `/app/backend/data` volume.
+Use one replica and the existing persistent `/app/backend/data` volume. Do not deploy this branch
+without reviewing `ALIBABA_SHADOW_V1.freeze.json` and the test results.
 
-## Dark checks
+## 3. Dark checks
 
-1. Start with live disabled.
-2. Confirm the Alibaba panel is present.
-3. Wait for a genuine New Orayan birth.
-4. Confirm `candidate-snapshots.jsonl` grows.
-5. Confirm the provider ledger contains no `REQUEST_STARTED` record and Model Studio usage remains zero.
-6. Restart and verify the snapshot audit remains available.
+1. Start one replica with live disabled.
+2. Confirm the existing Groq status and tests are unchanged.
+3. Open the default dashboard and confirm the separate Alibaba panel appears.
+4. Wait for a genuine New Orayan birth; do not fabricate a production candidate.
+5. Confirm `candidate-snapshots.jsonl` grows and contains a bounded causal snapshot.
+6. Confirm `decisions.jsonl` has no `REQUEST_STARTED` row and Alibaba usage did not increase.
+7. Verify no future timestamp, outcome/PnL key, credential, raw log, or full symbol-state dump exists.
+8. Exercise the optional-token NDJSON export and confirm it streams rather than buffering.
+9. Restart and compare pre-restart snapshot and decision file hashes/sizes. Confirm recovered
+   status still reports snapshots, zero `providerRequestsStarted`, and zero token/cost usage.
+10. Stop at this checkpoint. Enabling live calls requires a separate operator instruction.
 
-## Canary gate
+Dark births create a `LIVE_DISABLED` decision and a separate frozen snapshot. The advisor checks
+the live gate even when called directly. Requests are never started in dark mode.
 
-Changing `ALIBABA_SHADOW_ALLOW_LIVE` to `true` requires explicit operator approval after the dark
-checkpoint. The first canary must be a single eligible birth with JSON Object mode and
-`enable_thinking:false`.
+Status: `GET /api/journal/research/alibaba-shadow`. Decisions:
+`GET /api/journal/research/alibaba-shadow/export`. Snapshots:
+`GET /api/journal/research/alibaba-shadow/snapshots/export`. Both exports use the optional
+`X-Alibaba-Shadow-Export-Token` header and a fixed persistent path; tokens never belong in URLs.
+
+Run the complete suite from the repository root:
+`node --test backend/test/*.test.js research/groq-shadow/test/*.test.js research/alibaba-shadow/test/*.test.js`.
+The isolation tests pin execution/gates and Groq production source to deployed main `506a729`.
+
+Birth-time rules use the native `decisionAt` value, prefer the most recent environment observation
+whose actual receipt was no later than that birth, and deep-copy the selected values. Summaries
+assembled after a birth are unavailable to it. Optional Market Intelligence/Gemini inputs remain
+explicitly unavailable when no timestamped pre-birth input exists; this implementation does not
+fetch a later briefing or open a new provider connection. Missing numbers remain null. Invalid
+future-bearing snapshots are rejected before audit persistence, retaining rejection paths only.
+
+## 4. Canary
+
+Only after dark checks pass, set `ALIBABA_SHADOW_ALLOW_LIVE=true` on one replica. Watch the first
+eligible birth. A successful canary must have HTTP 200, valid local normalized output, actual token
+usage, an estimated cost, and evidence paths that exist in the frozen snapshot. Confirm the request
+used `enable_thinking:false` and JSON Object mode. Inspect daily request/token/cost counters and the
+Alibaba console. Do not retry ambiguous `REQUEST_STARTED` rows; restart recovery terminalizes them
+as unknown outcomes to prevent duplicate billing.
+
+429/5xx responses are recorded once with bounded sanitized details. There are no automatic network
+retries. Minute pressure may defer within the configured causal freshness window; expiry becomes an
+abstention. Daily request/token/cost exhaustion is terminal for that candidate.
+
+The dollar guard reserves input by a conservative UTF-8 byte upper bound plus protocol allowance
+and output by the full generation ceiling, regardless of the smaller traffic estimate. Requests
+are confined to the first 32K context pricing tier. Missing/invalid provider usage retains the
+reservation. Stale queued work abstains after the defer window. Interrupted requests retain
+reserved billing and are not replayed, including across model configuration changes. Only one
+runtime process may own these files; multiple replicas/processes are unsupported in V1.
+
+## 5. Rollback
+
+Set `ALIBABA_SHADOW_ALLOW_LIVE=false` and restart. If necessary, remove the Alibaba API key. Keep the
+append-only ledger and snapshot audit for prospective evaluation. Do not delete or rewrite Groq,
+H1, or H2 data. Because execution never reads Alibaba output, disabling the sidecar requires no
+trading rollback.
+
+## Go/no-go gates
+
+- **Dark deploy:** GO only when all tests pass, persistent paths are mounted, live is false, and the
+  snapshot audit grows without provider calls.
+- **Live canary:** NO-GO at code handoff. It requires operator completion of the dark checks,
+  account/privacy acceptance, verified console quota/billing controls, and explicit enablement.

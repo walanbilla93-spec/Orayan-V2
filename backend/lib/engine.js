@@ -18,6 +18,7 @@ const researchCapture = require('./researchCapture');
 const researchSupplement = require('./researchSupplement');
 const earlyEntryShadow = require('./earlyEntryShadow');
 const groqShadowProducer = require('./groqShadowProducer');
+const alibabaShadowProducer = require('./alibabaShadowProducer');
 const { num, uid } = require('./util');
 
 const state = {
@@ -546,6 +547,8 @@ async function scanOnce() {
     // journal. This is bounded in memory and has no network I/O or execution authority.
     try { groqShadowProducer.observeEnvironment({ at:scanAt, marketSnapshot, tickers }); }
     catch (e) { logger.warn('groq-shadow', 'Environment observation failed open', { error:e.message }); }
+    try { alibabaShadowProducer.observeEnvironment({ at:Date.now(), marketSnapshot, tickers, btcRegime }); }
+    catch (e) { logger.warn('alibaba-shadow', 'Environment observation failed open', { code:e.code }); }
     const btcObservation = marketObservations.find(x => x?.symbol === 'BTCUSDT');
     const r12s = marketObservations.filter(x => x?.symbol !== 'BTCUSDT' && Number.isFinite(x?.r12))
       .map(x => Math.log1p(x.r12)).sort((a,b) => a-b);
@@ -563,6 +566,12 @@ async function scanOnce() {
         ticker:tickerBySymbol.get(signal.symbol),btcRegime,
         openPositions:[...openTrades(),...pendingTrades()]}); }
       catch (e) { logger.warn('groq-shadow', 'Candidate handoff failed open', { error:e.message, symbol:signal.symbol }); }
+      // Independent one-way Alibaba research handoff. No promise or result is exposed to any
+      // gate, rank, sizing, portfolio, order, or execution path.
+      try { alibabaShadowProducer.observeBirth(signal,birth,{scanAt,settings,marketSnapshot,
+        ticker:tickerBySymbol.get(signal.symbol),btcRegime,
+        openPositions:[...openTrades(),...pendingTrades()]}); }
+      catch (e) { logger.warn('alibaba-shadow', 'Candidate handoff failed open', { code:e.code }); }
       // Shadow-only sidecar. Its return value is deliberately ignored and cannot affect any
       // candidate, gate, rank, size, portfolio limit, or order path below.
       try { earlyEntryShadow.observeCandidate(signal,{scanAt,settings,snapshot:marketSnapshot,

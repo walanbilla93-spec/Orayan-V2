@@ -129,14 +129,14 @@ test('absent API key is a persisted abstention and secret is never persisted',as
   assert.doesNotMatch(fs.readFileSync(cfg.ledger,'utf8'),/secret-test-key|Authorization|Bearer/);
 });
 
-test('model is environment-configurable while endpoint and prompt V2 stay frozen',()=>{
+test('model is environment-configurable while endpoint and prompt V3 stay frozen',()=>{
   const cfg=configFromEnv({GROQ_SHADOW_MODEL:'qwen/qwen3.8-27b'});
   const request=buildRequest(snapshot(),cfg);
   assert.equal(request.model,'qwen/qwen3.8-27b');assert.equal(request.response_format.json_schema.strict,true);
-  assert.match(request.messages[1].content,/H1_H2_VISIBLE_V2/);
+  assert.match(request.messages[1].content,/H1_H2_VISIBLE_V3/);
 });
 
-test('gpt-oss-120b request contains only supported fields and strict V2 schema',()=>{
+test('gpt-oss-120b request contains only supported fields and strict V3 schema',()=>{
   const request=buildRequest(snapshot(),configFromEnv({}));
   assert.deepEqual(Object.keys(request).sort(),['include_reasoning','max_completion_tokens','messages','model','reasoning_effort','response_format']);
   assert.equal(request.model,'openai/gpt-oss-120b');
@@ -145,7 +145,7 @@ test('gpt-oss-120b request contains only supported fields and strict V2 schema',
   assert.equal(request.include_reasoning,false);
   assert.equal(request.response_format.type,'json_schema');
   assert.equal(request.response_format.json_schema.strict,true);
-  assert.equal(RESPONSE_SCHEMA_VERSION,'ORAYAN_GROQ_SHADOW_RESPONSE_V2');
+  assert.equal(RESPONSE_SCHEMA_VERSION,'ORAYAN_GROQ_SHADOW_RESPONSE_V3');
 });
 
 test('HTTP 400 details are classified, bounded, sanitized and persisted with hashes',async()=>{
