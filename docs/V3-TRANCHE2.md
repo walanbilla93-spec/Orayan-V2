@@ -32,6 +32,8 @@ Separate hourly `trades-*` JSONL files have output type `V3_SHADOW_TRADE`, stabl
 
 At most 32 active/funding-pending trades and 32 terminal summaries are retained; admissions beyond capacity explicitly reject. Every 15 seconds a background worker handles up to eight due trades sequentially, at most once per minute per trade. All path/funding requests use the existing research transport queue, yielding to trading traffic. No worker promise is awaited by V2 scanning. It continues tracking after the engine stops; the V3 enabled flag pauses both capture and tracking.
 
+Same-bar quote movement within the same geometry/decision bucket does not duplicate candidate rows. A changed geometry verdict, structural boundary, objective, native V2 decision or completed bar creates a new observation. This keeps quote refreshes from amplifying hourly archive growth while preserving admission and rejection changes.
+
 Each minute response is capped at 1000 bars and released after processing. Downtime catches up in successive bounded chronological windows. No outcome archive is loaded at boot. Admissions and cursor/funding transitions checkpoint atomically; the existing checkpoint cap remains 1 MiB, archive retention 96 hours, record cap 64 KiB and Docker heap 352 MB. Existing settings, provider configuration, volume and plan are preserved.
 
 An abrupt crash between append and checkpoint can replay an event; consumers must deduplicate stable trade event IDs. Checkpoints preserve active trades and prevent repeated fills during graceful redeploy. This tranche does not claim filesystem transactions or exactly-once durability through disk corruption.

@@ -117,7 +117,7 @@ class ShadowJournal {
     }
     const signature=hash([row.closedBarOpenAt,row.regime,row.rejectReason,
       row.v2Decision.map(p=>[p.side,p.passed,p.failed]),row.research?.selected?.id,VERSION,
-      row.v3Decision,row.geometry?.entryPrice,row.geometry?.invalidationPrice,row.geometry?.objectivePrice]);
+      row.v3Decision,row.geometry?.status,row.geometry?.invalidationPrice,row.geometry?.objectivePrice]);
     if(previous && previous.signature===signature && row.decisionAt-previous.lastSeenAt<=30*60000) {
       previous.lastSeenAt=row.decisionAt;return;
     }
