@@ -6,6 +6,7 @@ const {validateClosedCandles,trendPermission}=require('./v3Contracts');
 const levels=require('./v3Levels');
 const geometry=require('./v3Geometry');
 const trades=require('./v3Trades');
+const {Archive,ROW_BYTES,TRADE_ROW_BYTES}=require('./v3Archive');
 const corrected=require('./signals_trend_v30');
 const location=require('./locationResearch');
 const {redact}=require('../../research/alibaba-shadow/src/security');
@@ -13,11 +14,11 @@ const runtime=require('./runtimeIdentity');
 const VERSION='ORAYAN_V3_TRANCHE2';
 const BENCHMARK='d7f2ba802a4b4204fad70bf502c6f996f76aabc4';
 const frozen=require('./v3Benchmark.json');
-const MAX_KEYS=512,MAX_RECENT=24,MAX_ROW_BYTES=65536,RETENTION_MS=96*3600000;
+const MAX_KEYS=512,MAX_RECENT=24,MAX_ROW_BYTES=65536;
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?
   Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
 const hash=value=>crypto.createHash('sha256').update(JSON.stringify(stable(value))).digest('hex').slice(0,24);
-const implementationHash=crypto.createHash('sha256').update(['v3Shadow.js','v3Contracts.js','v3Levels.js','v3Geometry.js','v3Trades.js','signals_trend_v30.js']
+const implementationHash=crypto.createHash('sha256').update(['v3Shadow.js','v3Contracts.js','v3Levels.js','v3Geometry.js','v3Trades.js','v3Compact.js','v3Archive.js','signals_trend_v30.js']
   .map(file=>fs.readFileSync(path.join(__dirname,file),'utf8').replace(/\r\n/g,'\n')).join('\n')).digest('hex');
 function plan(signal) {return signal?{candidateId:signal.id,side:signal.side,entry:signal.entry,sl:signal.sl,tp:signal.tp,
   score:signal.score,rr:signal.rr,passed:signal.gates?.passed??null,failed:signal.gates?.failed||[]}:null;}
@@ -82,12 +83,26 @@ function evaluate({symbol,candles,ticker,instrument,btcRegime,settings,decisionA
 }
 
 class ShadowJournal {
-  constructor(dir) {
+  constructor(dir,{legacyDir=null}={}) {
     this.dir=dir;this.checkpoint=path.join(dir,'checkpoint.json');this.index=new Map();this.recent=[];
     this.counts={v2:0,v3:0,ai:0,trades:0,errors:0};this.aiOffsets={};this.lastPrune=0;
     this.activeTrades=new Map();this.recentTrades=[];this.tradeCounts={admitted:0,filled:0,closed:0,cancelled:0,expired:0,incomplete:0};
     this.tradePollAt=0;this.tradeWorkerBusy=false;this.lastTradeError=null;
     fs.mkdirSync(dir,{recursive:true});
+    this.archive=new Archive(dir);this.startedAt=Date.now();this.captureCohort='compact-v1-'+this.startedAt;
+    this.legacySizeBytes=legacyDir && fs.existsSync(legacyDir)?fs.readdirSync(legacyDir)
+      .filter(n=>/^(v2|v3|ai|trades)-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/.test(n))
+      .reduce((sum,n)=>sum+fs.statSync(path.join(legacyDir,n)).size,0):0;
+    if(!fs.existsSync(this.checkpoint) && legacyDir) {
+      const old=path.join(legacyDir,'checkpoint.json');
+      if(fs.existsSync(old)&&fs.statSync(old).size<1024*1024) {
+        try {const saved=JSON.parse(fs.readFileSync(old,'utf8'));
+        this.activeTrades=new Map((saved.activeTrades||[]).slice(-trades.MAX_ACTIVE)
+          .map(([id,t])=>[id,{...t,originCaptureCohort:'LEGACY_PRE_COMPACT'}]));
+        this.aiOffsets=saved.aiOffsets||{};
+        }catch(_){this.counts.errors++;this.lastTradeError='LEGACY_CHECKPOINT_UNREADABLE';}
+      }
+    }
     // Restore ONLY a capped checkpoint, never materialise the research archive at boot.
     if(fs.existsSync(this.checkpoint) && fs.statSync(this.checkpoint).size<1024*1024) {
       try {const saved=JSON.parse(fs.readFileSync(this.checkpoint,'utf8'));
@@ -96,15 +111,19 @@ class ShadowJournal {
       try {const saved=JSON.parse(fs.readFileSync(this.checkpoint,'utf8'));
         this.activeTrades=new Map((saved.activeTrades||[]).slice(-trades.MAX_ACTIVE));
         this.recentTrades=(saved.recentTrades||[]).slice(-trades.MAX_RECENT);this.tradeCounts={...this.tradeCounts,...saved.tradeCounts};
+        this.startedAt=saved.startedAt??this.startedAt;this.captureCohort=saved.captureCohort??this.captureCohort;
+        this.archive.restore(saved.archive);
       }catch(_){this.counts.errors++;}
     }
+    this.saveCheckpoint();
   }
   append(channel,row) {
-    const line=JSON.stringify(redact({...runtime.rowFields(),implementationHash,...row}))+'\n';
-    if(Buffer.byteLength(line)>MAX_ROW_BYTES)throw Error('V3_ROW_TOO_LARGE');
-    const file=path.join(this.dir,`${channel}-${new Date(row.capturedAt).toISOString().slice(0,13).replace('T','-')}.jsonl`);
-    // One complete immutable row at a time; no accumulated candle arrays or write queue.
-    fs.appendFileSync(file,line);this.counts[channel]++;
+    this.appendBatch([{channel,row}]);
+  }
+  appendBatch(entries) {
+    this.archive.write(entries.map(({channel,row})=>({channel,
+      row:redact({...runtime.rowFields(),implementationHash,captureCohort:this.captureCohort,...row})})));
+    for(const {channel} of entries)this.counts[channel]++;
   }
   record(row,scanId,scanStartedAt,capturedAt=Date.now()) {
     const key=[row.configHash,row.symbol,row.side||'WATCH'].join('|');
@@ -131,13 +150,17 @@ class ShadowJournal {
       candidateId:hash([episodeId,row.decisionAt,signature]),episodeId,firstBirthAt,currentUpdateAt:row.decisionAt,
       episodeAgeMs:row.decisionAt-firstBirthAt,scanId,scanStartedAt,capturedAt,
       captureLagMs:capturedAt-row.decisionAt,signature};
-    this.append('v3',record);
-    this.append('v2',{version:VERSION,outputType:'V2_SIGNAL',benchmarkCommit:BENCHMARK,symbol:row.symbol,
+    const writes=[{channel:'v3',row:record},{channel:'v2',row:{version:VERSION,outputType:'V2_SIGNAL',benchmarkCommit:BENCHMARK,symbol:row.symbol,
       configHash:row.configHash,scanId,decisionAt:row.decisionAt,capturedAt,v3CandidateId:record.candidateId,
-      decision:row.v2Decision.length?'CANDIDATE':'NO_NATIVE_CANDIDATE',plans:row.v2Decision});
+      decision:row.v2Decision.length?'CANDIDATE':'NO_NATIVE_CANDIDATE',plans:row.v2Decision}}];
+    let trade;
     if(row.v3Decision==='ACCEPT_SHADOW') {
-      const trade=trades.create(record,setupId,capturedAt);
-      this.tradeEvent(trade,['ADMITTED'],capturedAt);this.activeTrades.set(setupId,trade);this.tradeCounts.admitted++;
+      trade={...trades.create(record,setupId,capturedAt),originCaptureCohort:this.captureCohort};
+      writes.push({channel:'trades',row:this.tradeRow(trade,['ADMITTED'],capturedAt)});
+    }
+    this.appendBatch(writes);
+    if(trade) {
+      this.activeTrades.set(setupId,trade);this.tradeCounts.admitted++;
       this.saveCheckpoint(); // Persist admissions before any asynchronous path reads.
     }
     const currentLinks=row.v2Decision.map(p=>({candidateId:p.candidateId,passed:p.passed,decisionAt:row.decisionAt,
@@ -157,30 +180,24 @@ class ShadowJournal {
   checkpointAndPrune(now=Date.now()) {
     for(const [key,value] of this.index)if(now-value.lastSeenAt>3*3600000)this.index.delete(key);
     this.saveCheckpoint();
-    if(now-this.lastPrune<3600000)return;
-    this.lastPrune=now;
-    for(const name of fs.readdirSync(this.dir)) {
-      const m=/^(v2|v3|ai|trades)-(\d{4}-\d{2}-\d{2})-(\d{2})\.jsonl$/.exec(name);
-      if(m && Date.parse(`${m[2]}T${m[3]}:00:00Z`)+3600000<now-RETENTION_MS)
-        fs.unlinkSync(path.join(this.dir,name));
-    }
+    this.archive.prune(now);
   }
   files(channel='v3') {
     if(!['v2','v3','ai','trades'].includes(channel))throw Object.assign(Error('Invalid V3 export channel'),{statusCode:400});
-    return fs.readdirSync(this.dir).filter(n=>new RegExp(`^${channel}-\\d{4}-\\d{2}-\\d{2}-\\d{2}\\.jsonl$`).test(n)).sort()
-      .map(n=>{const file=path.join(this.dir,n);return {path:file,size:fs.statSync(file).size};});
+    return this.archive.list(channel).map(f=>({path:f.path,size:f.size}));
   }
   export(channel) {
-    const files=this.files(channel),at=Date.now();
+    this.files(channel);const snapshot=this.archive.snapshot(channel),at=Date.now();
     // Existing server __files route pipelines with backpressure and a fixed byte watermark.
-    return {__files:true,files,contentType:'application/x-ndjson',filename:`orayan_v3_${channel}_${at}.jsonl`,
+    return {__files:true,...snapshot,contentType:'application/gzip',filename:`orayan_v3_${channel}_${at}.jsonl.gz`,
       headers:{'X-Orayan-V3-Watermark-At':String(at),'X-Orayan-V2-Benchmark':BENCHMARK}};
   }
   status() {
     const files=this.files('v3');return {version:VERSION,enabled:process.env.ORAYAN_V3_SHADOW_ENABLED!=='false',
-      benchmarkCommit:BENCHMARK,executionAllowed:false,stage:'V3.3_SHADOW_OUTCOMES',retentionHours:96,
+      benchmarkCommit:BENCHMARK,executionAllowed:false,implementationHash,stage:'V3.3_SHADOW_OUTCOMES',retentionHours:30,
+      startedAt:this.startedAt,captureCohort:this.captureCohort,legacySizeBytes:this.legacySizeBytes,archive:this.archive.status(),
       counts:this.counts,recent:this.recent,indexSize:this.index.size,available:files.length>0,
-      sizeBytes:files.reduce((a,f)=>a+f.size,0),memoryLimits:{indexKeys:MAX_KEYS,recentRows:MAX_RECENT,rowBytes:MAX_ROW_BYTES,
+      sizeBytes:this.archive.total(),memoryLimits:{indexKeys:MAX_KEYS,recentRows:MAX_RECENT,rowBytes:TRADE_ROW_BYTES,candidateRowBytes:ROW_BYTES,
         activeTrades:trades.MAX_ACTIVE,recentTrades:trades.MAX_RECENT},tradeCounts:this.tradeCounts,
       shadowTrades:[...this.activeTrades.values(),...this.recentTrades].map(t=>({tradeId:t.tradeId,symbol:t.symbol,side:t.side,
         status:t.status,outcome:t.outcome,decisionAt:t.decisionAt,filledAt:t.filledAt,closedAt:t.closedAt,entryPrice:t.entryPrice,
@@ -190,14 +207,29 @@ class ShadowJournal {
   }
   saveCheckpoint() {
     const text=JSON.stringify({index:[...this.index],counts:this.counts,aiOffsets:this.aiOffsets,
-      activeTrades:[...this.activeTrades],recentTrades:this.recentTrades,tradeCounts:this.tradeCounts});
+      activeTrades:[...this.activeTrades],recentTrades:this.recentTrades,tradeCounts:this.tradeCounts,
+      startedAt:this.startedAt,captureCohort:this.captureCohort,archive:this.archive.checkpoint()});
     if(Buffer.byteLength(text)>=1024*1024)throw Error('SHADOW_CHECKPOINT_CAPACITY');
     const tmp=this.checkpoint+'.tmp';fs.writeFileSync(tmp,text);fs.renameSync(tmp,this.checkpoint);
   }
   tradeEvent(trade,transitions,now) {
-    this.append('trades',{version:VERSION,outputType:'V3_SHADOW_TRADE',kind:'trade_update',
+    if(transitions.length===1 && transitions[0]==='MARK' && now-(trade.lastJournalMarkAt||0)<300000)return;
+    this.append('trades',this.tradeRow(trade,transitions,now));
+    if(transitions.includes('MARK'))trade.lastJournalMarkAt=now;
+  }
+  tradeRow(trade,transitions,now) {
+    return {version:VERSION,outputType:'V3_SHADOW_TRADE',kind:'trade_update',
       eventId:hash([trade.tradeId,trade.status,trade.lastBarAt,trade.fundingStatus,transitions]),
-      capturedAt:now,availableAt:now,transitions,trade});
+      capturedAt:now,availableAt:now,transitions,trade};
+  }
+  summary() {
+    // Small default analysis artifact: totals, hourly counts and a bounded set of examples.
+    const s=this.status();return {captureSchema:'V3_COMPACT_V1',version:VERSION,captureCohort:this.captureCohort,
+      startedAt:this.startedAt,exportedAt:Date.now(),executionAllowed:false,archive:s.archive,
+      counts:this.counts,tradeCounts:this.tradeCounts,hours:this.archive.summaryHours,
+      recentCandidates:this.recent.slice(-6),recentTrades:s.shadowTrades.slice(-6),
+      limitations:['Independent modelled trades; not portfolio P&L','Funding uses an entry-notional approximation',
+        'Budget skips are explicit capture gaps','Raw data is available in separate compressed downloads']};
   }
   async advance(now=Date.now(),get=require('./bybit').researchGet) {
     if(this.tradeWorkerBusy || now-this.tradePollAt<15000 || process.env.ORAYAN_V3_SHADOW_ENABLED==='false')return;
@@ -239,7 +271,8 @@ class ShadowJournal {
             committed=next;
           }
           this.lastTradeError=null;
-        }catch(e){next=committed;this.counts.errors++;this.lastTradeError={at:Date.now(),symbol:next.symbol,reason:e.reasonCode||e.message};}
+        }catch(e){next=committed;if(e.reasonCode!=='V3_ARCHIVE_BUDGET_PAUSED')this.counts.errors++;
+          this.lastTradeError={at:Date.now(),symbol:next.symbol,reason:e.reasonCode||e.message};}
         this.activeTrades.set(next.tradeId,next);
         if(trades.terminal(next) && (next.status!=='CLOSED'||next.fundingStatus!=='PENDING')) {
           this.activeTrades.delete(next.tradeId);this.recentTrades.push(next);
@@ -276,13 +309,14 @@ class ShadowJournal {
           agreedWithV3:link && ['ACCEPT_SHADOW','REJECT'].includes(link.v3Decision) && ['RETAIN','SKIP'].includes(verdict)?
             (verdict==='RETAIN')===(link.v3Decision==='ACCEPT_SHADOW'):null,
           agreementReason:link?.v3Decision?'MATCHED_DETERMINISTIC_SHADOW_DECISION':'NO_V3_DECISION_LINK',executionAuthority:false});
-      }catch(_){this.counts.errors++;}
+      }catch(e){if(e.reasonCode!=='V3_ARCHIVE_BUDGET_PAUSED')this.counts.errors++;}
     }
     this.aiOffsets[provider]=offset+end+1;
   }
 }
 let instance;
-function journal(){if(!instance){instance=new ShadowJournal(path.join(require('./store').DATA_DIR,'v3-shadow'));
+function journal(){if(!instance){const root=require('./store').DATA_DIR;
+  instance=new ShadowJournal(path.join(root,'v3-shadow-compact-v1'),{legacyDir:path.join(root,'v3-shadow')});
   const timer=setInterval(()=>instance.advance().catch(()=>instance.counts.errors++),15000);timer.unref();}return instance;}
 function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,btcRegime,settings,signals,marketSnapshot}) {
   if(process.env.ORAYAN_V3_SHADOW_ENABLED==='false')return;
@@ -297,7 +331,7 @@ function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,b
       row.breadth={value:marketSnapshot?.directionalBreadth??null,momentum:marketSnapshot?.breadthMomentum??null,
         marketSnapshotId:marketSnapshot?.marketSnapshotId??null,availableAt:marketSnapshot?.observedAt??null};
       j.record(row,scanId,scanAt);
-    }catch(_){j.counts.errors++;}
+    }catch(e){if(e.reasonCode!=='V3_ARCHIVE_BUDGET_PAUSED')j.counts.errors++;}
   }
   observeProviders(j);
   j.lastScanErrors=j.counts.errors-errorsBefore;
@@ -305,4 +339,4 @@ function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,b
   j.advance().catch(()=>j.counts.errors++);
 }
 module.exports={VERSION,BENCHMARK,evaluate,ShadowJournal,observeProviders,observeScan,status:()=>({...journal().status(),lastScanErrors:journal().lastScanErrors??null}),
-  download:channel=>journal().export(channel||'v3')};
+  summary:()=>journal().summary(),download:channel=>journal().export(channel||'v3')};

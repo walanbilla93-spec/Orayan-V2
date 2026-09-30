@@ -8,6 +8,7 @@ const store = require('./store');
 const runtime = require('./runtimeIdentity');
 
 const SOURCES = [
+  ['v3-shadow-compact-v1', /^(v2|v3|ai|trades)-\d{4}-\d{2}-\d{2}-\d{2}-\d{5}\.jsonl\.gz$/],
   ['v3-shadow', /^(v2|v3|ai|trades)-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/],
   ['research-events-v1', /^events-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/],
   ['research-v2', /^(compact-\d{4}-\d{2}-\d{2}-\d{2}|births-\d{4}-\d{2}-\d{2}|outcomes-\d{4}-\d{2}-\d{2}|liquidations-\d{4}-\d{2}-\d{2}|coverage-\d{4}-\d{2}-\d{2})\.jsonl$/],
@@ -29,6 +30,15 @@ function plannedFiles() {
 }
 
 async function inspectFile(plan) {
+  if(plan.file.endsWith('.gz')) {
+    const {compressed,text}=compactBlock(plan.file),rows=text.trim()?text.trim().split('\n'):[];
+    let malformedRows=0,firstAt=null,lastAt=null;
+    for(const line of rows)try{const at=Number(JSON.parse(line).capturedAt);
+      if(Number.isFinite(at)){firstAt=firstAt===null?at:Math.min(firstAt,at);lastAt=lastAt===null?at:Math.max(lastAt,at);}}
+      catch(_){malformedRows++;}
+    return {path:plan.relativePath,bytes:compressed.length,rowCount:rows.length,malformedRows,firstAt,lastAt,
+      compression:'gzip',sha256:crypto.createHash('sha256').update(compressed).digest('hex')};
+  }
   const hash=crypto.createHash('sha256'),decoder=new StringDecoder('utf8');
   let carry='',rowCount=0,malformedRows=0,firstAt=null,lastAt=null;
   if (plan.size>0) for await (const chunk of fs.createReadStream(plan.file,{start:0,end:plan.size-1,highWaterMark:65536})) {
@@ -46,6 +56,8 @@ async function inspectFile(plan) {
 }
 
 async function visitJsonLines(plan,visit) {
+  if(plan.file.endsWith('.gz')){for(const line of compactBlock(plan.file).text.split('\n'))
+    if(line)try{visit(JSON.parse(line));}catch(_){}return;}
   if (!plan.size) return;
   const decoder=new StringDecoder('utf8');
   let carry='';
@@ -62,6 +74,15 @@ async function visitJsonLines(plan,visit) {
   if(carry)try{visit(JSON.parse(carry));}catch(_){/* see file malformedRows */}
 }
 
+function compactBlock(file) {
+  const fd=fs.openSync(file,'r');
+  try {
+    if(fs.fstatSync(fd).size>131072)throw Error('Compact gzip block exceeds bound');
+    const compressed=fs.readFileSync(fd);
+    return {compressed,text:require('zlib').gunzipSync(compressed,{maxOutputLength:65536}).toString('utf8')};
+  }finally{fs.closeSync(fd);}
+}
+
 function percentile(sorted,p) {
   return sorted.length ? sorted[Math.min(sorted.length-1,Math.floor((sorted.length-1)*p))] : null;
 }
@@ -74,7 +95,8 @@ async function buildResearchHealth(plan,watermarkAt) {
   const births=new Map(),flows=new Map(),boots=new Map(),scanAt=new Map(),seenEvents=new Set();
   const operationalTypes=new Map(),operationalReasons=new Map(),operationalEndpoints=new Map();
   let exactDuplicateEvents=0;
-  for (const item of plan) await visitJsonLines(item,row=>{
+  // Compact V3 has its own bounded summary; do not expand it into V2 health maps.
+  for (const item of plan.filter(p=>!p.relativePath.startsWith('v3-shadow-compact-v1/'))) await visitJsonLines(item,row=>{
     const at=Number(row.at??row.observedAt??row.capturedAt);
     if(Number.isFinite(at)&&at>watermarkAt)return;
     const eventId=row.eventId;

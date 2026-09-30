@@ -158,7 +158,8 @@ async function loadAlibabaShadowStatus() {
 async function loadV3Status() {
   try {
     const info=await api('/api/v3/status');
-    $('#v3Status').textContent=`${info.enabled?'Enabled':'Disabled'} · V3.3 shadow outcomes · V2 benchmark ${info.benchmarkCommit.slice(0,7)} · V3 observations ${info.counts.v3} · AI context ${info.counts.ai} · current capture errors ${info.lastScanErrors??'—'} / historical ${info.counts.errors} · archive ${fmtBytes(info.sizeBytes)}`;
+    const a=info.archive||{};
+    $('#v3Status').textContent=`${info.enabled?'Enabled':'Disabled'} · V3.3 compact cohort started ${fmtDate(info.startedAt)} · V3 observations ${info.counts.v3} · AI context ${info.counts.ai} · capture errors ${info.lastScanErrors??'—'} / historical ${info.counts.errors} · current archive ${fmtBytes(info.sizeBytes)} / ${fmtBytes(a.maxBytes||0)} · old evidence ${fmtBytes(info.legacySizeBytes||0)} preserved${a.capturePausedUntil?` · BUDGET PAUSE until ${fmtDate(a.capturePausedUntil)}`:''} · budget-skipped records ${a.budgetSkippedRecords||0}`;
     $('#btnExportV3').disabled=!info.available;
     const labels={NO_TREND:'No trend',V3_1:'Trend regime blocked',V3_3:'Geometry pending'};
     const readable=value=>String(value||'—').toLowerCase().replace(/_/g,' ');
@@ -868,6 +869,7 @@ function init() {
 
   const downloadFrom = (path) => { window.location.href = path; };
   $('#btnExportV3').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=v3'));
+  $('#btnExportV3Summary').addEventListener('click',()=>downloadFrom('/api/v3/summary'));
   $('#btnExportV3V2').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=v2'));
   $('#btnExportV3AI').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=ai'));
   $('#btnExportV3Trades').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=trades'));

@@ -3,6 +3,8 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('fs'),path=require('path'),os=require('os'),{execFileSync}=require('child_process');
 const {validateClosedCandles,confirmedPivots,trendPermission,positionSideTotals}=require('../lib/v3Contracts');
 const level=require('../lib/v3Levels');
+const zlib=require('zlib');
+const readRows=f=>zlib.gunzipSync(fs.readFileSync(f)).toString().trim().split('\n').filter(Boolean).map(JSON.parse);
 const {evaluate,ShadowJournal,BENCHMARK,observeProviders}=require('../lib/v3Shadow');
 const fork=require('../lib/signals_trend_v30');
 const root=path.resolve(__dirname,'../..'),ms=900000,origin=Date.now()-200*ms;
@@ -91,23 +93,23 @@ test('immutable birth/current clocks survive restart; same-bar scans dedupe and 
   j.record(row(at),'scan',at,at+5);j.record(row(at),'scan2',at,at+6);assert.equal(j.counts.v3,1);
   j.checkpointAndPrune(at);
   const restored=new ShadowJournal(dir);restored.record({...row(at+ms),closedBarOpenAt:at},'scan3',at+ms,at+ms+5);
-  const lines=restored.files('v3').flatMap(f=>fs.readFileSync(f.path,'utf8').trim().split('\n').map(JSON.parse));
+  const lines=restored.files('v3').flatMap(f=>readRows(f.path).filter(r=>r.outputType==='V3_SHADOW_SIGNAL'));
   assert.equal(lines[1].kind,'candidate_update');assert.equal(lines[1].firstBirthAt,at);
   assert.equal(lines[1].currentUpdateAt,at+ms);assert.equal(lines[1].capturedAt,at+ms+5);
   restored.record({...row(at+ms+1),configHash:'changed'},'scan4',at+ms+1,at+ms+6);
   assert.equal(restored.recent.at(-1).kind,'candidate_birth');
 });
 test('append failures do not advance birth state; checkpoint stays bounded',t=>{
-  const j=new ShadowJournal(sandbox(t));const original=j.append.bind(j);
-  j.append=()=>{throw Error('disk full');};assert.throws(()=>j.record(row(),'scan',Date.now()));assert.equal(j.index.size,0);
-  j.append=original;
+  const j=new ShadowJournal(sandbox(t));const original=j.appendBatch.bind(j);
+  j.appendBatch=()=>{throw Error('disk full');};assert.throws(()=>j.record(row(),'scan',Date.now()));assert.equal(j.index.size,0);
+  j.appendBatch=original;
   for(let i=0;i<1200;i++)j.record({...row(),symbol:'S'+i},'stress',Date.now());
   assert.equal(j.index.size,512);assert.equal(j.recent.length,24);
   j.checkpointAndPrune();assert.ok(fs.statSync(j.checkpoint).size<1024*1024);
 });
 test('exports use fixed file watermarks; only V3 files are selected; invalid channel rejected',t=>{
   const j=new ShadowJournal(sandbox(t));j.record(row(),'scan',Date.now());
-  const r=j.export('v3');assert.equal(r.__files,true);assert.ok(r.files.every(f=>path.basename(f.path).startsWith('v3-')));
+  const r=j.export('v3');assert.equal(r.__files,true);assert.ok(j.files('v3').every(f=>path.basename(f.path).startsWith('v3-')));assert.ok(r.filename.endsWith('.jsonl.gz'));t.after(r.cleanup);
   const initial=r.files[0].size;j.record(row(Date.now()+ms),'scan2',Date.now());
   assert.equal(r.files[0].size,initial);assert.throws(()=>j.export('../secrets'));
 });
@@ -118,7 +120,7 @@ test('AI annotations read incrementally, redact secrets, and never become determ
   fs.appendFileSync(file,JSON.stringify({record_type:'SHADOW_DECISION',candidate_id:'v2-test',model:'qwen',status:'OK',
     available_to_system_at_utc:new Date().toISOString(),decision:{decision:'RETAIN',rationale_short:'test-private-key-12345'}})+'\n');
   j.observeAI('Alibaba',file);j.observeAI('Alibaba',file);
-  assert.equal(j.counts.ai,1);const text=fs.readFileSync(j.files('ai')[0].path,'utf8'),r=JSON.parse(text);
+  assert.equal(j.counts.ai,1);const text=zlib.gunzipSync(fs.readFileSync(j.files('ai')[0].path)).toString(),r=JSON.parse(text);
   assert.equal(text.includes('test-private-key-12345'),false);assert.equal(r.agreedWithV2,true);
   assert.equal(r.agreedWithV3,false);assert.equal(r.executionAuthority,false);
   assert.ok(r.processBootId);assert.equal(r.implementationHash.length,64);

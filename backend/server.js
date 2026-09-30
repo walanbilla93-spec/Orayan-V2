@@ -118,12 +118,14 @@ const server = http.createServer(async (req, res) => {
           'Access-Control-Allow-Origin': '*',
           ...(result.headers || {}),
         });
-        for (const item of result.files) {
-          const file=typeof item==='string'?{path:item,size:fs.statSync(item).size}:item;
-          if (!file.size) continue;
-          await pipeline(fs.createReadStream(file.path,{start:0,end:file.size-1}), res, {end:false});
-        }
-        return res.end();
+        try {
+          for (const item of result.files) {
+            const file=typeof item==='string'?{path:item,size:fs.statSync(item).size}:item;
+            if (!file.size) continue;
+            await pipeline(fs.createReadStream(file.path,{start:0,end:file.size-1}), res, {end:false});
+          }
+          return res.end();
+        } finally { result.cleanup?.(); }
       }
 
       // Routes that need to return a downloadable file (journal export) signal it with this
