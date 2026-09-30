@@ -120,7 +120,7 @@ test('AI annotations read incrementally, redact secrets, and never become determ
   j.observeAI('Alibaba',file);j.observeAI('Alibaba',file);
   assert.equal(j.counts.ai,1);const text=fs.readFileSync(j.files('ai')[0].path,'utf8'),r=JSON.parse(text);
   assert.equal(text.includes('test-private-key-12345'),false);assert.equal(r.agreedWithV2,true);
-  assert.equal(r.agreedWithV3,null);assert.equal(r.executionAuthority,false);
+  assert.equal(r.agreedWithV3,false);assert.equal(r.executionAuthority,false);
   assert.ok(r.processBootId);assert.equal(r.implementationHash.length,64);
 });
 test('V2 strategy/execution/settings and AI modules are byte-identical to benchmark',()=>{

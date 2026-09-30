@@ -8,7 +8,7 @@ const store = require('./store');
 const runtime = require('./runtimeIdentity');
 
 const SOURCES = [
-  ['v3-shadow', /^(v2|v3|ai)-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/],
+  ['v3-shadow', /^(v2|v3|ai|trades)-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/],
   ['research-events-v1', /^events-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/],
   ['research-v2', /^(compact-\d{4}-\d{2}-\d{2}-\d{2}|births-\d{4}-\d{2}-\d{2}|outcomes-\d{4}-\d{2}-\d{2}|liquidations-\d{4}-\d{2}-\d{2}|coverage-\d{4}-\d{2}-\d{2})\.jsonl$/],
   ['research-supplement-v1', /^supplement-\d{4}-\d{2}-\d{2}-\d{2}\.jsonl$/],
