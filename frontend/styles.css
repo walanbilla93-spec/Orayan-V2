@@ -320,6 +320,18 @@ body::before {
 
 .rows { width: 100%; }
 
+/* The V3 research table stays separate from the trading row layouts. */
+.view[data-view="v3"] .panel-head { padding: 16px; display: flex; align-items: center; gap: 16px; }
+.view[data-view="v3"] .panel-head h2 { margin: 0; }
+.view[data-view="v3"] .panel-sub { padding: 0 16px 12px; }
+.view[data-view="v3"] #v3Status { margin: 0; padding: 0 16px 16px; font-family: var(--mono); font-size: 12px; }
+.view[data-view="v3"] .research-download { padding: 12px 16px; justify-content: flex-start; gap: 12px; }
+.v3-table-wrap { overflow: auto; max-height: 520px; }
+.v3-table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+.v3-table th, .v3-table td { padding: 12px 16px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line-soft); }
+.v3-table th { position: sticky; top: 0; background: var(--panel-2); color: var(--text-faint); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.v3-table tbody tr:hover { background: var(--panel-2); }
+
 .row {
   display: grid;
   gap: 12px;
