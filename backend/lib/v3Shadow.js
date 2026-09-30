@@ -17,6 +17,19 @@ const hash=value=>crypto.createHash('sha256').update(JSON.stringify(stable(value
 function plan(signal) {return signal?{candidateId:signal.id,side:signal.side,entry:signal.entry,sl:signal.sl,tp:signal.tp,
   score:signal.score,rr:signal.rr,passed:signal.gates?.passed??null,failed:signal.gates?.failed||[]}:null;}
 
+function observeProviders(j,exporters=[['Groq',require('./groqShadowExport')],['Alibaba',require('./alibabaShadowExport')]]) {
+  for(const [provider,exporter] of exporters) {
+    try {
+      // Use the public path contract, not either exporter's test-only inspect helper.
+      const {root,candidate}=exporter.ledgerPath();
+      if(!fs.existsSync(candidate)){j.observeAI(provider,null);continue;}
+      const relative=path.relative(fs.realpathSync(root),fs.realpathSync(candidate));
+      if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw Error('AI_LEDGER_OUTSIDE_DATA_ROOT');
+      j.observeAI(provider,candidate);
+    }catch(_){j.counts.errors++;}
+  }
+}
+
 function evaluate({symbol,candles,ticker,btcRegime,settings,decisionAt,v2Signals=[]}) {
   const intervalMs=Number(settings.timeframe)*60000;
   const inputError=validateClosedCandles(candles,intervalMs,decisionAt);
@@ -163,6 +176,7 @@ function journal(){return instance||(instance=new ShadowJournal(path.join(requir
 function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,btcRegime,settings,signals,marketSnapshot}) {
   if(process.env.ORAYAN_V3_SHADOW_ENABLED==='false')return;
   const j=journal();
+  const errorsBefore=j.counts.errors;
   for(const [symbol,candles] of candlesBySymbol) {
     try {
       const row=evaluate({symbol,candles,ticker:tickerBySymbol.get(symbol),btcRegime,settings,decisionAt:Date.now(),
@@ -174,10 +188,9 @@ function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,btcRegime,set
       j.record(row,scanId,scanAt);
     }catch(_){j.counts.errors++;}
   }
-  for(const [provider,name] of [['Groq','groqShadowExport'],['Alibaba','alibabaShadowExport']]) {
-    try{j.observeAI(provider,require('./'+name).inspect()?.path);}catch(_){j.counts.errors++;}
-  }
+  observeProviders(j);
+  j.lastScanErrors=j.counts.errors-errorsBefore;
   j.checkpointAndPrune();
 }
-module.exports={VERSION,BENCHMARK,evaluate,ShadowJournal,observeScan,status:()=>journal().status(),
+module.exports={VERSION,BENCHMARK,evaluate,ShadowJournal,observeProviders,observeScan,status:()=>({...journal().status(),lastScanErrors:journal().lastScanErrors??null}),
   download:channel=>journal().export(channel||'v3')};

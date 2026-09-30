@@ -158,7 +158,7 @@ async function loadAlibabaShadowStatus() {
 async function loadV3Status() {
   try {
     const info=await api('/api/v3/status');
-    $('#v3Status').textContent=`${info.enabled?'Capturing':'Disabled'} · ${info.stage} · V2 benchmark ${info.benchmarkCommit.slice(0,7)} · V3 rows ${info.counts.v3} · AI rows ${info.counts.ai} · capture errors ${info.counts.errors} · archive ${fmtBytes(info.sizeBytes)}`;
+    $('#v3Status').textContent=`${info.enabled?'Enabled':'Disabled'} · ${info.stage} · V2 benchmark ${info.benchmarkCommit.slice(0,7)} · V3 rows ${info.counts.v3} · AI rows ${info.counts.ai} · errors last scan ${info.lastScanErrors??'—'} / total ${info.counts.errors} · archive ${fmtBytes(info.sizeBytes)}`;
     $('#btnExportV3').disabled=!info.available;
     $('#v3Rows').innerHTML=info.recent.slice().reverse().map(r=>`<tr><td>${esc(fmtDate(r.decisionAt))}</td><td>${esc(r.symbol)}</td><td>${esc(r.side||'—')}</td><td>${esc(r.regime)}</td><td>${esc(r.levelType||'—')}</td><td>${esc(r.reaction||'—')}</td><td>${esc(r.premiumDiscount||'—')}</td><td>${esc(r.rejectReason)}</td></tr>`).join('')||'<tr><td colspan="8">No V3 observations captured yet.</td></tr>';
   }catch(e){$('#v3Status').textContent=`V3 data unavailable: ${e.message}`;}

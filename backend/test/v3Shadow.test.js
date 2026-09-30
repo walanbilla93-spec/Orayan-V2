@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('fs'),path=require('path'),os=require('os'),{execFileSync}=require('child_process');
 const {validateClosedCandles,confirmedPivots,trendPermission,positionSideTotals}=require('../lib/v3Contracts');
 const level=require('../lib/v3Levels');
-const {evaluate,ShadowJournal,BENCHMARK}=require('../lib/v3Shadow');
+const {evaluate,ShadowJournal,BENCHMARK,observeProviders}=require('../lib/v3Shadow');
 const fork=require('../lib/signals_trend_v30');
 const root=path.resolve(__dirname,'../..'),ms=900000,origin=Date.now()-200*ms;
 function candles(count=100){return Array.from({length:count},(_,i)=>({ts:origin+i*ms,open:100+i*.15,
@@ -133,6 +133,22 @@ test('V2 strategy/execution/settings and AI modules are byte-identical to benchm
   const current=fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8').replace(/\r\n/g,'\n')
     .replace("const v3Shadow = require('./v3Shadow');\n",'').replace(/    \/\/ V3_BEGIN:[\s\S]*?    \/\/ V3_END:[^\n]*\n/,'');
   assert.equal(current,frozen);
+});
+
+test('provider observer uses public exporter contract and captures both providers without requests',t=>{
+  const dir=sandbox(t),j=new ShadowJournal(path.join(dir,'v3'));
+  const exporters=['Groq','Alibaba'].map(provider=>{
+    const candidate=path.join(dir,provider+'.jsonl');fs.writeFileSync(candidate,'');
+    return [provider,{ledgerPath:()=>({root:dir,candidate})}];
+  });
+  observeProviders(j,exporters);
+  for(const [provider,exporter] of exporters)fs.appendFileSync(exporter.ledgerPath().candidate,
+    JSON.stringify({record_type:'SHADOW_DECISION',candidate_id:'test',status:'LOCAL_ABSTAIN',model:provider,
+      decision:{decision:'ABSTAIN'}})+'\n');
+  observeProviders(j,exporters);assert.equal(j.counts.errors,0);assert.equal(j.counts.ai,2);
+  const before=j.counts.errors;
+  // The real production modules expose ledgerPath, not a public inspect method.
+  observeProviders(j);assert.equal(j.counts.errors,before);
 });
 test('V5 forward-label clock excludes path minutes before physical capture',()=>{
   const capture=require('../lib/researchCapture');
