@@ -184,3 +184,11 @@ test('frontend syntax, measurement buttons and all download channels have server
     assert.equal(a.summary().control.executionAllowed,false);assert.ok(JSON.stringify(a.summary()).length<65536);
   }finally{fs.rmSync(a.dir,{recursive:true,force:true});}
 });
+test('compact control definitions retain complete parity proof through immutable references',()=>{
+  const {compact}=require('../lib/v3Compact'),control=require('../lib/v34Control');
+  const out=compact({control:{...control,configHash:'config',benchmarkConfigMatch:true}});
+  assert.equal(out.row.control.configHash,'config');
+  const d=out.definitions.find(x=>x.outputType==='V3_CONTROL_DEFINITION');
+  assert.equal(out.row.control.definitionId,d.definitionId);
+  assert.deepEqual(d.definition,control);
+});

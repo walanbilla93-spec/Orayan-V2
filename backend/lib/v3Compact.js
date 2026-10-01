@@ -25,6 +25,12 @@ function geometry(g) {
 }
 function compact(row) {
   const r={...row,captureSchema:SCHEMA},definitions=[];
+  if(r.control){
+    const {configHash,benchmarkConfigMatch,...definition}=r.control;
+    const definitionId=id(definition);
+    definitions.push({outputType:'V3_CONTROL_DEFINITION',definitionId,definition});
+    r.control={definitionId,configHash,benchmarkConfigMatch};
+  }
   const remember=l=>{if(l){const d=definition(l);definitions.push({definitionId:id(d),definition:d});}};
   const measurement=x=>{
     if(!x)return x;
