@@ -1,9 +1,9 @@
 'use strict';
 const fs=require('fs'),path=require('path'),zlib=require('zlib'),crypto=require('crypto');
 const {compact,SCHEMA}=require('./v3Compact');
-const HOUR=3600000,MIN_RETAIN=30*HOUR,MAX_BYTES=24*1048576,HOUR_BYTES=768*1024;
+const HOUR=3600000,MIN_RETAIN=30*HOUR,MAX_BYTES=40*1048576,HOUR_BYTES=1280*1024;
 const BLOCK_BYTES=65536,ROW_BYTES=8192,TRADE_ROW_BYTES=32768;
-const FILE=/^(v2|v3|ai|trades)-(\d{4}-\d{2}-\d{2}-\d{2})-(\d{5})\.jsonl\.gz$/;
+const FILE=/^(v2|v3|ai|trades|errors|paths)-(\d{4}-\d{2}-\d{2}-\d{2})-(\d{5})\.jsonl\.gz$/;
 const hourOf=at=>new Date(at).toISOString().slice(0,13).replace('T','-');
 const hourAt=hour=>Date.parse(hour.slice(0,10)+'T'+hour.slice(11)+':00:00Z');
 class Archive {
@@ -38,7 +38,7 @@ class Archive {
     const now=Math.max(...entries.map(e=>e.row.capturedAt));this.prune(now);
     const groups=new Map(),newDefinitions=[];
     for(const {channel,row} of entries) {
-      if(!['v2','v3','ai','trades'].includes(channel))throw Error('INVALID_ARCHIVE_CHANNEL');
+      if(!['v2','v3','ai','trades','errors','paths'].includes(channel))throw Error('INVALID_ARCHIVE_CHANNEL');
       const hour=hourOf(row.capturedAt),key=channel+':'+hour;
       const c=compact(row),lines=groups.get(key)||[];
       for(const d of c.definitions) {
@@ -48,7 +48,7 @@ class Archive {
         newDefinitions.push(definitionKey);
       }
       const line=JSON.stringify(c.row)+'\n';
-      if(Buffer.byteLength(line)>(channel==='trades'?TRADE_ROW_BYTES:ROW_BYTES))throw Error('COMPACT_ROW_TOO_LARGE');
+      if(Buffer.byteLength(line)>(['trades','paths'].includes(channel)?TRADE_ROW_BYTES:ROW_BYTES))throw Error('COMPACT_ROW_TOO_LARGE');
       lines.push(line);groups.set(key,lines);
     }
     const changes=[],hourDeltas=new Map();let delta=0;
@@ -86,7 +86,7 @@ class Archive {
     if(this.pausedUntil && now>=this.pausedUntil)this.pausedUntil=null;
     for(const {channel,row} of entries) {
       const h=hourOf(row.capturedAt),stats=this.summaryHours[h]||(this.summaryHours[h]={v3:0,v2:0,ai:0,trades:0,accepted:0,rejected:0});
-      stats[channel]++;if(channel==='v3')stats[row.v3Decision==='ACCEPT_SHADOW'?'accepted':'rejected']++;
+      stats[channel]=(stats[channel]||0)+1;if(channel==='v3')stats[row.v3Decision==='ACCEPT_SHADOW'?'accepted':'rejected']++;
     }
   }
   list(channel){return [...this.files.values()].filter(f=>f.channel===channel).sort((a,b)=>a.path.localeCompare(b.path));}

@@ -239,4 +239,9 @@ async function resolveDue(limit=8) {
     }
   } finally {resolving=false;}
 }
-module.exports={VERSION,STOP_VERSION,observeStructure,observeStop,resolveDue,files,prune,structureLabel,stopLabel};
+module.exports={VERSION,STOP_VERSION,observeStructure,observeStop,resolveDue,files,prune,structureLabel,stopLabel,
+  causalEvents:(symbol,at)=>[...pendingStructure.values()].filter(r=>r.symbol===symbol&&r.at<=at&&r.breakTs<=at)
+    .map(r=>({eventId:r.eventId,type:r.structureType,direction:r.side,breakPrice:r.breakLevel,
+      displacementAtr:r.displacementATR,displacementDefinition:'EXISTING_EVENT_BODY_OVER_EVENT_ATR14',
+      displacementPct:100*Math.abs(r.breakClose-r.breakLevel)/r.breakLevel,knownAt:r.breakTs,confirmedAt:r.breakTs,
+      receivedAt:r.at,source:'EXISTING_STRUCTURE_EVENT_LEDGER'}))};
