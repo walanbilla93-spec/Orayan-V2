@@ -105,6 +105,14 @@ function compact(row) {
       }else r.trade.research34=research34;
     }
   }
+  // Dense observer provenance must not displace a control candidate under the 8 KiB cap.
+  // Preserve the complete compact measurement in a causal immutable definition.
+  if(r.measurement34&&Buffer.byteLength(JSON.stringify(r))+1>8192){
+    const definition={kind:'FULL_DECISION_MEASUREMENT',measurement34:r.measurement34};
+    const definitionId=id(definition);
+    definitions.push({outputType:'V3_MEASUREMENT_DEFINITION',definitionId,definition});
+    r.measurement34={definitionId};
+  }
   return {row:r,definitions:[...new Map(definitions.map(d=>[d.definitionId,d])).values()]};
 }
 module.exports={SCHEMA,compact,definition,state};

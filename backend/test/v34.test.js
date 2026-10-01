@@ -192,3 +192,13 @@ test('compact control definitions retain complete parity proof through immutable
   assert.equal(out.row.control.definitionId,d.definitionId);
   assert.deepEqual(d.definition,control);
 });
+test('dense decision measurements fit candidate cap without discarding provenance',()=>{
+  const {compact}=require('../lib/v3Compact');
+  const measurement34={observers:{groq:{status:'AVAILABLE',promptVersion:'v'.repeat(9000)}},capturedAt:at};
+  const out=compact({outputType:'V3_SHADOW_SIGNAL',symbol:'DENSE',measurement34});
+  assert.ok(Buffer.byteLength(JSON.stringify(out.row))+1<=8192);
+  const d=out.definitions.find(x=>x.definitionId===out.row.measurement34.definitionId);
+  assert.equal(d.definition.kind,'FULL_DECISION_MEASUREMENT');
+  assert.equal(d.definition.measurement34.observers.groq.promptVersion,measurement34.observers.groq.promptVersion);
+  assert.equal(d.definition.measurement34.capturedAt,at);
+});
