@@ -197,6 +197,8 @@ const routes = {
   },
 
   'GET /api/journal/research/prospective/export': async ({ query }) => {
+    if(query.compressed==='1'||query.sinceAt!==undefined)return require('../lib/prospectiveCompactMaintenance').current()
+      .download({sinceAt:Number(query.sinceAt||0),gzip:query.compressed==='1'});
     const date = query.date || 'all';
     const raw = query.raw === '1';
     const files = researchCapture.exportFiles(date,raw);
@@ -204,6 +206,9 @@ const routes = {
     return { __files:true, ...plan, contentType:'application/x-ndjson; charset=utf-8',
       filename:`orayan2_${raw ? 'legacy_research_diagnostics' : 'prospective_compact_v4'}_${date}.jsonl` };
   },
+
+  'GET /api/journal/research/prospective/status':async()=>require('../lib/prospectiveCompactMaintenance').current().status(),
+  'POST /api/journal/research/prospective/reset':async({body})=>require('../lib/prospectiveCompactMaintenance').current().reset(body),
 
   'GET /api/journal/research/supplement/export': async ({ query }) => {
     const supplement=require('../lib/researchSupplement');

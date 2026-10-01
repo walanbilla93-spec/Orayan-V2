@@ -6,6 +6,9 @@ const {validateClosedCandles,trendPermission}=require('./v3Contracts');
 const levels=require('./v3Levels');
 const geometry=require('./v3Geometry');
 const trades=require('./v3Trades');
+const m34=require('./v34Measurements'),t34=require('./v34Trades'),control34=require('./v34Control');
+const {MeasurementCache}=require('./v34Cache');
+const minuteCache=new MeasurementCache();
 const {Archive,ROW_BYTES,TRADE_ROW_BYTES}=require('./v3Archive');
 const corrected=require('./signals_trend_v30');
 const location=require('./locationResearch');
@@ -18,7 +21,7 @@ const MAX_KEYS=512,MAX_RECENT=24,MAX_ROW_BYTES=65536;
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?
   Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
 const hash=value=>crypto.createHash('sha256').update(JSON.stringify(stable(value))).digest('hex').slice(0,24);
-const implementationHash=crypto.createHash('sha256').update(['v3Shadow.js','v3Contracts.js','v3Levels.js','v3Geometry.js','v3Trades.js','v3Compact.js','v3Archive.js','signals_trend_v30.js']
+const implementationHash=crypto.createHash('sha256').update(['v3Shadow.js','v3Contracts.js','v3Levels.js','v3Geometry.js','v3Trades.js','v3Compact.js','v3Archive.js','signals_trend_v30.js','v34Measurements.js','v34Trades.js','v34Cache.js','v34Control.js']
   .map(file=>fs.readFileSync(path.join(__dirname,file),'utf8').replace(/\r\n/g,'\n')).join('\n')).digest('hex');
 function plan(signal) {return signal?{candidateId:signal.id,side:signal.side,entry:signal.entry,sl:signal.sl,tp:signal.tp,
   score:signal.score,rr:signal.rr,passed:signal.gates?.passed??null,failed:signal.gates?.failed||[]}:null;}
@@ -32,7 +35,7 @@ function observeProviders(j,exporters=[['Groq',require('./groqShadowExport')],['
       const relative=path.relative(fs.realpathSync(root),fs.realpathSync(candidate));
       if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw Error('AI_LEDGER_OUTSIDE_DATA_ROOT');
       j.observeAI(provider,candidate);
-    }catch(_){j.counts.errors++;}
+    }catch(e){j.captureError(e,{subsystem:'AI_LEDGER',affectedRecordType:'AI_RESEARCH_CONTEXT',retry:'NEXT_SCAN'});}
   }
 }
 
@@ -86,6 +89,10 @@ class ShadowJournal {
   constructor(dir,{legacyDir=null}={}) {
     this.dir=dir;this.checkpoint=path.join(dir,'checkpoint.json');this.index=new Map();this.recent=[];
     this.counts={v2:0,v3:0,ai:0,trades:0,errors:0};this.aiOffsets={};this.lastPrune=0;
+    this.errorRecent=[];this.errorClasses={};this.episodes={births:0,admitted:0};this.measurementCounts={decisions:0,noiseAvailable:0,quoteAvailable:0};
+    this.observers=new Map();
+    this.measurementStartedAt=Date.now();this.measurementTradeCounts={admitted:0,filled:0,closed:0,uniqueFilledEpisodes:0};
+    this.filledEpisodes=new Map();
     this.activeTrades=new Map();this.recentTrades=[];this.tradeCounts={admitted:0,filled:0,closed:0,cancelled:0,expired:0,incomplete:0};
     this.tradePollAt=0;this.tradeWorkerBusy=false;this.lastTradeError=null;
     fs.mkdirSync(dir,{recursive:true});
@@ -113,6 +120,11 @@ class ShadowJournal {
         this.recentTrades=(saved.recentTrades||[]).slice(-trades.MAX_RECENT);this.tradeCounts={...this.tradeCounts,...saved.tradeCounts};
         this.startedAt=saved.startedAt??this.startedAt;this.captureCohort=saved.captureCohort??this.captureCohort;
         this.archive.restore(saved.archive);
+        this.errorRecent=(saved.errorRecent||[]).slice(-16);this.errorClasses=saved.errorClasses||{};
+        this.episodes=saved.episodes||this.episodes;this.measurementCounts=saved.measurementCounts||this.measurementCounts;
+        this.measurementStartedAt=saved.measurementStartedAt??this.measurementStartedAt;
+        this.measurementTradeCounts=saved.measurementTradeCounts||this.measurementTradeCounts;
+        this.filledEpisodes=new Map((saved.filledEpisodes||[]).slice(-512));
       }catch(_){this.counts.errors++;}
     }
     this.saveCheckpoint();
@@ -123,7 +135,24 @@ class ShadowJournal {
   appendBatch(entries) {
     this.archive.write(entries.map(({channel,row})=>({channel,
       row:redact({...runtime.rowFields(),implementationHash,captureCohort:this.captureCohort,...row})})));
-    for(const {channel} of entries)this.counts[channel]++;
+    for(const {channel} of entries){const key=channel==='errors'?'errorRecords':channel;this.counts[key]=(this.counts[key]||0)+1;}
+  }
+  captureError(error,context={}) {
+    const allowed=['V3_ARCHIVE_BUDGET_PAUSED','COMPACT_ROW_TOO_LARGE','SHADOW_CHECKPOINT_CAPACITY','INVALID_PATH_RESPONSE',
+      'FUNDING_COVERAGE_UNAVAILABLE','INVALID_FUNDING_RESPONSE','DUPLICATE_FUNDING_RESPONSE','AI_LEDGER_OUTSIDE_DATA_ROOT',
+      'RESEARCH_QUEUE_CAPACITY','RATE_LIMIT_10006','COOLDOWN_ACTIVE','PARSE_ERROR','TIMEOUT','HTTP_ERROR','ENOSPC','EACCES',
+      'AI_JSON_INVALID','AI_ROW_TOO_LARGE','MEASUREMENT_FAILED','CHECKPOINT_UNREADABLE'];
+    const proposed=error.reasonCode||error.code||error.message;
+    const code=allowed.includes(proposed)?proposed:'UNCLASSIFIED_CAPTURE_ERROR';
+    // Never export raw exception messages, request URLs, headers or provider responses.
+    const row={outputType:'V3_CAPTURE_ERROR',capturedAt:Date.now(),timestamp:Date.now(),
+      symbol:context.symbol??null,candidateId:context.candidateId??null,episodeId:context.episodeId??null,
+      subsystem:context.subsystem||'SHADOW_CAPTURE',errorCode:code,messageClass:['Error','TypeError','RangeError','SyntaxError','AbortError'].includes(error.name)?error.name:'Error',
+      retry:context.retry||'NEXT_SCAN',skip:context.skip??false,affectedRecordType:context.affectedRecordType||'UNKNOWN',
+      completenessImpacted:true,eventId:hash([Date.now(),code,context.symbol])};
+    this.counts.errors++;this.errorClasses[code]=(this.errorClasses[code]||0)+1;
+    this.errorRecent.push(row);if(this.errorRecent.length>16)this.errorRecent.shift();
+    try{this.append('errors',row);}catch(_){/* checkpoint keeps bounded fallback under disk/budget failure */}
   }
   record(row,scanId,scanStartedAt,capturedAt=Date.now()) {
     const key=[row.configHash,row.symbol,row.side||'WATCH'].join('|');
@@ -150,17 +179,45 @@ class ShadowJournal {
       candidateId:hash([episodeId,row.decisionAt,signature]),episodeId,firstBirthAt,currentUpdateAt:row.decisionAt,
       episodeAgeMs:row.decisionAt-firstBirthAt,scanId,scanStartedAt,capturedAt,
       captureLagMs:capturedAt-row.decisionAt,signature};
+    record.control={...control34,configHash:row.configHash,benchmarkConfigMatch:row.benchmarkConfigMatch};
+    record.episodeAdmissionOrdinal=(continuing?previous.admissions||0:0)+(row.v3Decision==='ACCEPT_SHADOW'?1:0);
+    if(record.measurement34) {
+      for(const provider of ['Groq','Alibaba']) {
+        const observer=this.observers.get(provider+':'+episodeId);
+        if(observer)record.measurement34.observers[provider]=m34.observer(observer.row,provider,observer.capturedAt,row.decisionAt);
+      }
+    }
     const writes=[{channel:'v3',row:record},{channel:'v2',row:{version:VERSION,outputType:'V2_SIGNAL',benchmarkCommit:BENCHMARK,symbol:row.symbol,
       configHash:row.configHash,scanId,decisionAt:row.decisionAt,capturedAt,v3CandidateId:record.candidateId,
       decision:row.v2Decision.length?'CANDIDATE':'NO_NATIVE_CANDIDATE',plans:row.v2Decision}}];
     let trade;
     if(row.v3Decision==='ACCEPT_SHADOW') {
       trade={...trades.create(record,setupId,capturedAt),originCaptureCohort:this.captureCohort};
+      trade.controlFingerprint=control34.fingerprint;trade.episodeAdmissionOrdinal=record.episodeAdmissionOrdinal;
+      if(record.measurement34)trade.research34=t34.init(trade,record.measurement34);
       writes.push({channel:'trades',row:this.tradeRow(trade,['ADMITTED'],capturedAt)});
     }
     this.appendBatch(writes);
+    // Post-fill levels are observations only; their prices never become executable stops.
+    for(const t of this.activeTrades.values())if(t.symbol===row.symbol&&t.side===row.side&&t.status==='OPEN'&&t.research34) {
+      const from=t.research34.defendedCursorAt??t.filledAt;
+      const fresh=(row.research?.levels||[]).filter(l=>l.active&&l.direction===t.side&&l.knownAt>from&&l.knownAt<=row.closedBarOpenAt);
+      if(fresh.length){const levels=fresh.slice(-8).map(l=>({id:l.id,type:l.type,price:l.price,zoneLow:l.zoneLow,zoneHigh:l.zoneHigh,
+        invalidationPrice:l.invalidationPrice,knownAt:l.knownAt,receivedAt:capturedAt}));
+        try{this.append('paths',{outputType:'V3_DEFENDED_LEVEL_EVENTS',capturedAt,tradeId:t.tradeId,episodeId:t.episodeId,
+          eventId:hash([t.tradeId,levels.map(l=>l.id)]),levels,researchOnly:true});
+          t.research34.defendedLevels=[...(t.research34.defendedLevels||[]),...levels].slice(-8);
+          t.research34.defendedCursorAt=Math.max(...fresh.map(l=>l.knownAt));
+        }catch(e){this.captureError(e,{symbol:row.symbol,subsystem:'DEFENDED_LEVELS',affectedRecordType:'management_replay'});}
+      }
+    }
+    if(!continuing)this.episodes.births++;
+    if(trade&&record.episodeAdmissionOrdinal===1)this.episodes.admitted++;
+    if(record.measurement34){this.measurementCounts.decisions++;if(record.measurement34.noise.returns20)this.measurementCounts.noiseAvailable++;
+      if(record.measurement34.quote.status==='AVAILABLE')this.measurementCounts.quoteAvailable++;}
     if(trade) {
       this.activeTrades.set(setupId,trade);this.tradeCounts.admitted++;
+      if(trade.research34)this.measurementTradeCounts.admitted++;
       this.saveCheckpoint(); // Persist admissions before any asynchronous path reads.
     }
     const currentLinks=row.v2Decision.map(p=>({candidateId:p.candidateId,passed:p.passed,decisionAt:row.decisionAt,
@@ -168,6 +225,7 @@ class ShadowJournal {
     const birthLinks=continuing?(previous.birthLinks||[]):currentLinks;
     this.index.delete(key);this.index.set(key,{signature,firstBirthAt,episodeId,lastSeenAt:row.decisionAt,
       birthLinks,currentLinks,v3Decision:row.v3Decision,
+      admissions:record.episodeAdmissionOrdinal,
       lastAdmittedSetup:row.v3Decision==='ACCEPT_SHADOW'?setupId:previous?.lastAdmittedSetup??null});
     while(this.index.size>MAX_KEYS)this.index.delete(this.index.keys().next().value);
     this.recent.push({candidateId:record.candidateId,symbol:row.symbol,side:row.side,regime:row.regime,
@@ -183,7 +241,7 @@ class ShadowJournal {
     this.archive.prune(now);
   }
   files(channel='v3') {
-    if(!['v2','v3','ai','trades'].includes(channel))throw Object.assign(Error('Invalid V3 export channel'),{statusCode:400});
+    if(!['v2','v3','ai','trades','errors','paths'].includes(channel))throw Object.assign(Error('Invalid V3 export channel'),{statusCode:400});
     return this.archive.list(channel).map(f=>({path:f.path,size:f.size}));
   }
   export(channel) {
@@ -203,12 +261,27 @@ class ShadowJournal {
         status:t.status,outcome:t.outcome,decisionAt:t.decisionAt,filledAt:t.filledAt,closedAt:t.closedAt,entryPrice:t.entryPrice,
         exitPrice:t.exitPrice,quantity:t.quantity,netPnl:t.netPnl??null,netPnlBeforeFunding:t.netPnlBeforeFunding??null,
         realizedR:t.realizedR??null,ambiguous:t.ambiguous,fundingStatus:t.fundingStatus,lastBarAt:t.lastBarAt})),
-      lastTradeError:this.lastTradeError,tradeWorkerBusy:this.tradeWorkerBusy};
+      lastTradeError:this.lastTradeError,tradeWorkerBusy:this.tradeWorkerBusy,
+      control:control34,measurementVersion:m34.VERSION,episodes:this.episodes,measurementCounts:this.measurementCounts,
+      measurementStartedAt:this.measurementStartedAt,measurementTradeCounts:this.measurementTradeCounts,
+      captureErrors:{classes:this.errorClasses,recent:this.errorRecent,legacyUnexportedCount:this.counts.errors-Object.values(this.errorClasses).reduce((s,n)=>s+n,0)},
+      measurementTrades:[...this.activeTrades.values(),...this.recentTrades].map(t=>({tradeId:t.tradeId,episodeId:t.episodeId,
+        symbol:t.symbol,side:t.side,admissionOrdinal:t.episodeAdmissionOrdinal??null,status:t.status,
+        stop:t.research34?.fill?.stop??t.research34?.decision?.stop??null,
+        intendedRR:t.geometry?.rawRR??null,fillRR:t.fillEconomics?.rawRR??null,objective:t.geometry?.objectivePrice??null,
+        nearestArm:t.research34?.nearestArm?{status:t.research34.nearestArm.status,objective:t.research34.nearestArm.trade?.geometry?.objectivePrice,
+          identicalToControl:t.research34.nearestArm.identicalToControl,outcome:t.research34.nearestArm.outcome,netR:t.research34.nearestArm.netR??null}:null,
+        rawTouches:t.research34?.rawTouches??{},mfeAt:t.research34?.mfeAt??null,maeAt:t.research34?.maeAt??null,
+        premiumDiscount:t.research34?.decision?.premiumDiscount?.directionRelative??null,
+        level:t.geometry?.reactionLevel?.type??null,reaction:t.geometry?.reactionLevel?.reaction?.type??null}))};
   }
   saveCheckpoint() {
     const text=JSON.stringify({index:[...this.index],counts:this.counts,aiOffsets:this.aiOffsets,
       activeTrades:[...this.activeTrades],recentTrades:this.recentTrades,tradeCounts:this.tradeCounts,
-      startedAt:this.startedAt,captureCohort:this.captureCohort,archive:this.archive.checkpoint()});
+      startedAt:this.startedAt,captureCohort:this.captureCohort,archive:this.archive.checkpoint(),
+      errorRecent:this.errorRecent,errorClasses:this.errorClasses,episodes:this.episodes,measurementCounts:this.measurementCounts,
+      measurementStartedAt:this.measurementStartedAt,measurementTradeCounts:this.measurementTradeCounts,filledEpisodes:[...this.filledEpisodes]});
+    // Measurement/error metadata is bounded and shares the existing checkpoint capacity contract.
     if(Buffer.byteLength(text)>=1024*1024)throw Error('SHADOW_CHECKPOINT_CAPACITY');
     const tmp=this.checkpoint+'.tmp';fs.writeFileSync(tmp,text);fs.renameSync(tmp,this.checkpoint);
   }
@@ -228,10 +301,13 @@ class ShadowJournal {
       startedAt:this.startedAt,exportedAt:Date.now(),executionAllowed:false,archive:s.archive,
       counts:this.counts,tradeCounts:this.tradeCounts,hours:this.archive.summaryHours,
       recentCandidates:this.recent.slice(-6),recentTrades:s.shadowTrades.slice(-6),
+      control:control34,measurementVersion:m34.VERSION,measurementCounts:this.measurementCounts,episodes:this.episodes,
+      measurementStartedAt:this.measurementStartedAt,measurementTradeCounts:this.measurementTradeCounts,
+      captureErrors:s.captureErrors,measurementTrades:s.measurementTrades.slice(-24),
       limitations:['Independent modelled trades; not portfolio P&L','Funding uses an entry-notional approximation',
         'Budget skips are explicit capture gaps','Raw data is available in separate compressed downloads']};
   }
-  async advance(now=Date.now(),get=require('./bybit').researchGet) {
+  async advance(now=Date.now(),get=require('./bybit').researchGetStamped) {
     if(this.tradeWorkerBusy || now-this.tradePollAt<15000 || process.env.ORAYAN_V3_SHADOW_ENABLED==='false')return;
     this.tradeWorkerBusy=true;this.tradePollAt=now;
     try {
@@ -246,17 +322,33 @@ class ShadowJournal {
             const start=next.lastBarAt===null?next.eligibleFromAt:next.lastBarAt+60000;
             const end=Math.min(Math.floor(now/60000)*60000-1,start+1000*60000-1);
             if(end<start)continue;
-            const res=await get('/v5/market/kline',{category:'linear',symbol:next.symbol,interval:'1',start,end,limit:1000},next.testnet);
+            const envelope=await get('/v5/market/kline',{category:'linear',symbol:next.symbol,interval:'1',start,end,limit:1000},next.testnet);
+            const res=envelope?.result||envelope;
             if(!Array.isArray(res?.list))throw Error('INVALID_PATH_RESPONSE');
             const bars=res.list.map(r=>({ts:Number(r[0]),open:Number(r[1]),high:Number(r[2]),low:Number(r[3]),close:Number(r[4])}))
               .sort((a,b)=>a.ts-b.ts);
-            const result=trades.step(next,bars,now);next=result.trade;
+            const cached=minuteCache.get(next.symbol,next.testnet,now);
+            const result=t34.step(next,bars,now,{priorBars:cached?.bars||[],sourceAt:envelope.sourceAt??null,receivedAt:envelope.receivedAt??now,
+              priorSourceAt:cached?.sourceAt??null,priorReceivedAt:cached?.receivedAt??null,
+              quoteAt:at=>require('./bybit').quoteAt(next.symbol,next.testnet,at)});next=result.trade;
+            if(result.path?.length)for(let p=0;p<result.path.length;p+=32) {
+              const chunk=result.path.slice(p,p+32);
+              this.append('paths',{outputType:'V3_MANAGEMENT_MINUTE_PATH',version:m34.VERSION,tradeId:next.tradeId,
+                episodeId:next.episodeId,symbol:next.symbol,executionAllowed:false,capturedAt:Date.now(),
+                eventId:hash([next.tradeId,chunk[0].ts,chunk.at(-1).ts]),bars:chunk});
+            }
             if(!bars.length && now-start>180000){next.status='DATA_GAP';next.outcome='EMPTY_PATH';
               next.fundingStatus='UNKNOWN_PATH';next.netPnl=null;next.outcomeComplete=false;result.events.push('DATA_GAP');}
             if(result.events.length) {
               this.tradeEvent(next,result.events,Date.now());
               for(const [event,key] of [['FILLED','filled'],['CLOSED','closed'],['CANCELLED','cancelled'],['EXPIRED','expired'],['DATA_GAP','incomplete']])
-                if(result.events.includes(event))this.tradeCounts[key]++;
+                if(result.events.includes(event)){this.tradeCounts[key]++;
+                  if(next.research34&&['filled','closed'].includes(key))this.measurementTradeCounts[key]++;
+                }
+              if(next.research34&&result.events.includes('FILLED')&&!this.filledEpisodes.has(next.episodeId)){
+                this.filledEpisodes.set(next.episodeId,next.filledAt);this.measurementTradeCounts.uniqueFilledEpisodes++;
+                while(this.filledEpisodes.size>512)this.filledEpisodes.delete(this.filledEpisodes.keys().next().value);
+              }
             }
             committed=next;
           }
@@ -264,14 +356,16 @@ class ShadowJournal {
             // Settled rates are outcomes only, never decision-time features.
             if(now<next.closedAt+120000){this.activeTrades.set(next.tradeId,next);this.saveCheckpoint();continue;}
             this.activeTrades.set(next.tradeId,next);this.saveCheckpoint();
-            const res=await get('/v5/market/funding/history',{category:'linear',symbol:next.symbol,
+            const envelope=await get('/v5/market/funding/history',{category:'linear',symbol:next.symbol,
               startTime:next.filledAt,endTime:next.closedAt,limit:200},next.testnet);
+            const res=envelope?.result||envelope;
             if(!Array.isArray(res?.list)||res.list.length===200)throw Error('FUNDING_COVERAGE_UNAVAILABLE');
-            next=trades.funding(next,res.list,Date.now());this.tradeEvent(next,['FUNDING_FINALIZED'],Date.now());
+            next=t34.funding(next,res.list,Date.now());this.tradeEvent(next,['FUNDING_FINALIZED'],Date.now());
             committed=next;
           }
           this.lastTradeError=null;
-        }catch(e){next=committed;if(e.reasonCode!=='V3_ARCHIVE_BUDGET_PAUSED')this.counts.errors++;
+        }catch(e){next=committed;this.captureError(e,{symbol:next.symbol,episodeId:next.episodeId,
+          candidateId:next.candidateId,subsystem:'TRADE_PATH_OR_FUNDING',affectedRecordType:'V3_SHADOW_TRADE',retry:'SAME_CURSOR_NEXT_POLL'});
           this.lastTradeError={at:Date.now(),symbol:next.symbol,reason:e.reasonCode||e.message};}
         this.activeTrades.set(next.tradeId,next);
         if(trades.terminal(next) && (next.status!=='CLOSED'||next.fundingStatus!=='PENDING')) {
@@ -291,7 +385,7 @@ class ShadowJournal {
     const fd=fs.openSync(file,'r'),buffer=Buffer.alloc(Math.min(size-offset,MAX_ROW_BYTES));
     let count;try{count=fs.readSync(fd,buffer,0,buffer.length,offset);}finally{fs.closeSync(fd);}
     const data=buffer.subarray(0,count),end=data.lastIndexOf(10);
-    if(end<0){if(count===MAX_ROW_BYTES){this.aiOffsets[provider]=offset+count;this.counts.errors++;}return;}
+    if(end<0){if(count===MAX_ROW_BYTES){this.aiOffsets[provider]=offset+count;this.captureError(Error('AI_ROW_TOO_LARGE'),{subsystem:'AI_LEDGER',skip:true});}return;}
     for(const line of data.subarray(0,end).toString('utf8').split('\n')) {
       if(!line)continue;
       try {
@@ -300,8 +394,11 @@ class ShadowJournal {
         const link=episode?[...(episode.birthLinks||[]),...(episode.currentLinks||[])].find(p=>p.candidateId===r.candidate_id):null;
         const outputAt=Date.parse(r.available_to_system_at_utc||r.completed_at_utc||r.requested_at_utc);
         const verdict=r.decision?.decision;
+        const timing=m34.observer(r,provider,now,link?.decisionAt??null);
+        if(episode){this.observers.set(provider+':'+episode.episodeId,{row:r,capturedAt:now});
+          while(this.observers.size>128)this.observers.delete(this.observers.keys().next().value);}
         this.append('ai',{version:VERSION,outputType:'AI_RESEARCH_CONTEXT',provider,model:r.model||null,
-          requestId:r.request_id,candidateId:r.candidate_id,episodeId:episode?.episodeId??null,
+          requestId:r.request_id,candidateId:r.candidate_id,episodeId:episode?.episodeId??null,timing,
           outputAt:Number.isFinite(outputAt)?outputAt:null,capturedAt:now,status:r.status,
           output:r.decision||null,matchedDecisionAt:link?.decisionAt??null,
           availableAfterDecision:link && Number.isFinite(outputAt)?outputAt>link.decisionAt:null,
@@ -309,7 +406,7 @@ class ShadowJournal {
           agreedWithV3:link && ['ACCEPT_SHADOW','REJECT'].includes(link.v3Decision) && ['RETAIN','SKIP'].includes(verdict)?
             (verdict==='RETAIN')===(link.v3Decision==='ACCEPT_SHADOW'):null,
           agreementReason:link?.v3Decision?'MATCHED_DETERMINISTIC_SHADOW_DECISION':'NO_V3_DECISION_LINK',executionAuthority:false});
-      }catch(e){if(e.reasonCode!=='V3_ARCHIVE_BUDGET_PAUSED')this.counts.errors++;}
+      }catch(e){this.captureError(e,{subsystem:'AI_LEDGER',affectedRecordType:'AI_RESEARCH_CONTEXT',retry:'NEXT_LEDGER_ROW',skip:true});}
     }
     this.aiOffsets[provider]=offset+end+1;
   }
@@ -317,11 +414,13 @@ class ShadowJournal {
 let instance;
 function journal(){if(!instance){const root=require('./store').DATA_DIR;
   instance=new ShadowJournal(path.join(root,'v3-shadow-compact-v1'),{legacyDir:path.join(root,'v3-shadow')});
-  const timer=setInterval(()=>instance.advance().catch(()=>instance.counts.errors++),15000);timer.unref();}return instance;}
+  const timer=setInterval(()=>{instance.advance().catch(e=>instance.captureError(e,{subsystem:'TRADE_WORKER'}));
+    minuteCache.advance(undefined,(e,c)=>instance.captureError(e,c));},15000);timer.unref();}return instance;}
 function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,btcRegime,settings,signals,marketSnapshot}) {
   if(process.env.ORAYAN_V3_SHADOW_ENABLED==='false')return;
   const j=journal();
   const errorsBefore=j.counts.errors;
+  minuteCache.watch([...candlesBySymbol.keys()],settings.testnet);
   for(const [symbol,candles] of candlesBySymbol) {
     try {
       const row=evaluate({symbol,candles,ticker:tickerBySymbol.get(symbol),instrument:instruments?.get(symbol),btcRegime,settings,decisionAt:Date.now(),
@@ -330,13 +429,18 @@ function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,b
         return1:marketSnapshot?.btcReturn1??null,return3:marketSnapshot?.btcReturn3??null};
       row.breadth={value:marketSnapshot?.directionalBreadth??null,momentum:marketSnapshot?.breadthMomentum??null,
         marketSnapshotId:marketSnapshot?.marketSnapshotId??null,availableAt:marketSnapshot?.observedAt??null};
+      try{row.measurement34=m34.decision(row,{candles,minute:minuteCache.get(symbol,settings.testnet,row.decisionAt),
+        ticker:require('./bybit').quoteStamp(symbol,tickerBySymbol.get(symbol),settings.testnet),btcRegime,marketSnapshot,
+        universe:[...candlesBySymbol.keys()],structuralEvents:require('./researchSupplement').causalEvents(symbol,row.decisionAt),
+        candleStamp:require('./bybit').klineStamp(symbol,settings.timeframe,settings.testnet)});
+      }catch(e){j.captureError(Error('MEASUREMENT_FAILED'),{symbol,subsystem:'DECISION_MEASUREMENT'});}
       j.record(row,scanId,scanAt);
-    }catch(e){if(e.reasonCode!=='V3_ARCHIVE_BUDGET_PAUSED')j.counts.errors++;}
+    }catch(e){j.captureError(e,{symbol,subsystem:'DECISION_CAPTURE',affectedRecordType:'V3_SHADOW_SIGNAL'});}
   }
   observeProviders(j);
   j.lastScanErrors=j.counts.errors-errorsBefore;
   j.checkpointAndPrune();
-  j.advance().catch(()=>j.counts.errors++);
+  j.advance().catch(e=>j.captureError(e,{subsystem:'TRADE_WORKER'}));
 }
 module.exports={VERSION,BENCHMARK,evaluate,ShadowJournal,observeProviders,observeScan,status:()=>({...journal().status(),lastScanErrors:journal().lastScanErrors??null}),
   summary:()=>journal().summary(),download:channel=>journal().export(channel||'v3')};

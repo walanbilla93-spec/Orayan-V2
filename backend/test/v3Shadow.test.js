@@ -33,7 +33,7 @@ test('V3.0 includes newest width-two confirmed pivot and explicit confirmation c
   assert.equal(confirmedPivots(c.slice(0,-1),2,ms).highs.some(p=>p.i===4),false);
 });
 test('V3.0 fork differs from frozen V2 only in pivot contract and test export',()=>{
-  let v3=fs.readFileSync(path.join(root,'backend/lib/signals_trend_v30.js'),'utf8');
+  let v3=fs.readFileSync(path.join(root,'backend/lib/signals_trend_v30.js'),'utf8').replace(/\r\n/g,'\n');
   v3=v3.replace('// V3.0 isolated engineering ablation. Frozen V2 file remains unchanged.\n','')
     .replace('const end = candles.length; // V3.0: marketData already supplies closed candles',
       'const end = candles.length - 1; // exclude forming bar from confirmation side').replace('  recentSwings,\n','');

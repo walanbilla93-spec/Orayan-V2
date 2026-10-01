@@ -11,6 +11,7 @@ const {StringDecoder}=require('string_decoder');
 const retraceShadow = require('./retraceShadow');
 const bybit = require('./bybit');
 const runtime = require('./runtimeIdentity');
+const compactMaintenance=require('./prospectiveCompactMaintenance');
 const {positionSideTotals} = require('./v3Contracts');
 const VERSION = 'PROSPECTIVE_BIRTH_V2';
 const COMPACT_VERSION = 'PROSPECTIVE_COMPACT_V5';
@@ -49,7 +50,7 @@ function append(kind, row, at = Date.now()) {
     fs.mkdirSync(dir, { recursive:true });
     const stamp = new Date(at).toISOString().slice(0, kind === 'compact' ? 13 : 10).replace('T','-');
     fs.appendFileSync(path.join(dir, `${kind}-${stamp}.jsonl`),
-      JSON.stringify({recordType:kind,...runtime.rowFields(),...row}) + '\n');
+      JSON.stringify({recordType:kind,...runtime.rowFields(),...(kind==='compact'?{captureCohort:compactMaintenance.current().cohort.id}:{}),...row}) + '\n');
     if (at - lastPruneAt > 60 * 60000) { lastPruneAt = at; prune(at); }
     return true;
   } catch (e) { logger.warn('research', `Could not append ${kind}`, { error:e.message }); return false; }

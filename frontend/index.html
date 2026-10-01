@@ -78,18 +78,26 @@
         <div class="panel-head"><h2>V3 shadow research</h2><span class="badge">No V3 orders</span></div>
         <p class="panel-sub">Separate V3 structural decisions and simulated trades alongside frozen V2. Shadow fills use the next full one-minute candle, including fees, slippage, expiry, stops, targets and timeouts. Ambiguous paths and missing data stay visible. These are research simulations.</p>
         <p id="v3Status" aria-live="polite">Checking V3 capture…</p>
+        <p id="v34Control" aria-live="polite"></p>
+        <p id="v34Measurements" aria-live="polite"></p>
+        <p id="v34Errors" aria-live="polite"></p>
         <div class="research-download">
           <button class="btn primary" id="btnExportV3Summary">Download analysis summary</button>
           <button class="btn" id="btnExportV3">Download compressed V3 data</button>
           <button class="btn" id="btnExportV3V2">Download matched V2 observations</button>
           <button class="btn" id="btnExportV3AI">Download AI research context</button>
           <button class="btn" id="btnExportV3Trades">Download shadow trades &amp; outcomes</button>
+          <button class="btn" id="btnExportV3Errors">Download capture errors</button>
+          <button class="btn" id="btnExportV3Paths">Download management replay paths</button>
         </div>
-        <p class="panel-sub">Use the small analysis summary first. Raw downloads are compressed JSONL with shared level definitions. The current cohort retains at least 30 hours within a 24 MiB archive cap; budget pauses are reported. Earlier evidence is preserved separately. AI output remains an observer annotation.</p>
+        <p class="panel-sub">Use the small analysis summary first. Raw downloads are compressed JSONL with shared level and measurement definitions. The current cohort retains at least 30 hours within a 40 MiB archive cap; budget pauses are reported. Earlier evidence is preserved separately. AI output remains an observer annotation.</p>
         <div class="v3-table-wrap"><table class="v3-table"><thead><tr><th>Update</th><th>Symbol</th><th>Side</th><th>Regime</th><th>Level</th><th>Reaction</th><th>Location</th><th>V3 decision</th></tr></thead><tbody id="v3Rows"></tbody></table></div>
         <h3>Would-be trades</h3>
         <p id="v3TradeStatus" aria-live="polite">Checking shadow outcomes…</p>
         <div class="v3-table-wrap"><table class="v3-table"><thead><tr><th>Symbol</th><th>Side</th><th>State</th><th>Outcome</th><th>Fill</th><th>Exit</th><th>Net USDT</th><th>Net R</th><th>Path / funding</th></tr></thead><tbody id="v3TradeRows"></tbody></table></div>
+        <h3>V3.4A measurements · research only</h3>
+        <p class="panel-sub">Noise uses completed bars before the reaction. First-touch times are minute bounds; terminal-minute ordering remains ambiguous. Missing quotes are unavailable. The nearest-objective arm can match the existing control.</p>
+        <div class="v3-table-wrap"><table class="v3-table"><thead><tr><th>Symbol / episode</th><th>Stop % / ATR1m / ATR15m / spreads</th><th>Intended / fill raw RR</th><th>Control objective</th><th>Nearest arm</th><th>Raw R first touches (UTC)</th><th>Location</th><th>Level / reaction</th></tr></thead><tbody id="v34Rows"></tbody></table></div>
       </div>
     </section>
 
@@ -165,7 +173,9 @@
           <div class="panel-actions">
             <button class="btn btn-ghost" id="btnExportSignalsCsv">Download signal events (CSV)</button>
             <button class="btn btn-ghost" id="btnExportSignalsJson">JSON</button>
-            <button class="btn btn-ghost" id="btnExportProspectiveResearch">Download compact prospective research V4 (JSONL)</button>
+            <button class="btn btn-ghost" id="btnExportProspectiveResearch">Download prospective research · last 24h (compressed)</button>
+            <button class="btn btn-ghost" id="btnExportProspectiveAll">Download all retained prospective records (compressed)</button>
+            <button class="btn btn-danger" id="btnResetProspectiveCompact">Restart compact capture only</button>
             <button class="btn btn-ghost" id="btnExportSupplementResearch">Download structure + stop labels (JSONL)</button>
             <button class="btn btn-ghost" id="btnExportEarlyEntryResearch">Download early-entry shadow V1 (JSONL)</button>
             <button class="btn btn-ghost" id="btnExportLegacyResearch">Download legacy research diagnostics (large, if available)</button>
@@ -273,6 +283,6 @@
 
 <div class="toast-stack" id="toasts"></div>
 
-<script src="app.js?v=orayan-v3-compact-v1"></script>
+<script src="app.js?v=orayan-v34a-measurement-v1"></script>
 </body>
 </html>

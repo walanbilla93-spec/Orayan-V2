@@ -159,6 +159,17 @@ async function loadV3Status() {
   try {
     const info=await api('/api/v3/status');
     const a=info.archive||{};
+    const mc=info.measurementCounts||{},ep=info.episodes||{},ce=info.captureErrors||{};
+    $('#v34Control').textContent=`V3.4A measurement only · frozen control ${info.control?.version||'unavailable'} · fingerprint ${info.control?.fingerprint||'unavailable'} · V3 orders disabled`;
+    const mt=info.measurementTradeCounts||{};
+    $('#v34Measurements').textContent=`V3.4A started ${fmtDate(info.measurementStartedAt)} · measurement decisions ${mc.decisions||0} · prior noise available ${mc.noiseAvailable||0} · quotes available ${mc.quoteAvailable||0} · episode births ${ep.births||0} · admitted ${mt.admitted||0} · filled ${mt.filled||0} · closed ${mt.closed||0} · unique filled episodes ${mt.uniqueFilledEpisodes||0}`;
+    $('#v34Errors').textContent=`Capture error classes: ${Object.entries(ce.classes||{}).map(([k,v])=>`${k}: ${v}`).join(' · ')||'none'} · legacy errors without exported detail ${ce.legacyUnexportedCount||0}`;
+    const val=x=>x===null||x===undefined?'—':fmt(x,3);
+    $('#v34Rows').innerHTML=(info.measurementTrades||[]).slice().reverse().map(t=>{
+      const n=t.stop||{},arm=t.nearestArm;
+      const touches=Object.entries(t.rawTouches||{}).map(([r,s])=>`${r}R ${new Date(s.earliestAt).toISOString()}–${new Date(s.latestAt).toISOString().slice(11)} (${s.precision})`).join('; ');
+      return `<tr><td>${esc(t.symbol)}<br>${esc(t.episodeId||'—')} · #${esc(t.admissionOrdinal??'—')}</td><td>${esc([n.pct,n.atr1m,n.atr15m,n.spreads].map(val).join(' / '))}</td><td>${esc(val(t.intendedRR)+' / '+val(t.fillRR))}</td><td>${esc(val(t.objective))}</td><td>${esc(arm?`${arm.identicalToControl?'Same objective · ':''}${arm.status} · ${arm.outcome||'pending'} · ${val(arm.netR)}R`:'unavailable')}</td><td>${esc(touches||'—')}</td><td>${esc(t.premiumDiscount||'—')}</td><td>${esc((t.level||'—')+' / '+(t.reaction||'—'))}</td></tr>`;
+    }).join('')||'<tr><td colspan="8">No V3.4A fills yet.</td></tr>';
     $('#v3Status').textContent=`${info.enabled?'Enabled':'Disabled'} · V3.3 compact cohort started ${fmtDate(info.startedAt)} · V3 observations ${info.counts.v3} · AI context ${info.counts.ai} · capture errors ${info.lastScanErrors??'—'} / historical ${info.counts.errors} · current archive ${fmtBytes(info.sizeBytes)} / ${fmtBytes(a.maxBytes||0)} · old evidence ${fmtBytes(info.legacySizeBytes||0)} preserved${a.capturePausedUntil?` · BUDGET PAUSE until ${fmtDate(a.capturePausedUntil)}`:''} · budget-skipped records ${a.budgetSkippedRecords||0}`;
     $('#btnExportV3').disabled=!info.available;
     const labels={NO_TREND:'No trend',V3_1:'Trend regime blocked',V3_3:'Geometry pending'};
@@ -873,6 +884,8 @@ function init() {
   $('#btnExportV3V2').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=v2'));
   $('#btnExportV3AI').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=ai'));
   $('#btnExportV3Trades').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=trades'));
+  $('#btnExportV3Errors').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=errors'));
+  $('#btnExportV3Paths').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=paths'));
   const downloadGroqShadow = async () => {
     const button=$('#btnExportGroqShadow');
     if(button.dataset.protected!=='true')return downloadFrom('/api/journal/research/groq-shadow/export');
@@ -909,7 +922,15 @@ function init() {
   $('#btnExportTradesJson').addEventListener('click', () => downloadFrom('/api/journal/trades/export?format=json'));
   $('#btnExportSignalsCsv').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=csv'));
   $('#btnExportSignalsJson').addEventListener('click', () => downloadFrom('/api/journal/signals/export?format=json'));
-  $('#btnExportProspectiveResearch').addEventListener('click', () => downloadFrom('/api/journal/research/prospective/export'));
+  $('#btnExportProspectiveResearch').addEventListener('click', () => downloadFrom(`/api/journal/research/prospective/export?compressed=1&sinceAt=${Date.now()-24*3600000}`));
+  $('#btnExportProspectiveAll').addEventListener('click',()=>downloadFrom('/api/journal/research/prospective/export?compressed=1'));
+  $('#btnResetProspectiveCompact').addEventListener('click',async()=>{
+    try{const s=await api('/api/journal/research/prospective/status');
+      if(!confirm(`Delete ${fmtBytes(s.sizeBytes)} of prospective compact records? Save your download first. Trades, settings, signals and V3 data stay intact.`))return;
+      const r=await api('/api/journal/research/prospective/reset',{method:'POST',body:{scope:s.scope,expectedCohort:s.cohort.id}});
+      toast(`Compact capture restarted · removed ${fmtBytes(r.before.sizeBytes)}`);
+    }catch(e){toast(e.message,'error');}
+  });
   $('#btnExportSupplementResearch').addEventListener('click', () => downloadFrom('/api/journal/research/supplement/export'));
   $('#btnExportEarlyEntryResearch').addEventListener('click', () => downloadFrom('/api/journal/research/early-entry/export'));
   $('#btnExportLegacyResearch').addEventListener('click', () => downloadFrom('/api/journal/research/prospective/export?raw=1'));

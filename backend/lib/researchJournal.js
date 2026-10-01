@@ -174,6 +174,8 @@ function captureMarketSnapshot(observations, meta = {}) {
     barOpenIso:new Date(barOpenAt).toISOString(), observedAt:meta.scanAt || Date.now(),
     timeframe:meta.timeframe || null, expectedUniverseCount:meta.expectedUniverseCount || null,
     universeCount:alts.length, coveragePct:pct(alts.length, meta.expectedUniverseCount || alts.length),
+    breadthUniverse:{symbols:valid.map(r=>r.symbol).sort(),definition:'LATEST_SHARED_CLOSED_BAR_NON_BTC_VALID_R1',
+      validCount:valid.length,positiveCount:positive,negativeCount:negative,priorValidCount:prior.length},
     positiveCount:positive, negativeCount:negative,
     marketBreadthUpPct:pct(positive, valid.length), marketBreadthDownPct:pct(negative, valid.length),
     directionalBreadth:currentBreadth,

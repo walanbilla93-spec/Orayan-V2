@@ -124,7 +124,10 @@ function sign(timestamp, payload) {
     .digest('hex');
 }
 
-async function request(method, path, params, { testnet = true, auth = false, timeoutMs = 15000 } = {}) {
+const quoteStamps=new Map();
+const quoteHistory=new Map();
+const klineStamps=new Map();
+async function request(method, path, params, { testnet = true, auth = false, timeoutMs = 15000, stamped=false } = {}) {
   const url = new URL(path, base(testnet));
   let body;
   let payload = '';
@@ -175,7 +178,18 @@ async function request(method, path, params, { testnet = true, auth = false, tim
       err.retMsg = json.retMsg;
       throw err;
     }
-    return json.result;
+    const receivedAt=Date.now(),sourceAt=Number.isFinite(Number(json.time))?Number(json.time):null;
+    if(path==='/v5/market/tickers'&&!auth) {
+      for(const t of json.result?.list||[]) {
+        const key=`${testnet!==false}:${t.symbol}`,q={bid:Number(t.bid1Price),ask:Number(t.ask1Price),sourceAt,receivedAt,source:'BYBIT_TICKER_RESPONSE'};
+        quoteStamps.set(key,q);quoteHistory.set(key,[...(quoteHistory.get(key)||[]),q].slice(-4));
+      }
+      while(quoteStamps.size>2000)quoteStamps.delete(quoteStamps.keys().next().value);
+      while(quoteHistory.size>2000)quoteHistory.delete(quoteHistory.keys().next().value);
+    }
+    if(path==='/v5/market/kline'&&!auth){klineStamps.set(`${testnet!==false}:${params.symbol}:${params.interval}`,{sourceAt,receivedAt});
+      while(klineStamps.size>200)klineStamps.delete(klineStamps.keys().next().value);}
+    return stamped?{result:json.result,sourceAt,receivedAt}:json.result;
   } finally {
     clearTimeout(timer);
   }
@@ -208,6 +222,8 @@ const publicGet = (path, params, testnet) =>
 // Best effort only. Research has a bounded, lower-priority queue and no retry burst.
 const researchGet = (path, params, testnet) =>
   schedule(() => request('GET',path,params,{testnet,auth:false,timeoutMs:7000}),{research:true,endpoint:path});
+const researchGetStamped = (path,params,testnet) =>
+  schedule(()=>request('GET',path,params,{testnet,auth:false,timeoutMs:7000,stamped:true}),{research:true,endpoint:path});
 
 const privateGet = (path, params, testnet) =>
   schedule(() => withRetry(() => request('GET', path, params, { testnet, auth: true }), { label: path }),{endpoint:path});
@@ -234,6 +250,11 @@ module.exports = {
   syncClock,
   publicGet,
   researchGet,
+  researchGetStamped,
+  klineStamp:(symbol,interval,testnet)=>klineStamps.get(`${testnet!==false}:${symbol}:${interval}`)||null,
+  quoteAt:(symbol,testnet,at)=>(quoteHistory.get(`${testnet!==false}:${symbol}`)||[]).filter(q=>q.receivedAt<=at).at(-1)||null,
+  quoteStamp:(symbol,ticker,testnet)=>{const q=quoteStamps.get(`${testnet!==false}:${symbol}`);
+    return q&&q.bid===ticker?.bid&&q.ask===ticker?.ask&&q.receivedAt<=ticker?.observedAt?{...ticker,...q}:ticker;},
   privateGet,
   privatePost,
   setOperationalSink: sink => { operationalSink = typeof sink === 'function' ? sink : null; },

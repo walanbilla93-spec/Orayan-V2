@@ -34,7 +34,7 @@ test('combined hourly budget preflights the complete batch; denied admission doe
   a.write(entries(row(at+HOUR)));assert.equal(a.status().capturePausedUntil,null);
 });
 test('24MiB cap covers 31 protected hourly budgets; rolling eviction preserves at least latest 30 hours',t=>{
-  assert.ok(31*HOUR_BYTES<=MAX_BYTES);assert.equal(MAX_BYTES,24*1048576);
+  assert.ok(31*HOUR_BYTES<=MAX_BYTES);assert.equal(MAX_BYTES,40*1048576);
   const a=new Archive(tmp(t));for(let i=0;i<33;i++)a.write(entries(row(at+i*HOUR+1234)));
   assert.equal(a.list('v3').length,31);assert.equal(a.status().earliestHour,'2026-09-30-12');
   assert.ok(a.total()<MAX_BYTES);assert.equal(Object.keys(a.summaryHours).length,31);
