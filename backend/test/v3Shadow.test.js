@@ -90,7 +90,7 @@ test('V3 evaluates without V2 candidate, never exposes execution and keeps geome
 });
 test('immutable birth/current clocks survive restart; same-bar scans dedupe and config separates cohorts',t=>{
   const dir=sandbox(t),j=new ShadowJournal(dir),at=Date.now();
-  j.record(row(at),'scan',at,at+5);j.record(row(at),'scan2',at,at+6);assert.equal(j.counts.v3,1);
+  j.record(row(at),'scan',at,at+5);j.record(row(at),'scan2',at,at+6);assert.equal(j.counts.v3,2);assert.equal(j.recent.length,1);
   j.checkpointAndPrune(at);
   const restored=new ShadowJournal(dir);restored.record({...row(at+ms),closedBarOpenAt:at},'scan3',at+ms,at+ms+5);
   const lines=restored.files('v3').flatMap(f=>readRows(f.path).filter(r=>r.outputType==='V3_SHADOW_SIGNAL'));

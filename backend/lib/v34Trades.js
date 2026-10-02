@@ -19,6 +19,11 @@ function timestamp(b,receivedAt,kind='WITHIN_MINUTE') {return {barOpenAt:b.ts,ea
 function fill(t,b,receivedAt,context) {
   const g=t.geometry,d=t.side==='BUY'?1:-1,slipped=b.open*(1+d*g.costs.entrySlippageBps/10000);
   const modeled=round(slipped,g.tickSize,d===1),q=m.quote(context?.quoteAt?context.quoteAt(b.ts):context?.quote,b.ts,receivedAt);
+  q.semantic=q.status!=='AVAILABLE'?'MISSING_FILL_QUOTE':q.receivedAt===b.ts?'CONTEMPORANEOUS_FILL_QUOTE':'CACHED_PRE_FILL_QUOTE';
+  q.isExactFillBidAsk=q.status==='AVAILABLE'&&q.receivedAt===b.ts&&!context?.historicalBarReconstruction;
+  // A historical OHLC modeled fill has no synchronized exchange fill quote.
+  q.isExactFillBidAsk=false;
+  q.missingReason=q.status==='AVAILABLE'?null:!q.receivedAt?'NO_CAUSAL_QUOTE_RECEIPT':q.ageMs>120000?'CACHED_QUOTE_TOO_OLD':'INVALID_OR_FUTURE_QUOTE';
   const n=m.noise({minuteBars:context?.priorBars||[],bars15:context?.bars15||[],cutoff:Math.min(b.ts,t.decisionAt-(t.decisionAt%60000)),
     sourceAt:context?.priorSourceAt??null,receivedAt:context?.priorReceivedAt??receivedAt,capturedAt:receivedAt});
   // Noise for fill uses completed pre-fill bars, but cannot include the original reaction candle.
@@ -33,7 +38,7 @@ function fill(t,b,receivedAt,context) {
     marketMoveBps:d*(b.open-g.entryPrice)/g.entryPrice*10000,adverseFillMoveBps:d*(modeled-g.entryPrice)/g.entryPrice*10000,
     favorableFillMoveBps:-d*(modeled-g.entryPrice)/g.entryPrice*10000,
     gapThroughStop:d*(b.open-g.invalidationPrice)<=0,gapThroughTarget:d*(b.open-g.objectivePrice)>=0,
-    geometryRecheck:true,geometryValid:t.status!=='CANCELLED',fillBidAskAvailable:q.status==='AVAILABLE',quote:q,
+    geometryRecheck:true,geometryValid:t.status!=='CANCELLED',fillBidAskAvailable:q.isExactFillBidAsk,cachedPreFillQuoteAvailable:q.status==='AVAILABLE',quote:q,
     noise:n,stop:m.normalized(Math.abs(modeled-g.invalidationPrice),modeled,n,q),rawRR:t.fillEconomics?.rawRR??null,
     costRR:t.fillEconomics?.costAdjustedRR??null,fillAt:b.ts,receivedAt,capturedAt:receivedAt,
     historicalBarReconstruction:true};

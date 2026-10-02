@@ -1,0 +1,188 @@
+{
+  "version": "V34B_ALL_RETAINED_ROWS_EXACT_REPLAY",
+  "counts": {
+    "v3": 55589,
+    "v2": 27584,
+    "trades": 888,
+    "paths": 1361,
+    "errors": 1906,
+    "ai": 1054
+  },
+  "totalRawBytes": 232822140,
+  "losslessCompressedBytes": 37014652,
+  "maxObservedHourBytes": 1559968,
+  "hours": {
+    "2026-10-01T11": {
+      "logicalRows": 1959,
+      "rawBytes": 4065003,
+      "compressedBytes": 503195
+    },
+    "2026-10-01T12": {
+      "logicalRows": 2182,
+      "rawBytes": 4646109,
+      "compressedBytes": 580277
+    },
+    "2026-10-01T13": {
+      "logicalRows": 2548,
+      "rawBytes": 5379243,
+      "compressedBytes": 671119
+    },
+    "2026-10-01T14": {
+      "logicalRows": 2128,
+      "rawBytes": 4386939,
+      "compressedBytes": 539332
+    },
+    "2026-10-01T15": {
+      "logicalRows": 2252,
+      "rawBytes": 4751685,
+      "compressedBytes": 591006
+    },
+    "2026-10-01T16": {
+      "logicalRows": 2163,
+      "rawBytes": 4576016,
+      "compressedBytes": 577608
+    },
+    "2026-10-01T17": {
+      "logicalRows": 2659,
+      "rawBytes": 5629973,
+      "compressedBytes": 706107
+    },
+    "2026-10-01T18": {
+      "logicalRows": 2390,
+      "rawBytes": 4937134,
+      "compressedBytes": 607483
+    },
+    "2026-10-01T19": {
+      "logicalRows": 3559,
+      "rawBytes": 9397463,
+      "compressedBytes": 1417145
+    },
+    "2026-10-01T20": {
+      "logicalRows": 3259,
+      "rawBytes": 8922470,
+      "compressedBytes": 1423453
+    },
+    "2026-10-01T21": {
+      "logicalRows": 2931,
+      "rawBytes": 8006509,
+      "compressedBytes": 1286742
+    },
+    "2026-10-01T22": {
+      "logicalRows": 2732,
+      "rawBytes": 7499607,
+      "compressedBytes": 1264823
+    },
+    "2026-10-01T23": {
+      "logicalRows": 2776,
+      "rawBytes": 7830112,
+      "compressedBytes": 1320301
+    },
+    "2026-10-02T00": {
+      "logicalRows": 2945,
+      "rawBytes": 8108185,
+      "compressedBytes": 1321593
+    },
+    "2026-10-02T01": {
+      "logicalRows": 3024,
+      "rawBytes": 8394425,
+      "compressedBytes": 1376945
+    },
+    "2026-10-02T02": {
+      "logicalRows": 2926,
+      "rawBytes": 8112917,
+      "compressedBytes": 1315987
+    },
+    "2026-10-02T03": {
+      "logicalRows": 2930,
+      "rawBytes": 7979090,
+      "compressedBytes": 1306434
+    },
+    "2026-10-02T04": {
+      "logicalRows": 3308,
+      "rawBytes": 8986713,
+      "compressedBytes": 1519012
+    },
+    "2026-10-02T05": {
+      "logicalRows": 3289,
+      "rawBytes": 9115800,
+      "compressedBytes": 1549874
+    },
+    "2026-10-02T06": {
+      "logicalRows": 3039,
+      "rawBytes": 9071874,
+      "compressedBytes": 1536255
+    },
+    "2026-10-02T07": {
+      "logicalRows": 3138,
+      "rawBytes": 9029759,
+      "compressedBytes": 1514726
+    },
+    "2026-10-02T08": {
+      "logicalRows": 3260,
+      "rawBytes": 9148505,
+      "compressedBytes": 1525587
+    },
+    "2026-10-02T09": {
+      "logicalRows": 3193,
+      "rawBytes": 9084419,
+      "compressedBytes": 1523071
+    },
+    "2026-10-02T10": {
+      "logicalRows": 3092,
+      "rawBytes": 9021546,
+      "compressedBytes": 1530287
+    },
+    "2026-10-02T11": {
+      "logicalRows": 3267,
+      "rawBytes": 9031155,
+      "compressedBytes": 1516611
+    },
+    "2026-10-02T12": {
+      "logicalRows": 3614,
+      "rawBytes": 9260602,
+      "compressedBytes": 1559968
+    },
+    "2026-10-02T13": {
+      "logicalRows": 3345,
+      "rawBytes": 9114417,
+      "compressedBytes": 1519268
+    },
+    "2026-10-02T14": {
+      "logicalRows": 3161,
+      "rawBytes": 9290557,
+      "compressedBytes": 1527698
+    },
+    "2026-10-02T15": {
+      "logicalRows": 3306,
+      "rawBytes": 9254220,
+      "compressedBytes": 1529122
+    },
+    "2026-10-02T16": {
+      "logicalRows": 3279,
+      "rawBytes": 9011494,
+      "compressedBytes": 1549356
+    },
+    "2026-10-02T17": {
+      "logicalRows": 728,
+      "rawBytes": 1778199,
+      "compressedBytes": 304267
+    }
+  },
+  "peakRss": 176668672,
+  "limitations": [
+    "Historical budget-skipped rows are unavailable; retained replay is not offered-demand proof.",
+    "Legacy compact rows already include V3.4A rounding/projections; this verifies exact preservation of available serialized evidence."
+  ],
+  "capacity": {
+    "hourBudgetBytes": 3407872,
+    "capBytes": 134217728,
+    "protectedHours": 31,
+    "retainedBytes": 103057998,
+    "rows": 27060,
+    "peakRss": 282689536,
+    "restartBytesEqual": true,
+    "prioritySkipped": 0,
+    "dailySnapshots": 1,
+    "note": "33-hour near-envelope high-entropy replay under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
+  }
+}

@@ -8,7 +8,8 @@ function tmp(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-compact-'
 const level={id:'known',type:'SWING_LOW',price:100,zoneLow:99,zoneHigh:101,knownAt:at-HOUR,active:true,ageMs:HOUR,reaction:{reclaim:true}};
 const row=(capturedAt=at)=>({capturedAt,outputType:'V3_SHADOW_SIGNAL',v3Decision:'REJECT',research:{selected:level,levels:Array(32).fill(level),premiumDiscount:{rangeHigh:120,rangeLow:90,equilibrium:105,pricePercentile:33,classification:'DISCOUNT'},profile:{price:102,binVolume:10,totalVolume:100,source:'PROXY'}},geometry:{reactionLevel:level,stopLevel:level,rawRR:3,costAdjustedRR:2.9}});
 const entries=r=>[{channel:'v3',row:r}];
-const read=files=>zlib.gunzipSync(Buffer.concat(files.map(f=>fs.readFileSync(f.path)))).toString().trim().split('\n').filter(Boolean).map(JSON.parse);
+const rawRead=files=>zlib.gunzipSync(Buffer.concat(files.map(f=>fs.readFileSync(f.path)))).toString().trim().split('\n').filter(Boolean).map(JSON.parse);
+const read=files=>require('../lib/v34bCodec').decode(rawRead(files));
 
 test('compact references preserve geometry, causal level definitions and premium/discount without mutating input',()=>{
   const r=row(),before=JSON.stringify(r),c=compact(r);
@@ -19,29 +20,29 @@ test('compact references preserve geometry, causal level definitions and premium
 });
 test('gzip blocks and rows remain bounded; definitions precede references and repeat at hourly boundary',t=>{
   const a=new Archive(tmp(t));for(let i=0;i<110;i++)a.write(entries({...row(at+i),padding:'x'.repeat(1900)}));
-  const decoded=read(a.list('v3'));assert.equal(decoded.filter(r=>r.outputType==='V3_LEVEL_DEFINITION').length,1);
-  assert.equal(decoded[0].outputType,'V3_LEVEL_DEFINITION');assert.ok(a.list('v3').length>1);
+  const decoded=rawRead(a.list('v3')),n=require('../lib/v34bCodec').encode(row()).definitions.length;assert.equal(decoded.filter(r=>r.outputType==='V3_IMMUTABLE_PAYLOAD').length,n);
+  assert.equal(decoded[0].outputType,'V3_IMMUTABLE_PAYLOAD');assert.ok(a.list('v3').length>1);
   for(const f of a.list('v3'))assert.ok(zlib.gunzipSync(fs.readFileSync(f.path)).length<=BLOCK_BYTES);
-  a.write(entries(row(at+HOUR)));assert.equal(read(a.list('v3')).filter(r=>r.outputType==='V3_LEVEL_DEFINITION').length,2);
+  a.write(entries(row(at+HOUR)));assert.equal(rawRead(a.list('v3')).filter(r=>r.outputType==='V3_IMMUTABLE_PAYLOAD').length,2*n);
   assert.throws(()=>a.write(entries({...row(at),padding:'x'.repeat(8192)})),/COMPACT_ROW_TOO_LARGE/);
 });
 test('combined hourly budget preflights the complete batch; denied admission does not partially write',t=>{
   const a=new Archive(tmp(t),{hourBytes:800});a.write([{channel:'v2',row:{capturedAt:at,hello:'world'}}]);
-  const before=a.total();assert.throws(()=>a.write([...entries({...row(),padding:require('crypto').randomBytes(1400).toString('hex')}),{channel:'trades',row:{capturedAt:at}}]),/BUDGET_PAUSED/);
-  assert.equal(a.total(),before);assert.equal(a.list('v3').length,0);assert.equal(a.list('trades').length,0);
+  const before=a.total();assert.throws(()=>a.write([...entries({...row(),padding:require('crypto').randomBytes(1400).toString('hex')}),{channel:'ai',row:{capturedAt:at}}]),/BUDGET_PAUSED/);
+  assert.equal(a.total(),before);assert.equal(a.list('v3').length,0);assert.equal(a.list('ai').length,0);
   assert.equal(a.status().budgetSkippedRecords,2);a.write([{channel:'ai',row:{capturedAt:at,status:'small'}}]);
   assert.equal(a.status().capturePausedUntil,at+HOUR);
   a.write(entries(row(at+HOUR)));assert.equal(a.status().capturePausedUntil,null);
 });
-test('24MiB cap covers 31 protected hourly budgets; rolling eviction preserves at least latest 30 hours',t=>{
-  assert.ok(31*HOUR_BYTES<=MAX_BYTES);assert.equal(MAX_BYTES,40*1048576);
+test('128MiB cap covers 31 protected hourly budgets; rolling eviction preserves at least latest 30 hours',t=>{
+  assert.ok(31*HOUR_BYTES<=MAX_BYTES);assert.equal(MAX_BYTES,128*1048576);
   const a=new Archive(tmp(t));for(let i=0;i<33;i++)a.write(entries(row(at+i*HOUR+1234)));
   assert.equal(a.list('v3').length,31);assert.equal(a.status().earliestHour,'2026-09-30-12');
   assert.ok(a.total()<MAX_BYTES);assert.equal(Object.keys(a.summaryHours).length,31);
 });
 test('export snapshot remains immutable during writes, pins expiring blocks and releases on cleanup',t=>{
   const a=new Archive(tmp(t));a.write(entries(row()));const snapshot=a.snapshot('v3'),before=read(snapshot.files);
-  a.write(entries(row(at+1)));assert.deepEqual(read(snapshot.files),before);assert.equal(read(a.list('v3')).length,3);
+  a.write(entries(row(at+1)));assert.deepEqual(read(snapshot.files),before);assert.equal(read(a.list('v3')).length,2);
   a.prune(at+32*HOUR);assert.equal(a.list('v3').length,1);
   snapshot.cleanup();a.prune(at+32*HOUR);assert.equal(a.list('v3').length,0);
   assert.equal(fs.readdirSync(a.dir).filter(n=>n.startsWith('export-')).length,0);
@@ -50,7 +51,7 @@ test('export snapshot remains immutable during writes, pins expiring blocks and 
 test('restart restores hourly dictionary and budget diagnostics without duplicate definitions',t=>{
   const dir=tmp(t),a=new Archive(dir);a.write(entries(row()));const saved=a.checkpoint();
   saved.skipped=7;saved.pausedUntil=at+HOUR;const b=new Archive(dir);b.restore(saved);b.write(entries(row(at+1)));
-  assert.equal(read(b.list('v3')).filter(r=>r.outputType==='V3_LEVEL_DEFINITION').length,1);assert.equal(b.status().budgetSkippedRecords,7);
+  assert.equal(rawRead(b.list('v3')).filter(r=>r.outputType==='V3_IMMUTABLE_PAYLOAD').length,require('../lib/v34bCodec').encode(row()).definitions.length);assert.equal(b.status().budgetSkippedRecords,7);
   assert.equal(b.status().capturePausedUntil,at+HOUR);
 });
 test('full terminal outcome retains a long funding ledger within the separate bounded trade row limit',t=>{
@@ -62,8 +63,8 @@ test('research manifest hashes bounded compressed blocks without mixing V3 into 
   const a=new Archive(tmp(t));a.write(entries({...row(),processBootId:'v3-only',scanId:'v3-scan'}));
   const f=a.list('v3')[0],plan={file:f.path,size:f.size,relativePath:'v3-shadow-compact-v1/'+path.basename(f.path)};
   const m=require('../lib/researchManifest')._test,info=await m.inspectFile(plan);
-  assert.equal(info.compression,'gzip');assert.equal(info.rowCount,2);assert.equal(info.malformedRows,0);assert.equal(info.bytes,f.size);
-  const rows=[];await m.visitJsonLines(plan,r=>rows.push(r));assert.equal(rows[1].scanId,'v3-scan');
+  assert.equal(info.compression,'gzip');assert.equal(info.rowCount,rawRead(a.list('v3')).length);assert.equal(info.malformedRows,0);assert.equal(info.bytes,f.size);
+  const rows=[];await m.visitJsonLines(plan,r=>rows.push(r));assert.equal(require('../lib/v34bCodec').decode(rows)[0].scanId,'v3-scan');
   const health=await m.buildResearchHealth([plan],at+1);assert.equal(health.restarts.bootCount,0);assert.equal(health.scans.observedScanIds,0);
 });
 test('fresh compact cohort preserves legacy evidence and imports active model trades only',t=>{

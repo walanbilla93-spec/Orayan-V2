@@ -153,7 +153,7 @@ test('error and replay gzip channels have fixed export watermarks and enforce ro
   a.write([{channel:'errors',row:{capturedAt:now,eventId:'one'}}]);const snapshot=a.snapshot('errors');t.after(snapshot.cleanup);
   const before=fs.readFileSync(snapshot.files[0].path);a.write([{channel:'errors',row:{capturedAt:now,eventId:'two'}}]);
   assert.deepEqual(fs.readFileSync(snapshot.files[0].path),before);assert.ok(MAX_BYTES>31*HOUR_BYTES);
-  assert.throws(()=>a.write([{channel:'paths',row:{capturedAt:now,path:Array.from({length:100},(_,i)=>m.id([i,now]))}}]),/BUDGET/);
+  assert.doesNotThrow(()=>a.write([{channel:'paths',row:{capturedAt:now,path:Array.from({length:100},(_,i)=>m.id([i,now]))}}]));assert.ok(a.status().priorityOverflowBytes>0);
 });
 test('measurement inventories use immutable definitions without repeated level bodies',()=>{
   const def={id:'L',type:'SWING_HIGH',knownAt:1,zoneLow:120,zoneHigh:120,price:120};
