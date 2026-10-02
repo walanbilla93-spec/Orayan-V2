@@ -160,7 +160,7 @@ async function freezeV3Export(){const c=await api('/api/v3/cohort');v3ExportGene
   $('#v35Watermark').textContent=`Dashboard and downloads frozen at generation ${c.generation} · ${new Date(c.watermarkAt).toISOString()} · cursors ${JSON.stringify(c.cursors)} · retained logical rows ${JSON.stringify(Object.fromEntries(Object.entries(c.retained).map(([k,v])=>[k,v.logicalRows])))}`;
   await loadV3Status();return c;}
 async function downloadV3(channel){if(!v3ExportGeneration)await freezeV3Export();
-  return downloadFrom(channel==='summary'?`/api/v3/summary?generation=${v3ExportGeneration}`:`/api/v3/export?channel=${channel}&generation=${v3ExportGeneration}`);}
+  window.location.href=channel==='summary'?`/api/v3/summary?generation=${v3ExportGeneration}`:`/api/v3/export?channel=${channel}&generation=${v3ExportGeneration}`;}
 async function loadV3Status() {
   try {
     const info=v3FrozenStatus||await api('/api/v3/status');
