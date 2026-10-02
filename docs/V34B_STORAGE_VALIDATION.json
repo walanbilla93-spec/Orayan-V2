@@ -168,21 +168,31 @@
       "compressedBytes": 304267
     }
   },
-  "peakRss": 176668672,
+  "peakRss": 178847744,
   "limitations": [
     "Historical budget-skipped rows are unavailable; retained replay is not offered-demand proof.",
     "Legacy compact rows already include V3.4A rounding/projections; this verifies exact preservation of available serialized evidence."
   ],
   "capacity": {
-    "hourBudgetBytes": 3407872,
-    "capBytes": 134217728,
+    "hourBudgetBytes": 8388608,
+    "capBytes": 335544320,
     "protectedHours": 31,
-    "retainedBytes": 103057998,
-    "rows": 27060,
-    "peakRss": 282689536,
+    "retainedBytes": 251353887,
+    "rows": 66000,
+    "peakRss": 297885696,
     "restartBytesEqual": true,
     "prioritySkipped": 0,
     "dailySnapshots": 1,
     "note": "33-hour near-envelope high-entropy replay under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
+  },
+  "liveDeltaReplay": {
+    "version": "LIVE_CHANGING_SURFACE_EXACT_DELTA_REPLAY",
+    "sourceRows": 186,
+    "verifiedRows": 7440,
+    "compressedBytes": 3561799,
+    "averageCompressedBytesPerExposure": 478.7364247311828,
+    "projected12000ExposuresPerHour": 5744837.096774193,
+    "peakRss": 453984256,
+    "limitation": "Observed two-minute changing surfaces replayed with advanced clocks; future market novelty and paths may require priority overflow. This is not ten-day live proof."
   }
 }

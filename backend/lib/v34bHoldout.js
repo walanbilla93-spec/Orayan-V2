@@ -2,7 +2,16 @@
 const fs=require('fs'),path=require('path'),{atomic}=require('./v34bCapture'),{DEFINITIONS}=require('./v34bResearch');
 class Holdout {
   constructor(dir){this.file=path.join(dir,'holdout-v34b.json');this.state=fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')):
-    {version:DEFINITIONS.version,startedAt:null,episodes:{},admissions:{},armStats:{},researchOnly:true,executionAllowed:false};}
+    {version:DEFINITIONS.version,startedAt:null,episodes:{},admissions:{},armStats:{},researchOnly:true,executionAllowed:false};
+    const revision=require('../validation/v34b-capture-validation.json').captureRevision;
+    if(this.state.startedAt&&revision&&this.state.validation?.captureRevision!==revision){
+      const preserved='holdout-v34b-validation-'+this.state.startedAt+'.json';
+      atomic(path.join(dir,preserved),this.state);
+      const previousCohorts=[...(this.state.previousCohorts||[]),{cohortId:this.state.cohortId,startedAt:this.state.startedAt,
+        preservedFile:preserved,reason:'PRE_DELTA_CAPTURE_VALIDATION_COHORT'}];
+      this.state={version:DEFINITIONS.version,startedAt:null,episodes:{},admissions:{},armStats:{},previousCohorts,researchOnly:true,executionAllowed:false};this.save();
+    }
+  }
   start(control,configHash,now){if(this.state.startedAt)return;
     const attestation=require('../validation/v34b-capture-validation.json');
     if(!attestation.passed||attestation.controlFingerprint!==control.fingerprint)throw Error('HOLDOUT_VALIDATION_NOT_PASSED');
@@ -42,7 +51,7 @@ class Holdout {
       }}
       if(p.status==='DATA_GAP')s.censored++;
     }
-    return {cohortId:this.state.cohortId||null,startedAt:this.state.startedAt,control:this.state.control,configHash:this.state.configHash,
+    return {cohortId:this.state.cohortId||null,startedAt:this.state.startedAt,previousCohorts:this.state.previousCohorts||[],control:this.state.control,configHash:this.state.configHash,
       uniqueFilledEpisodes:filled.length,distinctSymbols:Object.keys(symbols).length,longEpisodes:filled.filter(e=>e.side==='BUY').length,
       shortEpisodes:filled.filter(e=>e.side==='SELL').length,regimeCounts:regimes,symbolCounts:symbols,
       maxSymbolShare:filled.length?Math.max(...Object.values(symbols))/filled.length:0,

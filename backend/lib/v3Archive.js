@@ -2,7 +2,7 @@
 const fs=require('fs'),path=require('path'),zlib=require('zlib'),crypto=require('crypto');
 const {encode:compact,SCHEMA}=require('./v34bCodec');
 const {CaptureLedger,priority,atomic,CHANNELS}=require('./v34bCapture');
-const HOUR=3600000,MIN_RETAIN=30*HOUR,MAX_BYTES=128*1048576,HOUR_BYTES=3.25*1048576;
+const HOUR=3600000,MIN_RETAIN=30*HOUR,MAX_BYTES=320*1048576,HOUR_BYTES=8*1048576;
 const BLOCK_BYTES=65536,ROW_BYTES=8192,TRADE_ROW_BYTES=32768;
 const FILE=/^(v2|v3|ai|trades|errors|paths|arms)-(\d{4}-\d{2}-\d{2}-\d{2})-(\d{5})\.jsonl\.gz$/;
 const hourOf=at=>new Date(at).toISOString().slice(0,13).replace('T','-');
@@ -21,7 +21,7 @@ class Archive {
     }
     this.ledger.reconcileInterrupted();
     this.maxBytes=options.maxBytes??MAX_BYTES;this.hourBytes=options.hourBytes??HOUR_BYTES;
-    this.files=new Map();this.heads=new Map();this.definitions=new Set();this.leases=new Map();
+    this.files=new Map();this.heads=new Map();this.definitions=new Set();this.leases=new Map();this.deltaContexts=new Map();
     this.skipped=0;this.pausedUntil=null;this.summaryHours={};
     for(const name of fs.readdirSync(dir)) {
       const m=FILE.exec(name);if(!m)continue;
@@ -58,11 +58,14 @@ class Archive {
   }
   commit(entries,klass) {
     const now=Math.max(...entries.map(e=>e.row.capturedAt));this.prune(now);
-    const groups=new Map(),newDefinitions=[];
+    const groups=new Map(),newDefinitions=[],nextContexts=new Map();
     for(const {channel,row} of entries) {
       if(!CHANNELS.includes(channel))throw Error('INVALID_ARCHIVE_CHANNEL');
       const hour=hourOf(row.capturedAt),key=channel+':'+hour;
-      const c=compact(row),lines=groups.get(key)||[];
+      const deltaKey=['v3','v2','trades','arms'].includes(channel)&&(row.symbol||row.tradeId)?key+':'+(row.symbol||row.tradeId)+':'+(row.side||''):null;
+      const context=deltaKey?{previous:nextContexts.get(deltaKey)||this.deltaContexts.get(deltaKey)}:null;
+      const c=compact(row,context),lines=groups.get(key)||[];
+      if(context)nextContexts.set(deltaKey,context.next);
       for(const d of c.definitions) {
         const definitionKey=key+':'+d.referenceId;
         if(this.definitions.has(definitionKey)||newDefinitions.includes(definitionKey))continue;
@@ -121,6 +124,9 @@ class Archive {
     this.ledger.state=ledger;this.ledger.hours=hours;
     for(const [h,b] of hours)atomic(path.join(this.ledger.dir,h+'.json'),b);
     this.ledger.save();fs.unlinkSync(txn);
+    for(const [key,value] of nextContexts)this.deltaContexts.set(key,value);
+    for(const key of this.deltaContexts.keys())if(!key.includes(':'+hourOf(now)+':'))this.deltaContexts.delete(key);
+    while(this.deltaContexts.size>512)this.deltaContexts.delete(this.deltaContexts.keys().next().value);
     for(const key of newDefinitions)this.definitions.add(key);
     while(this.definitions.size>16384)this.definitions.delete(this.definitions.values().next().value);
     if(this.pausedUntil && now>=this.pausedUntil)this.pausedUntil=null;

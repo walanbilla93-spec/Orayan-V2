@@ -14,8 +14,12 @@ Budget-skipped historical identities/bytes cannot be recovered or inferred.
 
 ## Capture and reconstruction
 
-Target envelope: 3,407,872 compressed bytes/hour (3.25 MiB), 134,217,728 bytes
-(128 MiB) rolling soft cap. Whole UTC hours protect at least 30 hours, including
+Validated envelope: 8,388,608 compressed bytes/hour (8 MiB), 335,544,320 bytes
+(320 MiB) rolling soft cap. The initial 3.25 MiB/128 MiB target was safe in the
+retained exploratory replay but insufficient for full offered live exposures.
+Even exact deltas projected 5.48 MiB/hour at 12,000 changing surfaces/hour. The
+larger validated envelope leaves 6.4 MiB/hour for standard records and a 20%
+priority reserve. Whole UTC hours protect at least 30 hours, including
 the partial boundary hour. Standard writes stop before a 20% reserve is consumed.
 Priority batches include births/admissions, matched V2 for those admissions,
 fills/closes/cancels, funding finalization, paths, arm measurements and errors.
@@ -35,7 +39,11 @@ rows, distinct from logical records and unique trades/episodes.
 New rows use `V3_LOSSLESS_REFERENCES_V2`. `v34bCodec.decode()` reconstructs the
 complete captured JSON from immutable SHA-256 references; arrays/long strings
 are fragmented losslessly. Numeric precision and all births/lifecycle/path
-fields remain exact. No sampling or lossy delta coding is enabled. Repeated
+fields remain exact. Sparse deltas store only changed JSON paths, including
+explicit removals, against a content-addressed prior full surface. Each resolved
+value is checked against its canonical SHA-256 hash. Bases restart at hour
+boundaries and after process restart; context advances only after accepted
+durable commits. No sampling or lossy coding is enabled. Repeated
 surfaces retain individual clocks and exposureCount=1 while frozen control
 dedupe remains intact. Hour/channel references are self-contained; legacy V1
 rows remain in their original representation and schema.
@@ -49,7 +57,7 @@ minutes and are bounded to three. Expired generations return 410; freeze again.
 Completed UTC days are immutable hard-linked gzip blocks with hashes/manifests
 under `daily-snapshots/`, outside rolling quota on the existing 6 GB volume.
 Download `/api/v3/daily?day=YYYY-MM-DD`. The first day can be partial. Snapshot
-files persist; growth is roughly 0.78 GiB/10 days at the full hourly envelope,
+files persist; growth is roughly 1.88 GiB/10 days at the full hourly envelope,
 plus exploratory evidence. They require eventual disk monitoring/archival.
 
 Quotes alongside historical next-minute-open fills are cached pre-fill quotes
@@ -95,7 +103,9 @@ or funding remains censored/unresolved; it is never fabricated as zero return.
 
 Start a new labeled holdout at the first successful post-validation capture scan,
 freeze control/config fingerprints and preregistration metadata, and preserve
-exploratory evidence. The capture validation attestation gates start. The trailing
+exploratory evidence. The initial deployment's validation cohort is preserved
+separately in an immutable metadata copy; it is excluded from the clean cohort
+after the exact-delta/8 MiB repair. The capture validation attestation gates start. The trailing
 arm separately waits for its observed 30-hour qualification.
 
 Primary milestone: 100 additional unique filled episodes; prefer >=10 days,
@@ -119,6 +129,6 @@ See `V34B_STORAGE_VALIDATION.json` and the deployment attestation for exact repl
 memory/capacity and full-suite results. All 88,382 available serialized source
 rows reconstruct exactly. This does not restore historical skipped records or
 remove V3.4A's prior rounding. The stress test fills 33 UTC-hour envelopes, retains
-31 hours near 98.3 MiB, verifies restart equality and zero priority skips under
+31 protected hours, verifies restart equality and zero priority skips under
 the deployment's 352 MiB V8 heap setting. Live Northflank metrics are verified
 separately after deployment; a synthetic test is not a ten-day live holdout.

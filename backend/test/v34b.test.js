@@ -14,6 +14,45 @@ function trade(side='BUY'){
 }
 const noise={noise:{status:'AVAILABLE',atr1m:1,receivedAt:at-1,cutoff:at-m}};
 const bar=(ts,open=100,high=101,low=99.8,close=100)=>({ts,open,high,low,close});
+test('pre-repair validation cohort is preserved separately before clean holdout starts',t=>{
+  const dir=tmp(t),old={startedAt:at,cohortId:'INITIAL_VALIDATION',validation:{},episodes:{E:{symbol:'S'}},admissions:{T:{status:'OPEN'}}};
+  fs.writeFileSync(path.join(dir,'holdout-v34b.json'),JSON.stringify(old));
+  const {Holdout}=require('../lib/v34bHoldout'),h=new Holdout(dir);
+  assert.equal(h.state.startedAt,null);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,h.state.previousCohorts[0].preservedFile))),old);
+  h.start(require('../lib/v34Control'),'same-config',at+1);
+  assert.equal(h.state.startedAt,at+1);assert.deepEqual(h.state.admissions,{});
+  assert.equal(new Holdout(dir).state.startedAt,at+1);
+});
+test('exact sparse delta reconstruction preserves nested deletions arrays unicode and restart/hour closure',t=>{
+  const dir=tmp(t),a=new Archive(dir),expected=[];
+  for(let i=0;i<8;i++){
+    const row={symbol:'DELTA',capturedAt:at+i,outputType:'V3_SURFACE_EXPOSURE',nested:{same:Array(100).fill('🙂 immutable'),
+      price:.000000123456789+i*.0000000001,items:i%2?[1,2,3]:[1,2],...(i%2?{}:{removed:true})},clock:i};
+    expected.push(row);a.write([{channel:'v3',row}]);
+  }
+  assert.ok(raw(a).some(r=>r.$v34bRecord?.delta?.changes.length));
+  const decoded=codec.decode(raw(a));for(let i=0;i<expected.length;i++){
+    const {captureSchema,archiveChannel,priorityClass,captureGeneration,exposureCount,...body}=decoded[i];assert.deepEqual(body,expected[i]);
+  }
+  const b=new Archive(dir);b.write([{channel:'v3',row:{...expected.at(-1),capturedAt:at+9}}]);
+  assert.equal(codec.decode(raw(b)).length,9);
+  b.write([{channel:'v3',row:{...expected.at(-1),capturedAt:at+HOUR}}]);
+  const next=b.list('v3').filter(f=>f.hour.endsWith('-13')).flatMap(f=>zlib.gunzipSync(fs.readFileSync(f.path)).toString().trim().split('\n').map(JSON.parse));
+  assert.equal(codec.decode(next)[0].nested.price,expected.at(-1).nested.price);
+  const damaged=raw(a).map(r=>r.$v34bRecord?.delta?{...r,$v34bRecord:{...r.$v34bRecord,delta:{...r.$v34bRecord.delta,changes:[[['clock'],999]]}}}:r);
+  assert.throws(()=>codec.decode(damaged),/HASH_MISMATCH/);
+});
+test('large causal priority delta changes remain bounded and reconstruct every field',t=>{
+  const a=new Archive(tmp(t),{hourBytes:1,maxBytes:1}),rows=[];
+  for(let i=0;i<2;i++){
+    const row={symbol:'BIG',capturedAt:at+i,outputType:'ADMISSION',v3Decision:'ACCEPT_SHADOW',
+      levels:Array.from({length:1000},(_,n)=>({id:n,price:n+i+.123456789,knownAt:at+i}))};
+    rows.push(row);a.write([{channel:'v3',row}]);
+  }
+  const decoded=codec.decode(raw(a));for(let i=0;i<2;i++)assert.deepEqual(decoded[i].levels,rows[i].levels);
+  assert.equal(a.ledger.status(at).currentPrioritySkips,0);
+  assert.ok(raw(a).filter(r=>r.outputType!=='V3_IMMUTABLE_PAYLOAD').every(r=>Buffer.byteLength(JSON.stringify(r))<8192));
+});
 test('exact offered row and byte math, priority isolation, durable hourly counters across restart',t=>{
   const dir=tmp(t),a=new Archive(dir,{hourBytes:1000,maxBytes:5000});
   const small={capturedAt:at,outputType:'UPDATE',value:'small'},large={...small,value:require('crypto').randomBytes(2400).toString('hex')};
@@ -117,7 +156,7 @@ test('shared export routes and UI freeze/daily/arms downloads exist and JavaScri
   require('child_process').execFileSync(process.execPath,['--check',path.resolve(__dirname,'../../frontend/app.js')]);
   const routes=fs.readFileSync(path.resolve(__dirname,'../routes/api.js'),'utf8');for(const route of ['/api/v3/cohort','/api/v3/daily'])assert.ok(routes.includes(route));
   const html=fs.readFileSync(path.resolve(__dirname,'../../frontend/index.html'),'utf8');for(const id of ['v35Holdout','v35Capture','v35Arms','btnV3Freeze','btnV3Daily','btnExportV3Arms'])assert.ok(html.includes('id="'+id+'"'));
-  assert.equal(MAX_BYTES,134217728);assert.equal(HOUR_BYTES,3407872);assert.ok(31*HOUR_BYTES<MAX_BYTES);
+  assert.equal(MAX_BYTES,335544320);assert.equal(HOUR_BYTES,8388608);assert.ok(31*HOUR_BYTES<MAX_BYTES);
 });
 test('durable redo repairs partially renamed channels and reconciles interrupted offered records',t=>{
   const dir=tmp(t),a=new Archive(dir),entry={channel:'v3',row:{capturedAt:at,outputType:'INTERRUPTED'}};

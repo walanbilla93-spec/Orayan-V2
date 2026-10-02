@@ -1,29 +1,31 @@
 {
   "passed": true,
   "controlFingerprint": "9fb7a1e55834dd57f0d0c194dce76178e6a132d3e4fa39bcdc74f627193ad928",
-  "hourBudgetBytes": 3407872,
-  "archiveCapBytes": 134217728,
+  "hourBudgetBytes": 8388608,
+  "archiveCapBytes": 335544320,
   "tests": {
-    "total": 161,
-    "pass": 161,
+    "total": 164,
+    "pass": 164,
     "fail": 0,
-    "skip": 0
+    "skip": 0,
+    "cancelled": 0,
+    "todo": 0
   },
   "replayRows": 88382,
   "replayMaxObservedHourBytes": 1559968,
   "capacity": {
-    "hourBudgetBytes": 3407872,
-    "capBytes": 134217728,
+    "hourBudgetBytes": 8388608,
+    "capBytes": 335544320,
     "protectedHours": 31,
-    "retainedBytes": 103057998,
-    "rows": 27060,
-    "peakRss": 282689536,
+    "retainedBytes": 251353887,
+    "rows": 66000,
+    "peakRss": 297885696,
     "restartBytesEqual": true,
     "prioritySkipped": 0,
     "dailySnapshots": 1,
     "note": "33-hour near-envelope high-entropy replay under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
   },
-  "validatedAt": "2026-10-02T17:25:05.421Z",
+  "validatedAt": "2026-10-02T18:10:17.498Z",
   "northflankEnvelope": {
     "memoryMB": 512,
     "persistentVolumeGB": 6,
@@ -31,5 +33,16 @@
     "baselineRestarts": 0,
     "baseline5xxPercent": 0
   },
-  "rationale": "31 full envelopes need 100.75 MiB, below the 128 MiB cap; stress retained 98.28 MiB with bounded streaming heads and no priority skips. Protected reserve and explicit priority overflow retain lifecycle/path data. Daily files live on existing 6 GB volume."
+  "rationale": "The original 3.25 MiB/hour target starved standard live updates. Exact deltas reduce offered research JSON to about 5.48 MiB/hour at 12,000 changing surfaces/hour. 8 MiB/hour leaves 6.4 MiB standard allowance plus priority reserve; 31 envelopes need 248 MiB below the 320 MiB disk cap. A 33-hour near-envelope replay retained 239.7 MiB with 284.1 MiB peak RSS and restart equality. Existing Northflank: 512 MB memory, 6 GB persistent disk. Ten full-envelope days need about 1.88 GiB; priority overflow stays explicit.",
+  "captureRevision": "V34B_EXACT_DELTAS_8MIB_V1",
+  "liveDeltaReplay": {
+    "version": "LIVE_CHANGING_SURFACE_EXACT_DELTA_REPLAY",
+    "sourceRows": 186,
+    "verifiedRows": 7440,
+    "compressedBytes": 3561799,
+    "averageCompressedBytesPerExposure": 478.7364247311828,
+    "projected12000ExposuresPerHour": 5744837.096774193,
+    "peakRss": 453984256,
+    "limitation": "Observed two-minute changing surfaces replayed with advanced clocks; future market novelty and paths may require priority overflow. This is not ten-day live proof."
+  }
 }

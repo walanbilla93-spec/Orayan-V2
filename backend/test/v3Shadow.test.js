@@ -93,7 +93,7 @@ test('immutable birth/current clocks survive restart; same-bar scans dedupe and 
   j.record(row(at),'scan',at,at+5);j.record(row(at),'scan2',at,at+6);assert.equal(j.counts.v3,2);assert.equal(j.recent.length,1);
   j.checkpointAndPrune(at);
   const restored=new ShadowJournal(dir);restored.record({...row(at+ms),closedBarOpenAt:at},'scan3',at+ms,at+ms+5);
-  const lines=restored.files('v3').flatMap(f=>readRows(f.path).filter(r=>r.outputType==='V3_SHADOW_SIGNAL'));
+  const lines=require('../lib/v34bCodec').decode(restored.files('v3').flatMap(f=>readRows(f.path))).filter(r=>r.outputType==='V3_SHADOW_SIGNAL');
   assert.equal(lines[1].kind,'candidate_update');assert.equal(lines[1].firstBirthAt,at);
   assert.equal(lines[1].currentUpdateAt,at+ms);assert.equal(lines[1].capturedAt,at+ms+5);
   restored.record({...row(at+ms+1),configHash:'changed'},'scan4',at+ms+1,at+ms+6);

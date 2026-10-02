@@ -19,8 +19,7 @@ function timestamp(b,receivedAt,kind='WITHIN_MINUTE') {return {barOpenAt:b.ts,ea
 function fill(t,b,receivedAt,context) {
   const g=t.geometry,d=t.side==='BUY'?1:-1,slipped=b.open*(1+d*g.costs.entrySlippageBps/10000);
   const modeled=round(slipped,g.tickSize,d===1),q=m.quote(context?.quoteAt?context.quoteAt(b.ts):context?.quote,b.ts,receivedAt);
-  q.semantic=q.status!=='AVAILABLE'?'MISSING_FILL_QUOTE':q.receivedAt===b.ts?'CONTEMPORANEOUS_FILL_QUOTE':'CACHED_PRE_FILL_QUOTE';
-  q.isExactFillBidAsk=q.status==='AVAILABLE'&&q.receivedAt===b.ts&&!context?.historicalBarReconstruction;
+  q.semantic=q.status!=='AVAILABLE'?'MISSING_FILL_QUOTE':'CACHED_PRE_FILL_QUOTE';
   // A historical OHLC modeled fill has no synchronized exchange fill quote.
   q.isExactFillBidAsk=false;
   q.missingReason=q.status==='AVAILABLE'?null:!q.receivedAt?'NO_CAUSAL_QUOTE_RECEIPT':q.ageMs>120000?'CACHED_QUOTE_TOO_OLD':'INVALID_OR_FUTURE_QUOTE';

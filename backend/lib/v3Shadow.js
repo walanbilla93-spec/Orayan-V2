@@ -136,8 +136,11 @@ class ShadowJournal {
     this.appendBatch([{channel,row}]);
   }
   appendBatch(entries) {
-    this.archive.write(entries.map(({channel,row})=>({channel,
-      row:redact({...runtime.rowFields(),implementationHash,captureCohort:this.captureCohort,...row})})));
+    try{this.archive.write(entries.map(({channel,row})=>({channel,
+      row:redact({...runtime.rowFields(),implementationHash,captureCohort:this.captureCohort,...row})})));}
+    catch(e){e.affectedRecords=entries.slice(0,8).map(({channel,row})=>({channel,recordType:row.outputType,
+      candidateId:row.candidateId??row.v3CandidateId??null,episodeId:row.episodeId??row.trade?.episodeId??null,
+      tradeId:row.tradeId??row.trade?.tradeId??null,decisionAt:row.decisionAt??null,capturedAt:row.capturedAt}));throw e;}
     for(const {channel} of entries){const key=channel==='errors'?'errorRecords':channel;this.counts[key]=(this.counts[key]||0)+1;}
   }
   captureError(error,context={}) {
@@ -148,14 +151,15 @@ class ShadowJournal {
     const proposed=error.reasonCode||error.code||error.message;
     const code=classify(error);
     // Never export raw exception messages, request URLs, headers or provider responses.
-    const row={outputType:'V3_CAPTURE_ERROR',capturedAt:Date.now(),timestamp:Date.now(),
+    const row=redact({outputType:'V3_CAPTURE_ERROR',capturedAt:Date.now(),timestamp:Date.now(),
       symbol:context.symbol??null,candidateId:context.candidateId??null,episodeId:context.episodeId??null,
       subsystem:context.subsystem||'SHADOW_CAPTURE',errorCode:code,messageClass:['Error','TypeError','RangeError','SyntaxError','AbortError'].includes(error.name)?error.name:'Error',
-      tradeId:context.tradeId??null,retryCursor:context.retryCursor??null,
-      firstAt:Date.now(),lastAt:Date.now(),recoveredAt:null,completenessStatus:'RETRY_PENDING',
+      tradeId:context.tradeId??null,retryCursor:context.retryCursor??error.affectedRecords?.[0]?.candidateId??null,
+      affectedRecords:error.affectedRecords??[],
+      firstAt:Date.now(),lastAt:Date.now(),recoveredAt:null,completenessStatus:code==='V3_ARCHIVE_BUDGET_PAUSED'?'SKIPPED_PERMANENT':'RETRY_PENDING',
       httpStatus:Number.isInteger(error.status)?error.status:null,providerCode:Number.isInteger(error.retCode)?error.retCode:null,
       retry:context.retry||'NEXT_SCAN',skip:context.skip??false,affectedRecordType:context.affectedRecordType||'UNKNOWN',
-      completenessImpacted:true,eventId:hash([Date.now(),code,context.symbol])};
+      completenessImpacted:true,eventId:hash([Date.now(),code,context.symbol])});
     this.counts.errors++;this.errorClasses[code]=(this.errorClasses[code]||0)+1;
     this.errorRecent.push(row);if(this.errorRecent.length>16)this.errorRecent.shift();
     this.archive.ledger.error(row);
