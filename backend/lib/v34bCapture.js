@@ -51,14 +51,21 @@ class CaptureLedger {
     for(const key of Object.keys(this.state.receiptHours))if(hourAt(key)<now-33*HOUR)delete this.state.receiptHours[key];this.save();
   }
   error(row){
-    const key=[row.errorCode,row.subsystem,row.symbol||''].join('|'),e=this.state.errors[key]||{firstAt:row.capturedAt,count:0};
+    const key=[row.errorCode,row.subsystem,row.symbol||'',row.tradeId||'',row.candidateId||'',JSON.stringify(row.retryCursor??null)].join('|'),e=this.state.errors[key]||{firstAt:row.capturedAt,count:0};
     this.state.errors[key]={...e,count:e.count+1,lastAt:row.capturedAt,errorCode:row.errorCode,subsystem:row.subsystem,
       symbol:row.symbol,candidateId:row.candidateId,episodeId:row.episodeId,tradeId:row.tradeId,
-      retryCursor:row.retryCursor,completenessStatus:'RETRY_PENDING',recoveredAt:null};
+      retryCursor:row.retryCursor,completenessStatus:row.completenessStatus||'RETRY_PENDING',recoveredAt:null};
     // Full immutable error rows stay on disk; bounded recovery index is monitoring only.
     if(Object.keys(this.state.errors).length>256)delete this.state.errors[Object.keys(this.state.errors)[0]];this.save();
   }
-  recovered(subsystem,symbol,at){for(const e of Object.values(this.state.errors))if(e.subsystem===subsystem&&e.symbol===symbol&&!e.recoveredAt){e.recoveredAt=at;e.completenessStatus='RECOVERED_AT_SAME_CURSOR';}this.save();}
+  recovered(subsystem,symbol,at,scope={}){
+    for(const e of Object.values(this.state.errors))if(e.subsystem===subsystem&&e.symbol===symbol&&!e.recoveredAt&&
+      e.completenessStatus==='RETRY_PENDING'&&(e.tradeId??null)===(scope.tradeId??null)){
+      const same=JSON.stringify(e.retryCursor??null)===JSON.stringify(scope.retryCursor??null);
+      if(same&&!scope.censored){e.recoveredAt=at;e.completenessStatus='RECOVERED_AT_SAME_CURSOR';}
+      else{e.resumedAt=at;e.completenessStatus=scope.censored?'CENSORED_AFTER_RETRY':'RESUMED_PRIOR_CURSOR_COVERAGE_UNVERIFIED';}
+    }this.save();
+  }
   status(now=Date.now()){
     const h=hourOf(now),current=Object.values(this.bucket(h));
     return {...this.state,totals:Object.values(this.state.totals),currentHour:h,currentHourCounters:current,

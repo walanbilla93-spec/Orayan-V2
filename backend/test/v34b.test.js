@@ -14,6 +14,17 @@ function trade(side='BUY'){
 }
 const noise={noise:{status:'AVAILABLE',atr1m:1,receivedAt:at-1,cutoff:at-m}};
 const bar=(ts,open=100,high=101,low=99.8,close=100)=>({ts,open,high,low,close});
+test('recovery never crosses trades or claims different-cursor or permanent skips are complete',t=>{
+  const l=new CaptureLedger(tmp(t)),base={capturedAt:at,errorCode:'UNAVAILABLE',subsystem:'PATH',symbol:'S',completenessStatus:'RETRY_PENDING'};
+  l.error({...base,tradeId:'A',retryCursor:{lastBarAt:1}});l.error({...base,tradeId:'B',retryCursor:{lastBarAt:1}});
+  l.error({...base,errorCode:'V3_ARCHIVE_BUDGET_PAUSED',tradeId:'A',retryCursor:{lastBarAt:1},completenessStatus:'SKIPPED_PERMANENT'});
+  l.recovered('PATH','S',at+1,{tradeId:'A',retryCursor:{lastBarAt:1}});
+  let es=Object.values(l.state.errors);assert.equal(es.find(e=>e.tradeId==='B').recoveredAt,null);
+  assert.equal(es.find(e=>e.errorCode==='V3_ARCHIVE_BUDGET_PAUSED').completenessStatus,'SKIPPED_PERMANENT');
+  assert.equal(es.find(e=>e.tradeId==='A'&&e.errorCode==='UNAVAILABLE').recoveredAt,at+1);
+  l.recovered('PATH','S',at+2,{tradeId:'B',retryCursor:{lastBarAt:2}});
+  assert.equal(es.find(e=>e.tradeId==='B').recoveredAt,null);assert.equal(es.find(e=>e.tradeId==='B').completenessStatus,'RESUMED_PRIOR_CURSOR_COVERAGE_UNVERIFIED');
+});
 test('pre-repair validation cohort is preserved separately before clean holdout starts',t=>{
   const dir=tmp(t),old={startedAt:at,cohortId:'INITIAL_VALIDATION',validation:{},episodes:{E:{symbol:'S'}},admissions:{T:{status:'OPEN'}}};
   fs.writeFileSync(path.join(dir,'holdout-v34b.json'),JSON.stringify(old));
@@ -149,7 +160,7 @@ test('error taxonomy redacts context, exposes retry recovery and preserves histo
   assert.equal(classify(Object.assign(Error('secret'),{name:'AbortError'})),'ABORTED');assert.equal(classify(Object.assign(Error('secret'),{status:429})),'RATE_LIMIT');
   assert.equal(classify(Object.assign(Error('secret'),{name:'TimeoutError'})),'TIMEOUT');assert.equal(classify(Error('COMPACT_ROW_TOO_LARGE')),'OVERSIZE');
   const j=new ShadowJournal(tmp(t));j.captureError(Object.assign(Error('Bearer SECRET'),{name:'AbortError'}),{symbol:'S',tradeId:'T',subsystem:'PATH',retryCursor:{lastBarAt:at}});
-  j.archive.ledger.recovered('PATH','S',at);assert.equal(Object.values(j.archive.ledger.state.errors)[0].recoveredAt,at);
+  j.archive.ledger.recovered('PATH','S',at,{tradeId:'T',retryCursor:{lastBarAt:at}});assert.equal(Object.values(j.archive.ledger.state.errors)[0].recoveredAt,at);
   assert.equal(JSON.stringify(j.summary()).includes('SECRET'),false);assert.equal(j.counts.errors,1);
 });
 test('shared export routes and UI freeze/daily/arms downloads exist and JavaScript parses',()=>{

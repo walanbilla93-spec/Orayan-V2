@@ -448,7 +448,8 @@ class ShadowJournal {
             next.research35=r35.advance(next.research35,next,[],now);this.tradeEvent(next,['FUNDING_FINALIZED'],Date.now());
             committed=next;
           }
-          this.archive.ledger.recovered('TRADE_PATH_OR_FUNDING',next.symbol,Date.now());this.lastTradeError=null;
+          this.archive.ledger.recovered('TRADE_PATH_OR_FUNDING',next.symbol,Date.now(),{tradeId:next.tradeId,
+            retryCursor:{lastBarAt:previous.lastBarAt,fundingStatus:previous.fundingStatus},censored:next.status==='DATA_GAP'});this.lastTradeError=null;
         }catch(e){next=committed;this.captureError(e,{symbol:next.symbol,episodeId:next.episodeId,
           candidateId:next.candidateId,tradeId:next.tradeId,retryCursor:{lastBarAt:next.lastBarAt,fundingStatus:next.fundingStatus},subsystem:'TRADE_PATH_OR_FUNDING',affectedRecordType:'V3_SHADOW_TRADE',retry:'SAME_CURSOR_NEXT_POLL'});
           this.lastTradeError={at:Date.now(),symbol:next.symbol,reason:e.reasonCode||e.message};}

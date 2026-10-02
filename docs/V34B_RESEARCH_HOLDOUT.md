@@ -132,3 +132,8 @@ remove V3.4A's prior rounding. The stress test fills 33 UTC-hour envelopes, reta
 31 protected hours, verifies restart equality and zero priority skips under
 the deployment's 352 MiB V8 heap setting. Live Northflank metrics are verified
 separately after deployment; a synthetic test is not a ten-day live holdout.
+
+Durable recovery is scoped to the affected trade and recorded retry cursor. Only
+a successful retry at that same cursor is marked recovered; a different cursor
+remains coverage-unverified, censored retries are explicit, and permanent skipped
+records cannot be relabeled recovered. Historical error rows remain unchanged.
