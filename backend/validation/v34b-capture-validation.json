@@ -4,8 +4,8 @@
   "hourBudgetBytes": 8388608,
   "archiveCapBytes": 335544320,
   "tests": {
-    "total": 166,
-    "pass": 166,
+    "total": 167,
+    "pass": 167,
     "fail": 0,
     "skip": 0,
     "cancelled": 0,
@@ -25,7 +25,7 @@
     "dailySnapshots": 1,
     "note": "33-hour near-envelope high-entropy replay under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
   },
-  "validatedAt": "2026-10-02T18:52:38.867Z",
+  "validatedAt": "2026-10-02T19:01:36.410Z",
   "northflankEnvelope": {
     "memoryMB": 512,
     "persistentVolumeGB": 6,

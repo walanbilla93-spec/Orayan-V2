@@ -14,6 +14,15 @@ function trade(side='BUY'){
 }
 const noise={noise:{status:'AVAILABLE',atr1m:1,receivedAt:at-1,cutoff:at-m}};
 const bar=(ts,open=100,high=101,low=99.8,close=100)=>({ts,open,high,low,close});
+test('multi-block download is byte-exact at its watermark with bounded response listeners',async t=>{
+  const dir=tmp(t),p=path.join(dir,'block');fs.writeFileSync(p,'exact-watermark-extra');
+  const {fileStream}=require('../lib/v34bDownload'),{Writable}=require('stream'),{pipeline}=require('stream/promises');
+  let result='',peak=0;const sink=new Writable({highWaterMark:1,write(chunk,encoding,done){
+    result+=chunk.toString();peak=Math.max(peak,this.listenerCount('close'));setImmediate(done);
+  }});
+  await pipeline(fileStream(Array.from({length:512},()=>({path:p,size:15}))),sink);
+  assert.equal(result,'exact-watermark'.repeat(512));assert.ok(peak<10);
+});
 test('recovery never crosses trades or claims different-cursor or permanent skips are complete',t=>{
   const l=new CaptureLedger(tmp(t)),base={capturedAt:at,errorCode:'UNAVAILABLE',subsystem:'PATH',symbol:'S',completenessStatus:'RETRY_PENDING'};
   l.error({...base,tradeId:'A',retryCursor:{lastBarAt:1}});l.error({...base,tradeId:'B',retryCursor:{lastBarAt:1}});

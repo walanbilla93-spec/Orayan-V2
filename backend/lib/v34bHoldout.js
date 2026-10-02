@@ -11,7 +11,8 @@ class Holdout {
         preservedFile:preserved,reason:'CAPTURE_VALIDATION_REVISION_CHANGED'}];
       // A migration hour already contains old-format traffic and its exhausted quota.
       // Begin prospective collection on the next full UTC hour, never relabel it clean.
-      this.state={version:DEFINITIONS.version,startedAt:null,notBeforeAt:Math.ceil(Date.now()/3600000)*3600000,
+      const boundary=Math.max(Math.ceil(this.state.startedAt/3600000)*3600000,Math.floor(Date.now()/3600000)*3600000);
+      this.state={version:DEFINITIONS.version,startedAt:null,notBeforeAt:boundary,
         episodes:{},admissions:{},armStats:{},previousCohorts,researchOnly:true,executionAllowed:false};this.save();
     }
   }

@@ -145,3 +145,9 @@ is excluded from the clean holdout. On capture-validation revision changes the
 prior cohort is preserved and a new cohort cannot start before the next full
 UTC hour. The first successful validated receipt scan at/after that boundary
 starts the new cohort without changing any strategy settings.
+
+Multi-block downloads use one response pipeline with backpressure. A 512-block
+byte-watermark test confirms bounded response listeners and exact concatenated
+bytes. Migration launch boundaries survive slow container startup: the first
+validated scan starts within the current clean UTC hour after the dirty prior
+cohort hour, rather than waiting an extra hour solely because a pod starts late.
