@@ -137,3 +137,11 @@ Durable recovery is scoped to the affected trade and recorded retry cursor. Only
 a successful retry at that same cursor is marked recovered; a different cursor
 remains coverage-unverified, censored retries are explicit, and permanent skipped
 records cannot be relabeled recovered. Historical error rows remain unchanged.
+
+All periodic trade MARK updates are priority records too, so standard archive
+pressure cannot pause lifecycle workers. The migration UTC hour contains old
+format traffic and validation writes; its skipped records are preserved and it
+is excluded from the clean holdout. On capture-validation revision changes the
+prior cohort is preserved and a new cohort cannot start before the next full
+UTC hour. The first successful validated receipt scan at/after that boundary
+starts the new cohort without changing any strategy settings.

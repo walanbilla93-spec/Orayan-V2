@@ -4,9 +4,9 @@ const HOUR=3600000,CHANNELS=['v3','v2','ai','trades','paths','errors','arms'];
 const hourOf=at=>new Date(at).toISOString().slice(0,13).replace('T','-');
 const hourAt=h=>Date.parse(h.slice(0,10)+'T'+h.slice(11)+':00:00Z');
 function atomic(file,value){const tmp=file+'.tmp';fs.writeFileSync(tmp,JSON.stringify(value));fs.renameSync(tmp,file);}
-function priority(entries){return entries.some(({channel,row})=>['paths','errors','arms'].includes(channel)||
+function priority(entries){return entries.some(({channel,row})=>['trades','paths','errors','arms'].includes(channel)||
   row.kind==='candidate_birth'||row.v3Decision==='ACCEPT_SHADOW'||
-  (channel==='trades'&&!(row.transitions?.length===1&&row.transitions[0]==='MARK')))?'PRIORITY':'STANDARD';}
+  row.outputType==='V3_SHADOW_TRADE')?'PRIORITY':'STANDARD';}
 class CaptureLedger {
   constructor(dir){
     this.dir=path.join(dir,'capture-ledger');fs.mkdirSync(this.dir,{recursive:true});this.file=path.join(this.dir,'totals.json');

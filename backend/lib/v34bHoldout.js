@@ -8,11 +8,14 @@ class Holdout {
       const preserved='holdout-v34b-validation-'+this.state.startedAt+'.json';
       atomic(path.join(dir,preserved),this.state);
       const previousCohorts=[...(this.state.previousCohorts||[]),{cohortId:this.state.cohortId,startedAt:this.state.startedAt,
-        preservedFile:preserved,reason:'PRE_DELTA_CAPTURE_VALIDATION_COHORT'}];
-      this.state={version:DEFINITIONS.version,startedAt:null,episodes:{},admissions:{},armStats:{},previousCohorts,researchOnly:true,executionAllowed:false};this.save();
+        preservedFile:preserved,reason:'CAPTURE_VALIDATION_REVISION_CHANGED'}];
+      // A migration hour already contains old-format traffic and its exhausted quota.
+      // Begin prospective collection on the next full UTC hour, never relabel it clean.
+      this.state={version:DEFINITIONS.version,startedAt:null,notBeforeAt:Math.ceil(Date.now()/3600000)*3600000,
+        episodes:{},admissions:{},armStats:{},previousCohorts,researchOnly:true,executionAllowed:false};this.save();
     }
   }
-  start(control,configHash,now){if(this.state.startedAt)return;
+  start(control,configHash,now){if(this.state.startedAt||now<(this.state.notBeforeAt||0))return;
     const attestation=require('../validation/v34b-capture-validation.json');
     if(!attestation.passed||attestation.controlFingerprint!==control.fingerprint)throw Error('HOLDOUT_VALIDATION_NOT_PASSED');
     Object.assign(this.state,{startedAt:now,cohortId:'V34B_CLEAN_HOLDOUT_'+new Date(now).toISOString(),control,configHash,definitions:DEFINITIONS,validation:attestation});this.save();
@@ -51,7 +54,7 @@ class Holdout {
       }}
       if(p.status==='DATA_GAP')s.censored++;
     }
-    return {cohortId:this.state.cohortId||null,startedAt:this.state.startedAt,previousCohorts:this.state.previousCohorts||[],control:this.state.control,configHash:this.state.configHash,
+    return {cohortId:this.state.cohortId||null,startedAt:this.state.startedAt,notBeforeAt:this.state.notBeforeAt||null,previousCohorts:this.state.previousCohorts||[],control:this.state.control,configHash:this.state.configHash,
       uniqueFilledEpisodes:filled.length,distinctSymbols:Object.keys(symbols).length,longEpisodes:filled.filter(e=>e.side==='BUY').length,
       shortEpisodes:filled.filter(e=>e.side==='SELL').length,regimeCounts:regimes,symbolCounts:symbols,
       maxSymbolShare:filled.length?Math.max(...Object.values(symbols))/filled.length:0,

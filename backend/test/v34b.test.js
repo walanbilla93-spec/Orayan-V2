@@ -30,9 +30,11 @@ test('pre-repair validation cohort is preserved separately before clean holdout 
   fs.writeFileSync(path.join(dir,'holdout-v34b.json'),JSON.stringify(old));
   const {Holdout}=require('../lib/v34bHoldout'),h=new Holdout(dir);
   assert.equal(h.state.startedAt,null);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,h.state.previousCohorts[0].preservedFile))),old);
-  h.start(require('../lib/v34Control'),'same-config',at+1);
-  assert.equal(h.state.startedAt,at+1);assert.deepEqual(h.state.admissions,{});
-  assert.equal(new Holdout(dir).state.startedAt,at+1);
+  const start=h.state.notBeforeAt;assert.equal(start%HOUR,0);
+  h.start(require('../lib/v34Control'),'same-config',start-1);assert.equal(h.state.startedAt,null);
+  h.start(require('../lib/v34Control'),'same-config',start);
+  assert.equal(h.state.startedAt,start);assert.deepEqual(h.state.admissions,{});
+  assert.equal(new Holdout(dir).state.startedAt,start);
 });
 test('exact sparse delta reconstruction preserves nested deletions arrays unicode and restart/hour closure',t=>{
   const dir=tmp(t),a=new Archive(dir),expected=[];
@@ -79,6 +81,12 @@ test('priority admission batch and counters cannot be starved by standard quota'
   a.write([{channel:'v3',row:{capturedAt:at,outputType:'ADMISSION',v3Decision:'ACCEPT_SHADOW'}},{channel:'v2',row:{capturedAt:at,outputType:'MATCH'}}]);
   a.write([{channel:'errors',row:{capturedAt:at,outputType:'ERROR'}}]);
   assert.equal(a.ledger.status(at).totals.reduce((n,b)=>n+b.skippedRows,0),0);assert.ok(a.status().priorityOverflowBytes>0);
+});
+test('periodic trade updates cannot pause lifecycle workers when standard quota is exhausted',t=>{
+  const a=new Archive(tmp(t),{hourBytes:1,maxBytes:1});
+  a.write([{channel:'trades',row:{capturedAt:at,outputType:'V3_SHADOW_TRADE',symbol:'S',transitions:['MARK']}}]);
+  assert.equal(a.ledger.status(at).totals[0].priority,'PRIORITY');
+  assert.equal(a.ledger.status(at).totals[0].skippedRows,0);
 });
 test('lossless references preserve all prices floats provenance paths and repeated exposure',t=>{
   const a=new Archive(tmp(t)),x={capturedAt:at,outputType:'TEST',measurement34:{breadth:{universe:Array.from({length:80},(_,i)=>'SYMBOL'+i)},
