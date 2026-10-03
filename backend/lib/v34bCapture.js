@@ -86,9 +86,10 @@ class CaptureLedger {
   beginCohort(id,at){this.state.cohortId=id;this.state.cohortStartedAt=at;this.state.completedHours={priority:0,standard:0,measurement:0,fullResearch:0};
     this.state.lastEvaluatedHour=Math.floor(at/HOUR)*HOUR-HOUR;this.state.cleanHours=0;delete this.state.trailingActivatedAt;this.save();}
   measurement(now,available){const h=hourOf(now);this.state.measurementHours??={};const b=this.state.measurementHours[h]??={attempted:0,available:0,unavailable:0};b.attempted++;b[available?'available':'unavailable']++;}
-  receiptPulse(now,complete){
+  receiptPulse(now,complete,standardSourceComplete=true){
     const h=hourOf(now),b=this.state.receiptHours[h]||(this.state.receiptHours[h]={firstAt:now,lastAt:now,maxGapMs:0,complete:true});
     b.maxGapMs=Math.max(b.maxGapMs,now-b.lastAt);b.lastAt=now;b.complete=b.complete&&complete;
+    b.standardSourceComplete=(b.standardSourceComplete??true)&&standardSourceComplete;
     const end=hourAt(h);let previous=this.state.lastEvaluatedHour===null?Math.floor(this.state.startedAt/HOUR)*HOUR:this.state.lastEvaluatedHour+HOUR;
     while(previous<end){
       const key=hourOf(previous),r=this.state.receiptHours[key],stats=Object.values(this.bucket(key));
@@ -96,10 +97,11 @@ class CaptureLedger {
       const full=previous>=this.state.startedAt&&r?.complete&&r.firstAt<=previous+120000&&r.lastAt>=previous+HOUR-120000&&r.maxGapMs<=120000&&skips===0;
       const standardSkips=stats.filter(s=>s.priority==='STANDARD').reduce((n,s)=>n+s.skippedRows,0);
       const cohortFull=previous>=(this.state.cohortStartedAt??this.state.startedAt),pulse=cohortFull&&r?.complete&&r.firstAt<=previous+120000&&r.lastAt>=previous+HOUR-120000&&r.maxGapMs<=120000;
-      const measurements=this.state.measurementHours?.[key],measurement=Boolean(pulse&&measurements?.attempted>0&&measurements.unavailable===0);
-      const flags={priority:Boolean(pulse&&skips===0),standard:Boolean(pulse&&standardSkips===0),measurement,fullResearch:Boolean(measurement&&skips===0&&standardSkips===0)};
+      const sourceComplete=r?.standardSourceComplete!==false;
+      const measurements=this.state.measurementHours?.[key],measurement=Boolean(pulse&&sourceComplete&&measurements?.attempted>0&&measurements.unavailable===0);
+      const flags={priority:Boolean(pulse&&skips===0),standard:Boolean(pulse&&sourceComplete&&standardSkips===0),measurement,fullResearch:Boolean(measurement&&skips===0&&standardSkips===0),standardSourceComplete:sourceComplete};
       this.state.completedHours??={priority:0,standard:0,measurement:0,fullResearch:0};
-      for(const [k,v] of Object.entries(flags))this.state.completedHours[k]=v?this.state.completedHours[k]+1:0;
+      for(const k of ['priority','standard','measurement','fullResearch'])this.state.completedHours[k]=flags[k]?this.state.completedHours[k]+1:0;
       this.state.lastCompletedHour={hour:key,...flags};
       this.state.cleanHours=this.state.cohortId?this.state.completedHours.fullResearch:(full&&standardSkips===0?this.state.cleanHours+1:0);this.state.lastEvaluatedHour=previous;previous+=HOUR;
       if(this.state.cleanHours>=30&&!this.state.trailingActivatedAt)this.state.trailingActivatedAt=now;

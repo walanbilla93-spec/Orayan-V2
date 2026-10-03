@@ -126,3 +126,9 @@ test('replacement fill after control next-open geometry rejection is a new full-
   const a=r.advance(r.admit(t,noise),ctl,bars,at+2*m).arms.ATR1M_1P5_REPLACEMENT;
   assert.equal(a.fillStatus,'FILLED');assert.equal(a.newlyAdmittedOpportunity,true);assert.equal(a.fullGeometrySubset,true);assert.equal(a.matchedFillSubset,false);
 });
+test('zero archive skips cannot hide incomplete standard source capture from full-research cleanliness',t=>{
+  const l=new CaptureLedger(tmp(t));l.beginCohort('H',at);
+  for(let i=0;i<60;i++){l.measurement(at+i*m,true);l.receiptPulse(at+i*m,true,i!==30);}l.receiptPulse(at+HOUR,true);
+  assert.equal(l.state.completedHours.priority,1);assert.equal(l.state.completedHours.standard,0);assert.equal(l.state.completedHours.measurement,0);assert.equal(l.state.completedHours.fullResearch,0);
+  assert.equal(l.state.lastCompletedHour.standardSourceComplete,false);assert.equal(l.status(at+HOUR).currentStandardSkips,0);assert.equal(l.status(at+HOUR).analyticallyClean,false);
+});

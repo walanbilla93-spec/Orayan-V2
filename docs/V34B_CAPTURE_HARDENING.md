@@ -46,4 +46,4 @@ The actual Groq 400 evidence is a generated `reason_notes` string of length 97 e
 
 ## Validation
 
-Full suite: 195 tests passed, 0 failed, 0 skipped. Tests cover frozen parity, disabled execution, exact exports, WAL/redo restart, pressure/restart tombstones, burst/hour transitions, cleanliness and cohort semantics, ATR causality/replacement/equal-risk checks, independent horizons, gaps/funding/censoring, arm isolation, UI/download routes, shared watermarks, capture during export enumeration and mutable-head cache invalidation. Live deployment qualification and its resulting cohort are recorded separately in the final handover.
+Full suite: 196 tests passed, 0 failed, 0 skipped. Tests cover frozen parity, disabled execution, exact exports, WAL/redo restart, pressure/restart tombstones, burst/hour transitions, cleanliness and cohort semantics, ATR causality/replacement/equal-risk checks, independent horizons, gaps/funding/censoring, arm isolation, UI/download routes, shared watermarks, capture during export enumeration and mutable-head cache invalidation. Live deployment qualification and its resulting cohort are recorded separately in the final handover.

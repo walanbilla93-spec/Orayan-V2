@@ -561,7 +561,7 @@ function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,b
   observeProviders(j);
   j.lastScanErrors=j.counts.errors-errorsBefore;
   const receiptsComplete=!j.receiptCoverageFailed&&!j.lastTradeError&&j.archive.total()<=j.archive.maxBytes;
-  j.archive.ledger.receiptPulse(Date.now(),receiptsComplete);
+  j.archive.ledger.receiptPulse(Date.now(),receiptsComplete,j.lastScanErrors===0);
   const qualificationFile=path.join(j.dir,'capture-live-qualification.json');
   const qualification=fs.existsSync(qualificationFile)?JSON.parse(fs.readFileSync(qualificationFile,'utf8')):null;
   if(receiptsComplete&&!j.holdout.state.startedAt&&qualification?.implementationHash===implementationHash&&require('../validation/v34b-capture-validation.json').passed){
