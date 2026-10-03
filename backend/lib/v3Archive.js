@@ -1,9 +1,9 @@
 'use strict';
 const fs=require('fs'),path=require('path'),zlib=require('zlib'),crypto=require('crypto');
 const {encode:compact,SCHEMA}=require('./v34bCodec');
-const {CaptureLedger,priority,atomic,CHANNELS}=require('./v34bCapture');
-const HOUR=3600000,MIN_RETAIN=30*HOUR,MAX_BYTES=320*1048576,HOUR_BYTES=8*1048576;
-const BLOCK_BYTES=65536,ROW_BYTES=8192,TRADE_ROW_BYTES=32768;
+const {CaptureLedger,priority,atomic,CHANNELS,POLICY,digest}=require('./v34bCapture');
+const HOUR=3600000,MIN_RETAIN=30*HOUR,MAX_BYTES=320*1048576,HOUR_BYTES=10*1048576;
+const BLOCK_BYTES=262144,ROW_BYTES=8192,TRADE_ROW_BYTES=32768;
 const FILE=/^(v2|v3|ai|trades|errors|paths|arms)-(\d{4}-\d{2}-\d{2}-\d{2})-(\d{5})\.jsonl\.gz$/;
 const hourOf=at=>new Date(at).toISOString().slice(0,13).replace('T','-');
 const hourAt=hour=>Date.parse(hour.slice(0,10)+'T'+hour.slice(11)+':00:00Z');
@@ -19,7 +19,12 @@ class Archive {
       for(const [h,bucket] of pending.hours)atomic(path.join(this.ledger.dir,h+'.json'),bucket);
       fs.unlinkSync(txn);
     }
-    this.ledger.reconcileInterrupted();
+    this.pending=path.join(dir,'capture-pending.json');
+    const redo=fs.existsSync(this.pending)?JSON.parse(fs.readFileSync(this.pending,'utf8')):null;
+    if(redo&&this.ledger.state.generation===redo.before.generation){
+      this.ledger.state=redo.before;this.ledger.save();for(const [h,b] of redo.hours)atomic(path.join(this.ledger.dir,h+'.json'),b);
+    }
+    if(!redo)this.ledger.reconcileInterrupted();
     this.maxBytes=options.maxBytes??MAX_BYTES;this.hourBytes=options.hourBytes??HOUR_BYTES;
     this.files=new Map();this.heads=new Map();this.definitions=new Set();this.leases=new Map();this.deltaContexts=new Map();
     this.skipped=0;this.pausedUntil=null;this.summaryHours={};
@@ -31,9 +36,10 @@ class Archive {
     }
     // Crash-left export links are temporary snapshots, never research originals.
     for(const name of fs.readdirSync(dir))if(/^export-[a-f0-9]{24}-(\d+|[a-z]+-manifest)\.gz$/.test(name))fs.unlinkSync(path.join(dir,name));
+    if(redo){if(this.ledger.state.generation===redo.before.generation)this.write(redo.entries,true);else fs.unlinkSync(this.pending);}
   }
   total(){return [...this.files.values()].reduce((n,f)=>n+f.size,0);}
-  expireSessions(now){for(const [id,s] of this.sessions)if(s.expiresAt<now){for(const v of Object.values(s.channels))v.cleanup();this.sessions.delete(id);}}
+  expireSessions(now){for(const [id,s] of this.sessions)if(s.expiresAt<now){for(const v of Object.values(s.channels))v.cleanup();for(const p of s.extraExports||[])if(fs.existsSync(p))fs.unlinkSync(p);this.sessions.delete(id);}}
   prune(now) {
     this.expireSessions(now);
     this.daily(now);
@@ -47,12 +53,29 @@ class Archive {
       delete this.summaryHours[hour];
     }
   }
-  write(entries) {
+  write(entries,replaying=false) {
     if(!entries.length)return;
-    const klass=priority(entries);this.ledger.account(entries,'attempted',klass);
+    if(!replaying&&fs.existsSync(this.pending)){
+      const p=JSON.parse(fs.readFileSync(this.pending,'utf8')),txn=path.join(this.dir,'archive-transaction.json');
+      if(fs.existsSync(txn)){
+        const prepared=JSON.parse(fs.readFileSync(txn,'utf8'));for(const name of prepared.names){const file=path.join(this.dir,name);if(fs.existsSync(file+'.tmp'))fs.renameSync(file+'.tmp',file);
+          const m=FILE.exec(name),item={path:file,size:fs.statSync(file).size,channel:m[1],hour:m[2],sequence:Number(m[3])};this.files.set(name,item);this.heads.set(item.channel+':'+item.hour,item);}
+        this.ledger.state=prepared.ledger;for(const [h,b] of prepared.hours){this.ledger.hours.set(h,b);atomic(path.join(this.ledger.dir,h+'.json'),b);}this.ledger.save();fs.unlinkSync(txn);
+        this.deltaContexts.clear();this.definitions.clear();
+      }
+      if(this.ledger.state.generation>p.before.generation)fs.unlinkSync(this.pending);
+      else {this.ledger.state=p.before;this.ledger.save();for(const [h,b] of p.hours){this.ledger.hours.set(h,b);atomic(path.join(this.ledger.dir,h+'.json'),b);}this.write(p.entries,true);}
+    }
+    const klass=priority(entries),before=JSON.parse(JSON.stringify(this.ledger.state));
+    const hours=[...new Set(entries.map(e=>hourOf(e.row.capturedAt)))].map(h=>[h,JSON.parse(JSON.stringify(this.ledger.bucket(h)))]);
+    atomic(this.pending,{entries,before,hours});
+    this.ledger.detailedAccount(entries,'attempted',klass);
     try{return this.commit(entries,klass);}catch(e){
       // A prepared durable transaction is recoverable, not a skipped write.
-      if(!fs.existsSync(path.join(this.dir,'archive-transaction.json')))this.ledger.account(entries,'skipped',klass);
+      if(!fs.existsSync(path.join(this.dir,'archive-transaction.json'))&& !['ENOSPC','EIO','EACCES'].includes(e.code)){
+        this.ledger.tombstone(entries,klass,e.reasonCode||e.code||e.message);this.ledger.detailedAccount(entries,'skipped',klass,e.reasonCode||e.code||e.message);
+        this.skipped+=entries.length;fs.unlinkSync(this.pending);e.permanentLoss=true;
+      }
       throw e;
     }
   }
@@ -84,9 +107,9 @@ class Archive {
       let sequence=head?.sequence??0,oldSize=head?.size??0;
       const flush=()=>{
         if(!raw.length)return;
-        const name=`${channel}-${hour}-${String(sequence).padStart(5,'0')}.jsonl.gz`,bytes=zlib.gzipSync(raw);
+        const name=`${channel}-${hour}-${String(sequence).padStart(5,'0')}.jsonl.gz`,bytes=zlib.gzipSync(raw,{level:9});
         const item={path:path.join(this.dir,name),size:bytes.length,channel,hour,sequence};
-        changes.push({name,item,bytes});const growth=bytes.length-oldSize;
+        changes.push({name,item,bytes,growth:bytes.length-oldSize});const growth=bytes.length-oldSize;
         delta+=growth;hourDeltas.set(hour,(hourDeltas.get(hour)||0)+growth);
       };
       for(const line of lines) {
@@ -99,20 +122,28 @@ class Archive {
     }
     const blocked=[...hourDeltas].some(([hour,growth])=>
       [...this.files.values()].filter(f=>f.hour===hour).reduce((n,f)=>n+f.size,0)+growth>this.hourBytes);
-    // Reserve capacity across protected retention, not twice at every UTC hour.
-    // Priority bypasses both soft limits, so standard traffic cannot starve it.
-    const reserve=Math.min(this.maxBytes*.20,31*this.hourBytes*.20);
-    if(klass!=='PRIORITY'&&(blocked||this.total()+delta>this.maxBytes-reserve)) {
-      this.skipped+=entries.length;this.pausedUntil=hourAt(hourOf(now))+HOUR;
-      throw Object.assign(Error('V3_ARCHIVE_BUDGET_PAUSED'),{reasonCode:'V3_ARCHIVE_BUDGET_PAUSED'});
+    // Every listed channel is required for population research. Soft budgets are
+    // alarms, never a reason to throw away a durable attempted observation.
+    if(blocked||this.total()+delta>this.maxBytes) {
+      this.ledger.state.envelopeExceedances=(this.ledger.state.envelopeExceedances||0)+1;
+      this.ledger.state.lastEnvelopeExceedance={at:now,scope:blocked?'UTC_HOUR':'ROLLING',projectedBytes:this.total()+delta,policy:POLICY};
     }
     // Durable redo intent: restart completes every staged channel before reads.
-    for(const c of changes)fs.writeFileSync(c.item.path+'.tmp',c.bytes);
+    for(const c of changes){const fd=fs.openSync(c.item.path+'.tmp','w');try{fs.writeFileSync(fd,c.bytes);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
     const txn=path.join(this.dir,'archive-transaction.json'),ledger=JSON.parse(JSON.stringify(this.ledger.state));
-    const hours=new Map([...this.ledger.hours].map(([h,b])=>[h,JSON.parse(JSON.stringify(b))]));
-    for(const {channel,row} of entries){
-      const h=hourOf(row.capturedAt),key=[channel,row.outputType||'UNKNOWN',klass].join('|'),bytes=Buffer.byteLength(JSON.stringify(row)+'\n');
-      for(const b of [ledger.totals[key],hours.get(h)[key]]){b.acceptedRows++;b.acceptedBytes+=bytes;}
+    // Only touched buckets belong to this redo transaction. Rewriting every
+    // historical ledger on each row caused unnecessary synchronous disk work.
+    const hours=new Map([...new Set(entries.map(e=>hourOf(e.row.capturedAt)))].map(h=>[h,JSON.parse(JSON.stringify(this.ledger.bucket(h)))]));
+    const allocations=new Map();
+    for(const [i,{channel,row}] of entries.entries()){
+      const h=hourOf(row.capturedAt),key=this.ledger.key(channel,row,klass),bytes=Buffer.byteLength(JSON.stringify(row)+'\n');
+      const peers=entries.filter(e=>e.channel===channel&&hourOf(e.row.capturedAt)===h),weight=bytes/peers.reduce((n,e)=>n+Buffer.byteLength(JSON.stringify(e.row)+'\n'),0);
+      const physical=changes.filter(c=>c.item.channel===channel&&c.item.hour===h),allocationKey=channel+':'+h,used=allocations.get(allocationKey)||{written:0,growth:0};
+      const last=!entries.slice(i+1).some(e=>e.channel===channel&&hourOf(e.row.capturedAt)===h),writtenTotal=physical.reduce((n,c)=>n+c.bytes.length,0),growthTotal=physical.reduce((n,c)=>n+c.growth,0);
+      const written=last?writtenTotal-used.written:Math.floor(weight*writtenTotal),growth=last?growthTotal-used.growth:Math.floor(weight*growthTotal);
+      allocations.set(allocationKey,{written:used.written+written,growth:used.growth+growth});
+      for(const b of [ledger.totals[key],hours.get(h)[key]]){b.acceptedRows++;b.acceptedBytes+=bytes;b.firstAcceptedAt??=row.capturedAt;b.lastAcceptedAt=row.capturedAt;
+        b.physicalCompressedBytesWritten+=written;b.physicalCompressedGrowthBytes+=growth;b.physicalByteAttribution='INTEGER_LOGICAL_BYTE_WEIGHT_LAST_ROW_REMAINDER';}
       ledger.cursors[channel]=(ledger.cursors[channel]||0)+1;
     }
     ledger.generation++;
@@ -121,9 +152,9 @@ class Archive {
       fs.renameSync(c.item.path+'.tmp',c.item.path);
       this.files.set(c.name,c.item);this.heads.set(c.item.channel+':'+c.item.hour,c.item);
     }
-    this.ledger.state=ledger;this.ledger.hours=hours;
-    for(const [h,b] of hours)atomic(path.join(this.ledger.dir,h+'.json'),b);
-    this.ledger.save();fs.unlinkSync(txn);
+    this.ledger.state=ledger;
+    for(const [h,b] of hours){this.ledger.hours.set(h,b);atomic(path.join(this.ledger.dir,h+'.json'),b);}
+    this.ledger.save();fs.unlinkSync(txn);fs.unlinkSync(this.pending);
     for(const [key,value] of nextContexts)this.deltaContexts.set(key,value);
     for(const key of this.deltaContexts.keys())if(!key.includes(':'+hourOf(now)+':'))this.deltaContexts.delete(key);
     while(this.deltaContexts.size>512)this.deltaContexts.delete(this.deltaContexts.keys().next().value);
@@ -151,18 +182,18 @@ class Archive {
     return {files,cleanup:()=>{for(const p of links)if(fs.existsSync(p))fs.unlinkSync(p);for(const p of originals)this.release(p);}};
   }
   release(p){const n=(this.leases.get(p)||1)-1;if(n)this.leases.set(p,n);else this.leases.delete(p);}
-  status(){return {captureSchema:SCHEMA,sizeBytes:this.total(),maxBytes:this.maxBytes,hourBudgetBytes:this.hourBytes,
-    priorityReserveFraction:.20,priorityReserveScope:'GLOBAL_PROTECTED_RETENTION_CAP',priorityOverflowBytes:Math.max(0,this.total()-this.maxBytes),
+  status(){return {captureSchema:SCHEMA,capturePolicy:POLICY,budgetEnforcement:'ALERT_ONLY_REQUIRED_CHANNELS_NEVER_DROPPED',sizeBytes:this.total(),maxBytes:this.maxBytes,hourBudgetBytes:this.hourBytes,
+    priorityReserveFraction:0,priorityReserveScope:'SHARED_REQUIRED_CHANNELS_NO_REJECTION',priorityOverflowBytes:Math.max(0,this.total()-this.maxBytes),
     retentionHeadroomBytes:Math.max(0,this.maxBytes-this.total()),telemetry:this.ledger.status(),
     minimumRetentionHours:30,maximumBlockRawBytes:BLOCK_BYTES,maximumRowRawBytes:TRADE_ROW_BYTES,maximumCandidateRawBytes:ROW_BYTES,
-    budgetSkippedRecords:this.skipped,capturePausedUntil:this.pausedUntil,
+    budgetSkippedRecords:this.skipped,skipCounters:this.ledger.status().skipCounters,reconciliation:this.ledger.identity(this.skipped),capturePausedUntil:this.pausedUntil,
     earliestHour:[...this.files.values()].map(f=>f.hour).sort()[0]||null};}
   checkpoint(){return {definitions:[...this.definitions].slice(-512),summaryHours:this.summaryHours,skipped:this.skipped,pausedUntil:this.pausedUntil};}
-  restore(saved){if(!saved)return;this.definitions=new Set((saved.definitions||[]).slice(-16384));
+  restore(saved){if(!saved)return;this.definitions=new Set((saved.definitions||[]).slice(-16384));this.ledger.identity(saved.skipped||0);
     this.summaryHours=saved.summaryHours||{};this.skipped=saved.skipped||0;this.pausedUntil=saved.pausedUntil||null;}
   cohort(now=Date.now()) {
     this.expireSessions(now);
-    while(this.sessions.size>=3){const id=this.sessions.keys().next().value,s=this.sessions.get(id);for(const v of Object.values(s.channels))v.cleanup();this.sessions.delete(id);}
+    while(this.sessions.size>=3){const id=this.sessions.keys().next().value,s=this.sessions.get(id);for(const v of Object.values(s.channels))v.cleanup();for(const p of s.extraExports||[])if(fs.existsSync(p))fs.unlinkSync(p);this.sessions.delete(id);}
     const generation=crypto.randomBytes(12).toString('hex'),channels={};
     for(const channel of CHANNELS)channels[channel]=this.snapshot(channel);
     const retained={};
@@ -176,7 +207,8 @@ class Archive {
         }
       }
     }
-    const result={generation,sequence:this.ledger.state.generation,watermarkAt:now,
+    const captureLedger=this.ledger.records(),reconciliation=this.ledger.identity(this.skipped),tombstones=fs.readdirSync(this.ledger.tombstones).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(path.join(this.ledger.tombstones,n),'utf8')));
+    const result={generation,sequence:this.ledger.state.generation,watermarkAt:now,captureLedger,tombstones,reconciliation,ledgerChecksum:digest(captureLedger),
       cursors:{...this.ledger.state.cursors},retained,expiresAt:now+10*60000,channels};
     this.sessions.set(generation,result);return result;
   }
@@ -191,7 +223,7 @@ class Archive {
         items.push({name,channel:f.channel,hour:f.hour,size:f.size,sha256:crypto.createHash('sha256').update(fs.readFileSync(destination)).digest('hex')});
       }
       atomic(manifest,{version:'IMMUTABLE_UTC_DAILY_V1',day,createdAt:now,watermarkAt:Date.parse(day+'T00:00:00Z')+24*HOUR-1,
-        metadata:this.snapshotMetadata?.()||null,
+        metadata:this.snapshotMetadata?.()||null,captureLedger:this.ledger.records().filter(r=>r.hour.startsWith(day)),reconciliation:this.ledger.identity(this.skipped),
         sequence:this.ledger.state.generation,cursors:{...this.ledger.state.cursors},files:items,
         partialFirstDay:this.ledger.state.startedAt>=Date.parse(day+'T00:00:00Z')});
     }

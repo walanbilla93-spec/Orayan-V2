@@ -69,8 +69,9 @@ function encode(input,context) {
   return {row,definitions:[...new Map(definitions.map(d=>[d.referenceId,d])).values()]};
 }
 class Decoder {
-  constructor(){this.refs=new Map();this.cache=new Map();}
+  constructor(){this.refs=new Map();this.cache=new Map();this.logicalCache=new Map();}
   resolve(id){
+    if(this.logicalCache.has(id))return clone(this.logicalCache.get(id));
     if(this.cache.has(id))return clone(this.cache.get(id));
     const d=this.refs.get(id);if(!d)throw Error('UNRESOLVED_REFERENCE');
     let value;
@@ -83,7 +84,10 @@ class Decoder {
       }
     }else value=d.payloadRef?this.visit(d.payloadRef):this.visit(clone(d.payload));
     if(d.logicalDigest&&logicalDigest(value)!==id)throw Error('REFERENCE_HASH_MISMATCH');
-    this.cache.set(id,value);while(this.cache.size>512)this.cache.delete(this.cache.keys().next().value);
+    // Keep exposure bases separately from small shared payloads. Thousands of
+    // payload lookups must not evict the previous root of each live symbol and
+    // force quadratic reconstruction of long delta chains.
+    const cache=d.logicalDigest?this.logicalCache:this.cache;cache.set(id,value);while(cache.size>512)cache.delete(cache.keys().next().value);
     return clone(value);
   }
   visit(v){

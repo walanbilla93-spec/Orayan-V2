@@ -20,7 +20,7 @@ test('standard capture uses its full UTC envelope while global reserve protects 
   const size=measure.total(),a=new Archive(path.join(dir,'check'),{hourBytes:Math.ceil(size/0.90),maxBytes:1000000});
   a.write([{channel:'v3',row}]);a.write([{channel:'paths',row:{...row,outputType:'FILLED_PATH'}}]);
   assert.equal(a.ledger.status(at).totals.reduce((n,x)=>n+x.skippedRows,0),0);
-  assert.equal(a.status().priorityReserveScope,'GLOBAL_PROTECTED_RETENTION_CAP');
+  assert.equal(a.status().priorityReserveScope,'SHARED_REQUIRED_CHANNELS_NO_REJECTION');
 });
 test('multi-block download is byte-exact at its watermark with bounded response listeners',async t=>{
   const dir=tmp(t),p=path.join(dir,'block');fs.writeFileSync(p,'exact-watermark-extra');
@@ -49,7 +49,7 @@ test('pre-repair validation cohort is preserved separately before clean holdout 
   assert.equal(h.state.startedAt,null);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,h.state.previousCohorts[0].preservedFile))),old);
   const start=h.state.notBeforeAt;assert.equal(start%HOUR,0);
   h.start(require('../lib/v34Control'),'same-config',start-1);assert.equal(h.state.startedAt,null);
-  h.start(require('../lib/v34Control'),'same-config',start);
+  h.start(require('../lib/v34Control'),'same-config',start,{passed:true});
   assert.equal(h.state.startedAt,start);assert.deepEqual(h.state.admissions,{});
   assert.equal(new Holdout(dir).state.startedAt,start);
 });
@@ -86,11 +86,11 @@ test('large causal priority delta changes remain bounded and reconstruct every f
 test('exact offered row and byte math, priority isolation, durable hourly counters across restart',t=>{
   const dir=tmp(t),a=new Archive(dir,{hourBytes:1000,maxBytes:5000});
   const small={capturedAt:at,outputType:'UPDATE',value:'small'},large={...small,value:require('crypto').randomBytes(2400).toString('hex')};
-  a.write([{channel:'v3',row:small}]);assert.throws(()=>a.write([{channel:'v3',row:large}]),/BUDGET/);
+  a.write([{channel:'v3',row:small}]);assert.doesNotThrow(()=>a.write([{channel:'v3',row:large}]));
   a.write([{channel:'paths',row:{...large,outputType:'FILLED_PATH'}}]);
   const b=new Archive(dir),v=b.ledger.status(at).totals;
   for(const x of v){assert.equal(x.attemptedRows,x.acceptedRows+x.skippedRows);assert.equal(x.attemptedBytes,x.acceptedBytes+x.skippedBytes);}
-  const s=v.find(x=>x.channel==='v3');assert.equal(s.skippedRows,1);assert.equal(s.skippedBytes,Buffer.byteLength(JSON.stringify(large)+'\n'));
+  const s=v.find(x=>x.channel==='v3');assert.equal(s.skippedRows,0);assert.equal(s.attemptedRows,2);
   assert.equal(v.find(x=>x.channel==='paths').skippedRows,0);assert.ok(b.total()>0);
 });
 test('priority admission batch and counters cannot be starved by standard quota',t=>{
@@ -192,7 +192,7 @@ test('shared export routes and UI freeze/daily/arms downloads exist and JavaScri
   require('child_process').execFileSync(process.execPath,['--check',path.resolve(__dirname,'../../frontend/app.js')]);
   const routes=fs.readFileSync(path.resolve(__dirname,'../routes/api.js'),'utf8');for(const route of ['/api/v3/cohort','/api/v3/daily'])assert.ok(routes.includes(route));
   const html=fs.readFileSync(path.resolve(__dirname,'../../frontend/index.html'),'utf8');for(const id of ['v35Holdout','v35Capture','v35Arms','btnV3Freeze','btnV3Daily','btnExportV3Arms'])assert.ok(html.includes('id="'+id+'"'));
-  assert.equal(MAX_BYTES,335544320);assert.equal(HOUR_BYTES,8388608);assert.ok(31*HOUR_BYTES<MAX_BYTES);
+  assert.equal(MAX_BYTES,335544320);assert.equal(HOUR_BYTES,10485760);assert.ok(31*HOUR_BYTES<MAX_BYTES);
 });
 test('durable redo repairs partially renamed channels and reconciles interrupted offered records',t=>{
   const dir=tmp(t),a=new Archive(dir),entry={channel:'v3',row:{capturedAt:at,outputType:'INTERRUPTED'}};

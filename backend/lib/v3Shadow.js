@@ -137,7 +137,7 @@ class ShadowJournal {
   }
   appendBatch(entries) {
     try{this.archive.write(entries.map(({channel,row})=>({channel,
-      row:redact({...runtime.rowFields(),implementationHash,captureCohort:this.captureCohort,...row})})));}
+      row:redact({...runtime.rowFields(),implementationHash,captureCohort:this.captureCohort,holdoutCohort:row.trade?.holdoutCohort??this.holdout.state.cohortId??null,...row})})));}
     catch(e){e.affectedRecords=entries.slice(0,8).map(({channel,row})=>({channel,recordType:row.outputType,
       candidateId:row.candidateId??row.v3CandidateId??null,episodeId:row.episodeId??row.trade?.episodeId??null,
       tradeId:row.tradeId??row.trade?.tradeId??null,decisionAt:row.decisionAt??null,capturedAt:row.capturedAt}));throw e;}
@@ -156,9 +156,10 @@ class ShadowJournal {
       subsystem:context.subsystem||'SHADOW_CAPTURE',errorCode:code,messageClass:['Error','TypeError','RangeError','SyntaxError','AbortError'].includes(error.name)?error.name:'Error',
       tradeId:context.tradeId??null,retryCursor:context.retryCursor??error.affectedRecords?.[0]?.candidateId??null,
       affectedRecords:error.affectedRecords??[],
-      firstAt:Date.now(),lastAt:Date.now(),recoveredAt:null,completenessStatus:code==='V3_ARCHIVE_BUDGET_PAUSED'?'SKIPPED_PERMANENT':'RETRY_PENDING',
+      firstAt:Date.now(),lastAt:Date.now(),recoveredAt:null,completenessStatus:error.permanentLoss||code==='V3_ARCHIVE_BUDGET_PAUSED'?'SKIPPED_PERMANENT':'RETRY_PENDING',
       httpStatus:Number.isInteger(error.status)?error.status:null,providerCode:Number.isInteger(error.retCode)?error.retCode:null,
       retry:context.retry||'NEXT_SCAN',skip:context.skip??false,affectedRecordType:context.affectedRecordType||'UNKNOWN',
+      archiveWriteSkipped:Boolean(error.permanentLoss),downstreamDecisionSkipped:context.skip??false,permanentLoss:Boolean(error.permanentLoss),
       completenessImpacted:true,eventId:hash([Date.now(),code,context.symbol])});
     this.counts.errors++;this.errorClasses[code]=(this.errorClasses[code]||0)+1;
     this.errorRecent.push(row);if(this.errorRecent.length>16)this.errorRecent.shift();
@@ -166,9 +167,14 @@ class ShadowJournal {
     try{this.append('errors',row);}catch(_){/* checkpoint keeps bounded fallback under disk/budget failure */}
   }
   record(row,scanId,scanStartedAt,capturedAt=Date.now()) {
+    this.archive.ledger.measurement(capturedAt,Boolean(row.measurement34?.noise?.usableAtDecision&&row.measurement34?.quote?.status==='AVAILABLE'));
     try{this.receipts(row,capturedAt);}catch(e){this.receiptCoverageFailed=true;throw e;}
     const key=[row.configHash,row.symbol,row.side||'WATCH'].join('|');
     const previous=this.index.get(key);
+    if(row.measurement34&&previous)for(const provider of ['Groq','Alibaba']){
+      const observer=this.observers.get(provider+':'+previous.episodeId);
+      if(observer)row.measurement34.observers[provider]=m34.observer(observer.row,provider,observer.capturedAt,row.decisionAt);
+    }
     const setupId=hash([VERSION,row.configHash,row.symbol,row.side,row.closedBarOpenAt,row.geometry?.reactionLevel?.id]);
     if(row.v3Decision==='ACCEPT_SHADOW') {
       const duplicate=previous?.lastAdmittedSetup===setupId || [...this.activeTrades.values(),...this.recentTrades].some(t=>t.tradeId===setupId);
@@ -209,6 +215,15 @@ class ShadowJournal {
       configHash:row.configHash,scanId,decisionAt:row.decisionAt,capturedAt,v3CandidateId:record.candidateId,
       decision:row.v2Decision.length?'CANDIDATE':'NO_NATIVE_CANDIDATE',plans:row.v2Decision}}];
     let trade;
+    let prospective;
+    if(this.holdout.state.startedAt&&row.rejectReason==='COST_ADJUSTED_RR_TOO_LOW'&&row.directionPermission&&previous?.lastReplacementSetup!==setupId){
+      prospective={...trades.create(record,setupId+'-ATR15',capturedAt),originCaptureCohort:this.captureCohort,holdoutCohort:this.holdout.state.cohortId,
+        regime:row.regime,controlGeometryRejected:true,status:'CANCELLED',outcome:'CONTROL_DECISION_GEOMETRY_REJECTED',netPnl:0,outcomeComplete:true};
+      const all=r35.admit(prospective,record.measurement34,this.holdout.episode(episodeId));
+      prospective.research35={...all,arms:{ATR1M_1P5_REPLACEMENT:all.arms.ATR1M_1P5_REPLACEMENT}};
+      writes.push({channel:'arms',row:{outputType:'V34B_REPLACEMENT_FULL_GEOMETRY_OPPORTUNITY',capturedAt,episodeId,tradeId:prospective.tradeId,
+        arm:prospective.research35,researchOnly:true,executionAllowed:false}});
+    }
     if(row.v3Decision==='ACCEPT_SHADOW') {
       trade={...trades.create(record,setupId,capturedAt),originCaptureCohort:this.captureCohort};
       trade.controlFingerprint=control34.fingerprint;trade.episodeAdmissionOrdinal=record.episodeAdmissionOrdinal;
@@ -222,6 +237,7 @@ class ShadowJournal {
       writes.push({channel:'trades',row:this.tradeRow(trade,['ADMITTED'],capturedAt)});
     }
     this.appendBatch(writes);
+    if(prospective){this.holdout.admission(prospective,row.regime);if(r35.active(prospective.research35))this.armWorkers.set(prospective.tradeId,prospective);this.saveCheckpoint();}
     if(trade?.research35)this.holdout.admission(trade,row.regime);
     // Post-fill levels are observations only; their prices never become executable stops.
     if(!continuing)this.episodes.births++;
@@ -240,6 +256,7 @@ class ShadowJournal {
       birthLinks,currentLinks,v3Decision:row.v3Decision,
       admissions:record.episodeAdmissionOrdinal,
       lastAdmittedSetup:row.v3Decision==='ACCEPT_SHADOW'?setupId:previous?.lastAdmittedSetup??null});
+    this.index.get(key).lastReplacementSetup=prospective?setupId:previous?.lastReplacementSetup??null;
     while(this.index.size>MAX_KEYS)this.index.delete(this.index.keys().next().value);
     this.recent.push({candidateId:record.candidateId,symbol:row.symbol,side:row.side,regime:row.regime,
       decisionAt:row.decisionAt,firstBirthAt,kind:record.kind,directionPermission:row.directionPermission,
@@ -263,8 +280,9 @@ class ShadowJournal {
         t.research34.defendedCursorAt=Math.max(...fresh.map(l=>l.knownAt));}
     }
   }
-  cohort(){const s=this.archive.cohort(),{channels,...manifest}=s;
-    const status=JSON.parse(JSON.stringify(this.status()));status.retainedExport=s.retained;s.status=status;
+  cohort(){const s=this.archive.cohort(),{channels,tombstones,...manifest}=s;
+    const status=JSON.parse(JSON.stringify(this.status()));status.retainedExport=s.retained;status.captureLedger=s.captureLedger;
+    status.exportGeneration=s.generation;status.watermarkAt=s.watermarkAt;status.ledgerChecksum=s.ledgerChecksum;s.status=status;
     for(const [channel,v] of Object.entries(channels)){
       const target=path.join(this.dir,`export-${s.generation}-${channel}-manifest.gz`),bytes=require('zlib').gzipSync(JSON.stringify({outputType:'SHARED_EXPORT_MANIFEST',
         ...manifest,channel,captureCohort:this.captureCohort,holdoutCohort:this.holdout.state.cohortId,control:control34})+'\n');
@@ -292,6 +310,14 @@ class ShadowJournal {
     return this.archive.list(channel).map(f=>({path:f.path,size:f.size}));
   }
   export(channel,generation) {
+    if(['ledger','tombstones'].includes(channel)){
+      const s=generation?this.archive.sessions.get(generation):this.archive.cohort();if(!s||s.expiresAt<Date.now())throw Object.assign(Error('EXPORT_GENERATION_EXPIRED'),{statusCode:410});
+      const rows=channel==='ledger'?s.captureLedger:s.tombstones;
+      const target=path.join(this.dir,`export-${s.generation}-${channel}-manifest.gz`),bytes=require('zlib').gzipSync([JSON.stringify({outputType:'SHARED_EXPORT_MANIFEST',generation:s.generation,watermarkAt:s.watermarkAt,
+        sequence:s.sequence,reconciliation:s.reconciliation,ledgerChecksum:s.ledgerChecksum}),...rows.map(r=>JSON.stringify(r))].join('\n')+'\n');
+      fs.writeFileSync(target,bytes);s.extraExports??=new Set();s.extraExports.add(target);return {__files:true,files:[{path:target,size:bytes.length}],contentType:'application/gzip',filename:`orayan_v3_${channel}_${s.watermarkAt}.jsonl.gz`,cleanup:()=>{},
+        headers:{'X-Orayan-V3-Watermark-At':String(s.watermarkAt),'X-Orayan-Export-Generation':s.generation}};
+    }
     this.files(channel);
     const cohort=generation?this.archive.sessions.get(generation):null;
     if(generation&&(!cohort||cohort.expiresAt<Date.now()))throw Object.assign(Error('EXPORT_GENERATION_EXPIRED'),{statusCode:410});
@@ -342,6 +368,7 @@ class ShadowJournal {
     if(transitions.length===1 && transitions[0]==='MARK' && now-(trade.lastJournalMarkAt||0)<300000)return;
     this.append('trades',this.tradeRow(trade,transitions,now));
     if(trade.research35){this.append('arms',{outputType:'V34B_PAIRED_UPDATE',capturedAt:now,episodeId:trade.episodeId,
+      holdoutCohort:trade.holdoutCohort??null,
       tradeId:trade.tradeId,transitions,executionAllowed:false,researchOnly:true,arm:trade.research35});this.holdout.update(trade);}
     if(transitions.includes('MARK'))trade.lastJournalMarkAt=now;
   }
@@ -354,6 +381,7 @@ class ShadowJournal {
     // Small default analysis artifact: totals, hourly counts and a bounded set of examples.
     const s=this.status();return {captureSchema:'V3_COMPACT_V1',version:VERSION,captureCohort:this.captureCohort,
       startedAt:this.startedAt,exportedAt:Date.now(),executionAllowed:false,archive:s.archive,
+      captureLedger:this.archive.ledger.records(),reconciliation:this.archive.ledger.identity(this.archive.skipped),
       counts:this.counts,tradeCounts:this.tradeCounts,hours:this.archive.summaryHours,
       recentCandidates:this.recent.slice(-6),recentTrades:s.shadowTrades.slice(-6),
       control:control34,measurementVersion:m34.VERSION,measurementCounts:this.measurementCounts,episodes:this.episodes,
@@ -488,7 +516,7 @@ class ShadowJournal {
         this.append('ai',{version:VERSION,outputType:'AI_RESEARCH_CONTEXT',provider,model:r.model||null,
           requestId:r.request_id,candidateId:r.candidate_id,episodeId:episode?.episodeId??null,timing,
           outputAt:Number.isFinite(outputAt)?outputAt:null,capturedAt:now,status:r.status,
-          output:r.decision||null,matchedDecisionAt:link?.decisionAt??null,
+          output:r.decision||null,requestHash:r.request_hash??null,responseSchemaHash:r.response_schema_hash??null,matchedDecisionAt:link?.decisionAt??null,
           availableAfterDecision:link && Number.isFinite(outputAt)?outputAt>link.decisionAt:null,
           agreedWithV2:link && link.passed!==null && ['RETAIN','SKIP'].includes(verdict)?(verdict==='RETAIN')===link.passed:null,
           agreedWithV3:link && ['ACCEPT_SHADOW','REJECT'].includes(link.v3Decision) && ['RETAIN','SKIP'].includes(verdict)?
@@ -530,8 +558,13 @@ function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,b
   j.lastScanErrors=j.counts.errors-errorsBefore;
   const receiptsComplete=!j.receiptCoverageFailed&&!j.lastTradeError&&j.archive.total()<=j.archive.maxBytes;
   j.archive.ledger.receiptPulse(Date.now(),receiptsComplete);
-  if(receiptsComplete&&!j.holdout.state.startedAt&&require('../validation/v34b-capture-validation.json').passed)
-    j.holdout.start(control34,hash(settings),Date.now());
+  const qualificationFile=path.join(j.dir,'capture-live-qualification.json');
+  const qualification=fs.existsSync(qualificationFile)?JSON.parse(fs.readFileSync(qualificationFile,'utf8')):null;
+  if(receiptsComplete&&!j.holdout.state.startedAt&&qualification?.implementationHash===implementationHash&&require('../validation/v34b-capture-validation.json').passed){
+    j.holdout.start(control34,hash(settings),Date.now(),{...qualification,ledgerBaseline:j.archive.ledger.identity(j.archive.skipped),capturePolicy:j.archive.status().capturePolicy,
+      hourBudgetBytes:j.archive.hourBytes,archiveCapBytes:j.archive.maxBytes});
+    if(j.holdout.state.startedAt)j.archive.ledger.beginCohort(j.holdout.state.cohortId,j.holdout.state.startedAt);
+  }
   j.checkpointAndPrune();
   j.advance().catch(e=>j.captureError(e,{subsystem:'TRADE_WORKER'}));
 }

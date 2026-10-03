@@ -1,58 +1,70 @@
 {
   "passed": true,
+  "captureRevision": "V34B_REQUIRED_LOSSLESS_WAL_V4",
+  "requiresLiveQualification": true,
   "controlFingerprint": "9fb7a1e55834dd57f0d0c194dce76178e6a132d3e4fa39bcdc74f627193ad928",
-  "hourBudgetBytes": 8388608,
+  "hourBudgetBytes": 10485760,
   "archiveCapBytes": 335544320,
   "tests": {
-    "total": 168,
-    "pass": 168,
-    "fail": 0,
-    "skip": 0,
-    "cancelled": 0,
-    "todo": 0
+    "total": 190,
+    "passed": 190,
+    "failed": 0,
+    "skipped": 0,
+    "command": "node --test backend/test/*.test.js research/groq-shadow/test/*.test.js research/alibaba-shadow/test/*.test.js"
   },
-  "replayRows": 88382,
-  "replayMaxObservedHourBytes": 1559968,
-  "capacity": {
-    "hourBudgetBytes": 8388608,
-    "capBytes": 335544320,
-    "protectedHours": 31,
-    "retainedBytes": 255895366,
-    "rows": 66033,
-    "peakRss": 307724288,
-    "restartBytesEqual": true,
-    "standardSkipped": 0,
-    "prioritySkipped": 0,
-    "dailySnapshots": 1,
-    "note": "33 full standard near-envelope UTC hours with an additional priority path each hour, under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
+  "replay": {
+    "version": "CAPTURE_HARDENING_LIVE_DENSITY_V4",
+    "sourceHour": "2026-10-03T06:00:00Z",
+    "sourceRetainedRows": 22988,
+    "knownOfferedRows": 25851,
+    "densityFactor": 1.4619062119366628,
+    "headroom": 0.3,
+    "augmentation": "Repeat complete retained changing rows to exceed peak ledger attempted density by 30%; lost payloads remain unavailable. Add 3,200 priority path/lifecycle/error/arm bursts.",
+    "counts": {
+      "v3": 16808,
+      "v2": 16810,
+      "ai": 58,
+      "trades": 800,
+      "paths": 800,
+      "errors": 800,
+      "arms": 800
+    },
+    "attemptedRows": 36876,
+    "acceptedRows": 36876,
+    "skippedRows": 0,
+    "attemptedLogicalBytes": 525976623,
+    "acceptedLogicalBytes": 525976623,
+    "skippedLogicalBytes": 0,
+    "physicalCompressedBytes": 8537694,
+    "exactReplayRows": {
+      "v3": 16808,
+      "v2": 16810,
+      "ai": 58
+    },
+    "peakRss": 441778176,
+    "peakHeap": 287959536,
+    "retention": {
+      "protectedHours": 31,
+      "retainedBytes": 264668514,
+      "capBytes": 335544320,
+      "restartBytesEqual": true,
+      "syntheticCapacityClones": true
+    },
+    "hourBudgetBytes": 10485760,
+    "estimatedDailySnapshotBytes": 204904656,
+    "writerRunPeakRssObservedExternally": 420200448,
+    "resumedCompletedWriterRun": true,
+    "additionalTailRepeatStressRows": 70,
+    "limitations": [
+      "Past lost payloads cannot be reconstructed. Augmented demand is a stress envelope, not recovery. Retention proof clones the validated complete worst-hour physical blocks."
+    ],
+    "peakWindowsWorkingSetObserved": 501891072,
+    "peakRssDefinition": "Sampled process.memoryUsage().rss; Windows peak working set independently observed. Offline decoder peak is included; the deployed writer does not decode historical exports."
   },
-  "validatedAt": "2026-10-03T03:09:02.100Z",
   "northflankEnvelope": {
     "memoryMB": 512,
-    "persistentVolumeGB": 6,
-    "baselineObservedMemoryMB": 290.11,
-    "baselineRestarts": 0,
-    "baseline5xxPercent": 0
+    "persistentVolumeGB": 6
   },
-  "rationale": "8 MiB/hour standard envelope and 320 MiB rolling soft cap; 49.6 MiB global protected-retention reserve, priority bypass. The former second 20% hourly reserve caused avoidable standard skips in overnight validation. A 33-hour full standard near-envelope plus priority replay retained 255,895,366 bytes, peak RSS 307,724,288, zero skips and restart equality under the 352 MiB V8 heap. Northflank 512 MB memory / 6 GB volume. No data is sampled or dropped; future genuine quota excess remains exact and visible.",
-  "captureRevision": "V34B_GLOBAL_PRIORITY_RESERVE_8MIB_V3",
-  "liveDeltaReplay": {
-    "version": "LIVE_CHANGING_SURFACE_EXACT_DELTA_REPLAY",
-    "sourceRows": 186,
-    "verifiedRows": 7440,
-    "compressedBytes": 3561799,
-    "averageCompressedBytesPerExposure": 478.7364247311828,
-    "projected12000ExposuresPerHour": 5744837.096774193,
-    "peakRss": 453984256,
-    "limitation": "Observed two-minute changing surfaces replayed with advanced clocks; future market novelty and paths may require priority overflow. This is not ten-day live proof."
-  },
-  "migrationHourNote": "UTC hour 18 already contained 3,655,986 bytes in completed pre-repair blocks before the 18:14 validation start, plus 48,973 cross-boundary bytes. Standard quota exhaustion in that mixed migration hour must not be labeled clean. All trade MARK updates are priority; the next full UTC hour starts a new prospective cohort. Old cohorts and skips are preserved.",
-  "overnightValidation": {
-    "priorCohort": "V34B_CLEAN_HOLDOUT_2026-10-02T19:03:24.316Z",
-    "prioritySkipped": 0,
-    "observedHour": "2026-10-03-02",
-    "standardSkippedRows": 4298,
-    "reason": "DOUBLE_HOURLY_AND_GLOBAL_RESERVE",
-    "preserveSeparately": true
-  }
+  "rationale": "Actual worst offered-count live hour augmented by 30%, with additional priority lifecycle/path/error/arm bursts. Required channels never permanently reject at soft quotas. 10 MiB/hour alert and 320 MiB rolling cap; no reserve that silently excludes standard population rows. Completed 31-hour physical retention verification. New cohort requires independent post-deploy live qualification.",
+  "validatedAt": "2026-10-03T17:34:05.535Z"
 }
