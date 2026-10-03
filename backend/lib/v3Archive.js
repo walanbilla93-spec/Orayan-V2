@@ -174,7 +174,7 @@ class Archive {
         originals.push(f.path);this.leases.set(f.path,(this.leases.get(f.path)||0)+1);
         // Heads are replaced atomically on append. Hard links freeze their complete gzip members.
         const target=path.join(this.dir,`export-${token}-${i}.gz`);fs.linkSync(f.path,target);links.push(target);
-        files.push({path:target,size:f.size});
+        files.push({path:target,size:f.size,sourceItem:f});
       }
       if(!files.length){const target=path.join(this.dir,`export-${token}-0.gz`),bytes=zlib.gzipSync('');
         fs.writeFileSync(target,bytes);links.push(target);files.push({path:target,size:bytes.length});}
@@ -192,24 +192,43 @@ class Archive {
   restore(saved){if(!saved)return;this.definitions=new Set((saved.definitions||[]).slice(-16384));this.ledger.identity(saved.skipped||0);
     this.summaryHours=saved.summaryHours||{};this.skipped=saved.skipped||0;this.pausedUntil=saved.pausedUntil||null;}
   cohort(now=Date.now()) {
+    if(this.snapshotBuilding)return this.snapshotBuilding;
+    this.snapshotBuilding=this.buildCohort(now).finally(()=>{this.snapshotBuilding=null;});return this.snapshotBuilding;
+  }
+  async buildCohort(now) {
+    const enumerationStartedAt=Date.now();
     this.expireSessions(now);
     while(this.sessions.size>=3){const id=this.sessions.keys().next().value,s=this.sessions.get(id);for(const v of Object.values(s.channels))v.cleanup();for(const p of s.extraExports||[])if(fs.existsSync(p))fs.unlinkSync(p);this.sessions.delete(id);}
     const generation=crypto.randomBytes(12).toString('hex'),channels={};
     for(const channel of CHANNELS)channels[channel]=this.snapshot(channel);
+    // Freeze audit metadata before yielding: later writes belong to a later watermark.
+    const captureLedger=this.ledger.records(),reconciliation=this.ledger.identity(this.skipped),sequence=this.ledger.state.generation,
+      cursors={...this.ledger.state.cursors},tombstones=fs.readdirSync(this.ledger.tombstones).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(path.join(this.ledger.tombstones,n),'utf8')));
     const retained={};
+    try {
     for(const [channel,snapshot] of Object.entries(channels)){
       const stats=retained[channel]={physicalRows:0,logicalRows:0,definitionRows:0,byRecordType:{},compressedBytes:0};
       for(const f of snapshot.files){stats.compressedBytes+=f.size;
-        const lines=zlib.gunzipSync(fs.readFileSync(f.path),{maxOutputLength:BLOCK_BYTES}).toString('utf8').split('\n');
-        for(const line of lines)if(line){const row=JSON.parse(line),type=row.outputType||'UNKNOWN';stats.physicalRows++;
-          stats.byRecordType[type]=(stats.byRecordType[type]||0)+1;
-          if(type==='V3_IMMUTABLE_PAYLOAD'||type.endsWith('_DEFINITION'))stats.definitionRows++;else stats.logicalRows++;
+        let counted=f.sourceItem?.retainedStats;
+        if(!counted){counted={physicalRows:0,logicalRows:0,definitionRows:0,byRecordType:{}};
+          const lines=zlib.gunzipSync(fs.readFileSync(f.path),{maxOutputLength:BLOCK_BYTES}).toString('utf8').split('\n');
+          for(const line of lines)if(line){const row=JSON.parse(line),type=row.outputType||'UNKNOWN';counted.physicalRows++;
+            counted.byRecordType[type]=(counted.byRecordType[type]||0)+1;
+            if(type==='V3_IMMUTABLE_PAYLOAD'||type.endsWith('_DEFINITION'))counted.definitionRows++;else counted.logicalRows++;
+          }
+          // Immutable file objects retain counts; replacing a mutable head creates
+          // a new object, so neither same-size rewrites nor concurrent appends reuse stale counts.
+          if(f.sourceItem)f.sourceItem.retainedStats=counted;
         }
+        for(const k of ['physicalRows','logicalRows','definitionRows'])stats[k]+=counted[k];
+        for(const [k,n] of Object.entries(counted.byRecordType))stats.byRecordType[k]=(stats.byRecordType[k]||0)+n;
+        // Counting legacy retained blocks must never stop decision/path capture for minutes.
+        await new Promise(resolve=>setImmediate(resolve));
       }
     }
-    const captureLedger=this.ledger.records(),reconciliation=this.ledger.identity(this.skipped),tombstones=fs.readdirSync(this.ledger.tombstones).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(path.join(this.ledger.tombstones,n),'utf8')));
-    const result={generation,sequence:this.ledger.state.generation,watermarkAt:now,captureLedger,tombstones,reconciliation,ledgerChecksum:digest(captureLedger),
-      cursors:{...this.ledger.state.cursors},retained,expiresAt:now+10*60000,channels};
+    }catch(e){for(const v of Object.values(channels))v.cleanup();throw e;}
+    const result={generation,sequence,watermarkAt:now,captureLedger,tombstones,reconciliation,ledgerChecksum:digest(captureLedger),
+      cursors,retained,enumerationDurationMs:Date.now()-enumerationStartedAt,expiresAt:now+(Date.now()-enumerationStartedAt)+10*60000,channels};
     this.sessions.set(generation,result);return result;
   }
   daily(now) {

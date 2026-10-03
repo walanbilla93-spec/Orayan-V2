@@ -114,12 +114,12 @@ test('lossless references preserve all prices floats provenance paths and repeat
   assert.equal(raw(a).filter(x=>x.outputType==='V3_IMMUTABLE_PAYLOAD').length,codec.encode(x).definitions.length);
   assert.throws(()=>codec.decode([{x:{$v34bRef:'missing'}}]),/UNRESOLVED/);
 });
-test('one generation freezes every channel and cursor under subsequent writes',t=>{
+test('one generation freezes every channel and cursor under subsequent writes',async t=>{
   const a=new Archive(tmp(t));for(const channel of ['v3','v2','ai','trades','paths','errors','arms'])a.write([{channel,row:{capturedAt:at,outputType:'TEST'}}]);
-  const s=a.cohort(at+1),bytes=Object.fromEntries(Object.entries(s.channels).map(([k,v])=>[k,Buffer.concat(v.files.map(f=>fs.readFileSync(f.path))).toString('base64')]));
+  const s=await a.cohort(at+1),bytes=Object.fromEntries(Object.entries(s.channels).map(([k,v])=>[k,Buffer.concat(v.files.map(f=>fs.readFileSync(f.path))).toString('base64')]));
   for(const channel of Object.keys(s.channels)){assert.equal(s.cursors[channel],1);a.write([{channel,row:{capturedAt:at+2,outputType:'TEST'}}]);
     assert.equal(Buffer.concat(s.channels[channel].files.map(f=>fs.readFileSync(f.path))).toString('base64'),bytes[channel]);}
-  a.cohort(at+11*m);assert.equal(a.sessions.has(s.generation),false);
+  await a.cohort(at+11*m);assert.equal(a.sessions.has(s.generation),false);
 });
 test('immutable daily snapshots survive rolling prune and verify every block hash',t=>{
   const a=new Archive(tmp(t));a.write([{channel:'v3',row:{capturedAt:at,outputType:'TEST',kind:'candidate_birth',research:{values:Array(100).fill(.123456789)}}}]);

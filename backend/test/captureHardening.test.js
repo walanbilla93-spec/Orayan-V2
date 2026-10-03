@@ -45,7 +45,7 @@ test('standard permanent skip cannot produce full clean hour even with priority 
   for(let i=0;i<60;i++){l.measurement(at+i*m,true);l.receiptPulse(at+i*m,true);}l.account([entry()],'attempted','STANDARD');l.account([entry()],'skipped','STANDARD');l.receiptPulse(at+HOUR,true);
   assert.equal(l.state.completedHours.priority,1);assert.equal(l.state.completedHours.standard,0);assert.equal(l.state.completedHours.fullResearch,0);
 });
-test('shared raw manifests summary and dedicated ledger export freeze exact actual ledgers',t=>{const j=new ShadowJournal(tmp(t));j.append('v3',entry().row);const s=j.cohort();j.append('v3',{...entry().row,capturedAt:at+1});
+test('shared raw manifests summary and dedicated ledger export freeze exact actual ledgers',async t=>{const j=new ShadowJournal(tmp(t));j.append('v3',entry().row);const s=await j.cohort();j.append('v3',{...entry().row,capturedAt:at+1});
   const e=j.export('ledger',s.generation),rows=zlib.gunzipSync(Buffer.concat(e.files.map(f=>fs.readFileSync(f.path)))).toString().trim().split('\n').map(JSON.parse);assert.equal(rows[1].attemptedRows,1);assert.equal(rows[1].acceptedRows,1);assert.equal(rows[0].generation,s.generation);
   for(const channel of ['v3','v2','ai','trades','paths','errors','arms']){const e=j.export(channel,s.generation),manifest=JSON.parse(zlib.gunzipSync(fs.readFileSync(e.files[0].path)).toString());assert.deepEqual(manifest.captureLedger,s.captureLedger);assert.ok(manifest.reconciliation.rowsReconciled);}
 });
@@ -95,4 +95,16 @@ test('new analytical cohort waits for live qualification and preserves contamina
   h.start(control,'CONFIG',start);assert.equal(h.state.startedAt,null);assert.equal(h.state.previousCohorts.at(-1).status,'capture-incomplete/exploratory');
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir,h.state.previousCohorts.at(-1).preservedFile))),old);
   h.start(control,'CONFIG',start,{passed:true,repairCommit:'HASH',capturePolicy:'POLICY',ledgerBaseline:{attemptedRows:1}});assert.equal(h.state.qualification.repairCommit,'HASH');assert.deepEqual(h.state.episodes,{});
+});
+test('export enumeration yields to capture and freezes audit status before concurrent writes',async t=>{
+  const j=new ShadowJournal(tmp(t));j.append('v3',entry().row);const pending=j.cohort();assert.equal(j.cohort(),pending);
+  let completed=false;pending.then(()=>{completed=true;});await new Promise(resolve=>setImmediate(resolve));assert.equal(completed,false);
+  j.append('v3',{...entry().row,capturedAt:at+1});const s=await pending;
+  assert.equal(s.cursors.v3,1);assert.equal(s.status.counts.v3,1);assert.equal(s.retained.v3.logicalRows,1);
+  assert.equal(s.captureLedger.reduce((n,b)=>n+b.acceptedRows,0),1);assert.equal(j.counts.v3,2);assert.ok(s.enumerationDurationMs>=0);
+});
+test('cached immutable export counts never survive a mutable-head replacement',async t=>{
+  const a=new Archive(tmp(t));a.write([entry()]);const first=await a.cohort();assert.equal(first.retained.v3.logicalRows,1);
+  const item=a.list('v3')[0];assert.ok(item.retainedStats);a.write([{channel:'v3',row:{...entry().row,capturedAt:at+1}}]);
+  assert.notEqual(a.list('v3')[0],item);const second=await a.cohort();assert.equal(second.retained.v3.logicalRows,2);
 });

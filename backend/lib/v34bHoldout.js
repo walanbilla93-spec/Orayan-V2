@@ -59,7 +59,7 @@ class Holdout {
       s.open=(s.open||0)+(p.status==='OPEN'?1:0);s.stops=(s.stops||0)+(p.outcome?.startsWith('STOP')?1:0);
       s.timeouts=(s.timeouts||0)+(p.outcome==='TIMEOUT'?1:0);s.gaps=(s.gaps||0)+(p.outcome?.includes('GAP')?1:0);
       s.matchedFillSubset=(s.matchedFillSubset||0)+(p.matchedFillSubset?1:0);s.fullGeometrySubset=(s.fullGeometrySubset||0)+(p.fullGeometrySubset?1:0);
-      s.newlyAdmittedOpportunities=(s.newlyAdmittedOpportunities||0)+(p.newlyAdmittedOpportunity&&p.fillStatus==='FILLED'?1:0);
+      s.newlyAdmittedOpportunities=(s.newlyAdmittedOpportunities||0)+(p.newlyAdmittedOpportunity?1:0);
       s.firstAdmissionSensitivity=(s.firstAdmissionSensitivity||0)+(p.firstAdmissionSensitivity?1:0);
       s.netR=(s.netR||0)+(Number.isFinite(p.netR)?p.netR:0);s.rescuedControlLosses=(s.rescuedControlLosses||0)+(a.netPnl<0&&p.opportunityNetCash>0?1:0);
       s.damagedControlWinners=(s.damagedControlWinners||0)+(a.netPnl>0&&Number.isFinite(p.opportunityNetCash)&&p.opportunityNetCash<a.netPnl?1:0);
@@ -77,7 +77,10 @@ class Holdout {
     }
     for(const [policy,s] of Object.entries(stats)){s.uniqueEpisodes=new Set(Object.values(this.state.admissions).filter(a=>a.arms?.[policy]?.eligible).map(a=>a.episodeId)).size;
       s.uniqueFilledEpisodes=new Set(Object.values(this.state.admissions).filter(a=>a.arms?.[policy]?.fillStatus==='FILLED').map(a=>a.episodeId)).size;}
-    stats.ATR1M_1P5_REPLACEMENT??={label:'Prospective shadow research · no promotion',eligibleAdmissions:0,filled:0,closes:0,open:0,decisionGeometryRejects:0,fillGeometryRejects:0,uniqueEpisodes:0};
+    stats.ATR1M_1P5_REPLACEMENT??={label:'Prospective shadow research · no promotion',eligibleAdmissions:0,suppressed:0,rejected:0,filled:0,closes:0,open:0,
+      targets:0,stops:0,timeouts:0,gaps:0,censored:0,resolved:0,decisionGeometryRejects:0,fillGeometryRejects:0,uniqueEpisodes:0,uniqueFilledEpisodes:0,
+      netCash:0,netR:0,pairedNetCash:0,rescuedControlLosses:0,damagedControlWinners:0,newlyAdmittedOpportunities:0,matchedFillSubset:0,fullGeometrySubset:0,
+      firstAdmissionSensitivity:0,concentration:{side:{},regime:{},symbol:{}},subsets:{matchedFill:{opportunities:0,resolved:0,netCash:0,netR:0},fullGeometry:{opportunities:0,resolved:0,netCash:0,netR:0}}};
     return {cohortId:this.state.cohortId||null,startedAt:this.state.startedAt,awaitingLiveQualification:this.state.awaitingLiveQualification??true,qualification:this.state.qualification,
       notBeforeAt:this.state.notBeforeAt||null,previousCohorts:this.state.previousCohorts||[],control:this.state.control,configHash:this.state.configHash,
       uniqueFilledEpisodes:filled.length,distinctSymbols:Object.keys(symbols).length,longEpisodes:filled.filter(e=>e.side==='BUY').length,

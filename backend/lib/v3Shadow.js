@@ -280,17 +280,20 @@ class ShadowJournal {
         t.research34.defendedCursorAt=Math.max(...fresh.map(l=>l.knownAt));}
     }
   }
-  cohort(){const s=this.archive.cohort(),{channels,tombstones,...manifest}=s;
-    const status=JSON.parse(JSON.stringify(this.status()));status.retainedExport=s.retained;status.captureLedger=s.captureLedger;
+  cohort(){if(this.exportBuilding)return this.exportBuilding;
+    this.exportBuilding=this.buildCohort().finally(()=>{this.exportBuilding=null;});return this.exportBuilding;}
+  async buildCohort(){const status=JSON.parse(JSON.stringify(this.status())),retainedLogicalRows=JSON.parse(JSON.stringify(this.archive.summaryHours)),holdoutCohort=this.holdout.state.cohortId;
+    const s=await this.archive.cohort(),{channels,tombstones,...manifest}=s;
+    status.retainedExport=s.retained;status.captureLedger=s.captureLedger;
     status.exportGeneration=s.generation;status.watermarkAt=s.watermarkAt;status.ledgerChecksum=s.ledgerChecksum;s.status=status;
     for(const [channel,v] of Object.entries(channels)){
       const target=path.join(this.dir,`export-${s.generation}-${channel}-manifest.gz`),bytes=require('zlib').gzipSync(JSON.stringify({outputType:'SHARED_EXPORT_MANIFEST',
-        ...manifest,channel,captureCohort:this.captureCohort,holdoutCohort:this.holdout.state.cohortId,control:control34})+'\n');
+        ...manifest,channel,captureCohort:this.captureCohort,holdoutCohort,control:control34})+'\n');
       fs.writeFileSync(target,bytes);v.files.unshift({path:target,size:bytes.length});const oldCleanup=v.cleanup;
       v.cleanup=()=>{oldCleanup();if(fs.existsSync(target))fs.unlinkSync(target);};
     }
-    return {...manifest,captureCohort:this.captureCohort,holdoutCohort:this.holdout.state.cohortId,
-      control:control34,status,retainedLogicalRows:this.archive.summaryHours,
+    return {...manifest,captureCohort:this.captureCohort,holdoutCohort,
+      control:control34,status,retainedLogicalRows,
       channelFiles:Object.fromEntries(Object.entries(channels).map(([k,v])=>[k,v.files.map(f=>({size:f.size}))]))};}
   dailyExport(day){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(day||''))throw Object.assign(Error('INVALID_SNAPSHOT_DAY'),{statusCode:400});
@@ -311,7 +314,8 @@ class ShadowJournal {
   }
   export(channel,generation) {
     if(['ledger','tombstones'].includes(channel)){
-      const s=generation?this.archive.sessions.get(generation):this.archive.cohort();if(!s||s.expiresAt<Date.now())throw Object.assign(Error('EXPORT_GENERATION_EXPIRED'),{statusCode:410});
+      if(!generation)return this.cohort().then(s=>this.export(channel,s.generation));
+      const s=this.archive.sessions.get(generation);if(!s||s.expiresAt<Date.now())throw Object.assign(Error('EXPORT_GENERATION_EXPIRED'),{statusCode:410});
       const rows=channel==='ledger'?s.captureLedger:s.tombstones;
       const target=path.join(this.dir,`export-${s.generation}-${channel}-manifest.gz`),bytes=require('zlib').gzipSync([JSON.stringify({outputType:'SHARED_EXPORT_MANIFEST',generation:s.generation,watermarkAt:s.watermarkAt,
         sequence:s.sequence,reconciliation:s.reconciliation,ledgerChecksum:s.ledgerChecksum}),...rows.map(r=>JSON.stringify(r))].join('\n')+'\n');
