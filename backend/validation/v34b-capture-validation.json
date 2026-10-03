@@ -4,8 +4,8 @@
   "hourBudgetBytes": 8388608,
   "archiveCapBytes": 335544320,
   "tests": {
-    "total": 167,
-    "pass": 167,
+    "total": 168,
+    "pass": 168,
     "fail": 0,
     "skip": 0,
     "cancelled": 0,
@@ -17,15 +17,16 @@
     "hourBudgetBytes": 8388608,
     "capBytes": 335544320,
     "protectedHours": 31,
-    "retainedBytes": 251353887,
-    "rows": 66000,
-    "peakRss": 297885696,
+    "retainedBytes": 255895366,
+    "rows": 66033,
+    "peakRss": 307724288,
     "restartBytesEqual": true,
+    "standardSkipped": 0,
     "prioritySkipped": 0,
     "dailySnapshots": 1,
-    "note": "33-hour near-envelope high-entropy replay under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
+    "note": "33 full standard near-envelope UTC hours with an additional priority path each hour, under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
   },
-  "validatedAt": "2026-10-02T19:01:36.410Z",
+  "validatedAt": "2026-10-03T03:09:02.100Z",
   "northflankEnvelope": {
     "memoryMB": 512,
     "persistentVolumeGB": 6,
@@ -33,8 +34,8 @@
     "baselineRestarts": 0,
     "baseline5xxPercent": 0
   },
-  "rationale": "The original 3.25 MiB/hour target starved standard live updates. Exact deltas reduce offered research JSON to about 5.48 MiB/hour at 12,000 changing surfaces/hour. 8 MiB/hour leaves 6.4 MiB standard allowance plus priority reserve; 31 envelopes need 248 MiB below the 320 MiB disk cap. A 33-hour near-envelope replay retained 239.7 MiB with 284.1 MiB peak RSS and restart equality. Existing Northflank: 512 MB memory, 6 GB persistent disk. Ten full-envelope days need about 1.88 GiB; priority overflow stays explicit.",
-  "captureRevision": "V34B_PRIORITY_LIFECYCLE_FULL_UTC_START_V2",
+  "rationale": "8 MiB/hour standard envelope and 320 MiB rolling soft cap; 49.6 MiB global protected-retention reserve, priority bypass. The former second 20% hourly reserve caused avoidable standard skips in overnight validation. A 33-hour full standard near-envelope plus priority replay retained 255,895,366 bytes, peak RSS 307,724,288, zero skips and restart equality under the 352 MiB V8 heap. Northflank 512 MB memory / 6 GB volume. No data is sampled or dropped; future genuine quota excess remains exact and visible.",
+  "captureRevision": "V34B_GLOBAL_PRIORITY_RESERVE_8MIB_V3",
   "liveDeltaReplay": {
     "version": "LIVE_CHANGING_SURFACE_EXACT_DELTA_REPLAY",
     "sourceRows": 186,
@@ -45,5 +46,13 @@
     "peakRss": 453984256,
     "limitation": "Observed two-minute changing surfaces replayed with advanced clocks; future market novelty and paths may require priority overflow. This is not ten-day live proof."
   },
-  "migrationHourNote": "UTC hour 18 already contained 3,655,986 bytes in completed pre-repair blocks before the 18:14 validation start, plus 48,973 cross-boundary bytes. Standard quota exhaustion in that mixed migration hour must not be labeled clean. All trade MARK updates are priority; the next full UTC hour starts a new prospective cohort. Old cohorts and skips are preserved."
+  "migrationHourNote": "UTC hour 18 already contained 3,655,986 bytes in completed pre-repair blocks before the 18:14 validation start, plus 48,973 cross-boundary bytes. Standard quota exhaustion in that mixed migration hour must not be labeled clean. All trade MARK updates are priority; the next full UTC hour starts a new prospective cohort. Old cohorts and skips are preserved.",
+  "overnightValidation": {
+    "priorCohort": "V34B_CLEAN_HOLDOUT_2026-10-02T19:03:24.316Z",
+    "prioritySkipped": 0,
+    "observedHour": "2026-10-03-02",
+    "standardSkippedRows": 4298,
+    "reason": "DOUBLE_HOURLY_AND_GLOBAL_RESERVE",
+    "preserveSeparately": true
+  }
 }

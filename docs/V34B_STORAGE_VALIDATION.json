@@ -168,7 +168,7 @@
       "compressedBytes": 304267
     }
   },
-  "peakRss": 178847744,
+  "peakRss": 175013888,
   "limitations": [
     "Historical budget-skipped rows are unavailable; retained replay is not offered-demand proof.",
     "Legacy compact rows already include V3.4A rounding/projections; this verifies exact preservation of available serialized evidence."
@@ -177,13 +177,14 @@
     "hourBudgetBytes": 8388608,
     "capBytes": 335544320,
     "protectedHours": 31,
-    "retainedBytes": 251353887,
-    "rows": 66000,
-    "peakRss": 297885696,
+    "retainedBytes": 255895366,
+    "rows": 66033,
+    "peakRss": 307724288,
     "restartBytesEqual": true,
+    "standardSkipped": 0,
     "prioritySkipped": 0,
     "dailySnapshots": 1,
-    "note": "33-hour near-envelope high-entropy replay under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
+    "note": "33 full standard near-envelope UTC hours with an additional priority path each hour, under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded."
   },
   "liveDeltaReplay": {
     "version": "LIVE_CHANGING_SURFACE_EXACT_DELTA_REPLAY",
@@ -194,5 +195,13 @@
     "projected12000ExposuresPerHour": 5744837.096774193,
     "peakRss": 453984256,
     "limitation": "Observed two-minute changing surfaces replayed with advanced clocks; future market novelty and paths may require priority overflow. This is not ten-day live proof."
-  }
+  },
+  "northflankEnvelope": {
+    "memoryMB": 512,
+    "persistentVolumeGB": 6,
+    "baselineObservedMemoryMB": 290.11,
+    "baselineRestarts": 0,
+    "baseline5xxPercent": 0
+  },
+  "rationale": "8 MiB/hour standard envelope and 320 MiB rolling soft cap; 49.6 MiB global protected-retention reserve, priority bypass. The former second 20% hourly reserve caused avoidable standard skips in overnight validation. A 33-hour full standard near-envelope plus priority replay retained 255,895,366 bytes, peak RSS 307,724,288, zero skips and restart equality under the 352 MiB V8 heap. Northflank 512 MB memory / 6 GB volume. No data is sampled or dropped; future genuine quota excess remains exact and visible."
 }

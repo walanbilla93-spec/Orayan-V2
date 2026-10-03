@@ -14,6 +14,14 @@ function trade(side='BUY'){
 }
 const noise={noise:{status:'AVAILABLE',atr1m:1,receivedAt:at-1,cutoff:at-m}};
 const bar=(ts,open=100,high=101,low=99.8,close=100)=>({ts,open,high,low,close});
+test('standard capture uses its full UTC envelope while global reserve protects priority',t=>{
+  const dir=tmp(t),row={capturedAt:at,outputType:'STANDARD',entropy:require('crypto').randomBytes(1800).toString('base64')};
+  const measure=new Archive(path.join(dir,'measure'),{hourBytes:100000,maxBytes:1000000});measure.write([{channel:'v3',row}]);
+  const size=measure.total(),a=new Archive(path.join(dir,'check'),{hourBytes:Math.ceil(size/0.90),maxBytes:1000000});
+  a.write([{channel:'v3',row}]);a.write([{channel:'paths',row:{...row,outputType:'FILLED_PATH'}}]);
+  assert.equal(a.ledger.status(at).totals.reduce((n,x)=>n+x.skippedRows,0),0);
+  assert.equal(a.status().priorityReserveScope,'GLOBAL_PROTECTED_RETENTION_CAP');
+});
 test('multi-block download is byte-exact at its watermark with bounded response listeners',async t=>{
   const dir=tmp(t),p=path.join(dir,'block');fs.writeFileSync(p,'exact-watermark-extra');
   const {fileStream}=require('../lib/v34bDownload'),{Writable}=require('stream'),{pipeline}=require('stream/promises');

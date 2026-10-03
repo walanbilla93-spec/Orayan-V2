@@ -99,10 +99,10 @@ class Archive {
     }
     const blocked=[...hourDeltas].some(([hour,growth])=>
       [...this.files.values()].filter(f=>f.hour===hour).reduce((n,f)=>n+f.size,0)+growth>this.hourBytes);
-    const reserveBlocked=[...hourDeltas].some(([hour,growth])=>
-      [...this.files.values()].filter(f=>f.hour===hour).reduce((n,f)=>n+f.size,0)+growth>this.hourBytes*.80);
+    // Reserve capacity across protected retention, not twice at every UTC hour.
+    // Priority bypasses both soft limits, so standard traffic cannot starve it.
     const reserve=Math.min(this.maxBytes*.20,31*this.hourBytes*.20);
-    if(klass!=='PRIORITY'&&(blocked||reserveBlocked||this.total()+delta>this.maxBytes-reserve)) {
+    if(klass!=='PRIORITY'&&(blocked||this.total()+delta>this.maxBytes-reserve)) {
       this.skipped+=entries.length;this.pausedUntil=hourAt(hourOf(now))+HOUR;
       throw Object.assign(Error('V3_ARCHIVE_BUDGET_PAUSED'),{reasonCode:'V3_ARCHIVE_BUDGET_PAUSED'});
     }
@@ -152,7 +152,7 @@ class Archive {
   }
   release(p){const n=(this.leases.get(p)||1)-1;if(n)this.leases.set(p,n);else this.leases.delete(p);}
   status(){return {captureSchema:SCHEMA,sizeBytes:this.total(),maxBytes:this.maxBytes,hourBudgetBytes:this.hourBytes,
-    priorityReserveFraction:.20,priorityOverflowBytes:Math.max(0,this.total()-this.maxBytes),
+    priorityReserveFraction:.20,priorityReserveScope:'GLOBAL_PROTECTED_RETENTION_CAP',priorityOverflowBytes:Math.max(0,this.total()-this.maxBytes),
     retentionHeadroomBytes:Math.max(0,this.maxBytes-this.total()),telemetry:this.ledger.status(),
     minimumRetentionHours:30,maximumBlockRawBytes:BLOCK_BYTES,maximumRowRawBytes:TRADE_ROW_BYTES,maximumCandidateRawBytes:ROW_BYTES,
     budgetSkippedRecords:this.skipped,capturePausedUntil:this.pausedUntil,

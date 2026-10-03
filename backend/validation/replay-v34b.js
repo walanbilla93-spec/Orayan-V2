@@ -33,15 +33,18 @@ async function run(){
   const stressDir=fs.mkdtempSync(path.join(path.dirname(output),'capacity-stress-'));
   const a=new Archive(stressDir),start=Date.UTC(2026,9,1),crypto=require('crypto');let stressPeak=process.memoryUsage().rss;
   for(let h=0;h<33;h++){
-    const entries=Array.from({length:2000},(_,i)=>({channel:'paths',row:{capturedAt:start+h*3600000+i,outputType:'PRIORITY_ENVELOPE_VALIDATION',
+    const entries=Array.from({length:2000},(_,i)=>({channel:'v3',row:{capturedAt:start+h*3600000+i,outputType:'STANDARD_FULL_ENVELOPE_VALIDATION',
       tradeId:'SYNTHETIC',bars:[{ts:start+h*3600000+i}],entropy:crypto.randomBytes(4000).toString('base64')}}));
-    a.write(entries);stressPeak=Math.max(stressPeak,process.memoryUsage().rss);
+    a.write(entries);a.write([{channel:'paths',row:{capturedAt:start+h*3600000+3000,outputType:'PRIORITY_AFTER_FULL_STANDARD_ENVELOPE',tradeId:'SYNTHETIC',bars:[{ts:start+h*3600000}]}}]);
+    stressPeak=Math.max(stressPeak,process.memoryUsage().rss);
   }
   assert.ok(a.total()<MAX_BYTES);assert.ok(a.total()>230*1048576);assert.equal(new Set([...a.files.values()].map(f=>f.hour)).size,31);
   const before=a.total(),b=new Archive(stressDir);assert.equal(b.total(),before);
-  report.capacity={hourBudgetBytes:HOUR_BYTES,capBytes:MAX_BYTES,protectedHours:31,retainedBytes:a.total(),rows:33*2000,
-    peakRss:stressPeak,restartBytesEqual:true,prioritySkipped:b.ledger.status().totals.reduce((n,x)=>n+x.skippedRows,0),dailySnapshots:b.dailyList().length,
-    note:'33-hour near-envelope high-entropy replay under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded.'};
+  report.capacity={hourBudgetBytes:HOUR_BYTES,capBytes:MAX_BYTES,protectedHours:31,retainedBytes:a.total(),rows:33*2001,
+    peakRss:stressPeak,restartBytesEqual:true,standardSkipped:b.ledger.status().totals.filter(x=>x.priority==='STANDARD').reduce((n,x)=>n+x.skippedRows,0),
+    prioritySkipped:b.ledger.status().totals.filter(x=>x.priority==='PRIORITY').reduce((n,x)=>n+x.skippedRows,0),dailySnapshots:b.dailyList().length,
+    note:'33 full standard near-envelope UTC hours with an additional priority path each hour, under the same 352 MiB V8 heap limit; disk-backed gzip heads remain bounded.'};
+  assert.equal(report.capacity.standardSkipped,0);assert.equal(report.capacity.prioritySkipped,0);
   fs.writeFileSync(output,JSON.stringify(report,null,2));console.log(JSON.stringify({...report,hours:undefined},null,2));
 }
 run().catch(e=>{console.error(e);process.exitCode=1;});

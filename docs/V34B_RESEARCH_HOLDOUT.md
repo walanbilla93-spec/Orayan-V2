@@ -18,9 +18,11 @@ Validated envelope: 8,388,608 compressed bytes/hour (8 MiB), 335,544,320 bytes
 (320 MiB) rolling soft cap. The initial 3.25 MiB/128 MiB target was safe in the
 retained exploratory replay but insufficient for full offered live exposures.
 Even exact deltas projected 5.48 MiB/hour at 12,000 changing surfaces/hour. The
-larger validated envelope leaves 6.4 MiB/hour for standard records and a 20%
-priority reserve. Whole UTC hours protect at least 30 hours, including
-the partial boundary hour. Standard writes stop before a 20% reserve is consumed.
+validated envelope permits the full 8 MiB/hour for standard records while
+reserving 49.6 MiB globally across protected retention for priority records.
+The former additional 20% hourly reserve caused avoidable standard skips and
+has been removed. Whole UTC hours protect at least 30 hours, including
+the partial boundary hour. Standard writes stop before the global reserve is consumed.
 Priority batches include births/admissions, matched V2 for those admissions,
 fills/closes/cancels, funding finalization, paths, arm measurements and errors.
 Priority never fails because standard traffic consumed the quota. It can exceed
@@ -151,3 +153,10 @@ byte-watermark test confirms bounded response listeners and exact concatenated
 bytes. Migration launch boundaries survive slow container startup: the first
 validated scan starts within the current clean UTC hour after the dirty prior
 cohort hour, rather than waiting an extra hour solely because a pod starts late.
+
+The overnight validation cohort (nine filled episodes, zero priority skips) is
+preserved separately because the second hourly reserve caused avoidable standard
+skips. The corrected global-reserve revision starts another prospective cohort
+with unchanged strategy settings and the same preregistration. A 33-hour full
+standard near-envelope replay plus priority records validated zero standard and
+priority skips, 31 protected hours, and restart equality.
