@@ -4,6 +4,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { pipeline } = require('stream/promises');
+const { fileStream } = require('./lib/v34bDownload');
 const { routes } = require('./routes/api');
 const logger = require('./lib/logger');
 const engine = require('./lib/engine');
@@ -119,12 +120,8 @@ const server = http.createServer(async (req, res) => {
           ...(result.headers || {}),
         });
         try {
-          for (const item of result.files) {
-            const file=typeof item==='string'?{path:item,size:fs.statSync(item).size}:item;
-            if (!file.size) continue;
-            await pipeline(fs.createReadStream(file.path,{start:0,end:file.size-1}), res, {end:false});
-          }
-          return res.end();
+          await pipeline(fileStream(result.files),res);
+          return;
         } finally { result.cleanup?.(); }
       }
 

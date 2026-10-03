@@ -155,10 +155,23 @@ async function loadAlibabaShadowStatus() {
   }catch(error){button.disabled=true;status.textContent=`Alibaba shadow data unavailable: ${error.message}`;}
 }
 
+let v3ExportGeneration=null,v3FrozenStatus=null;
+async function freezeV3Export(){const c=await api('/api/v3/cohort');v3ExportGeneration=c.generation;v3FrozenStatus=c.status;
+  $('#v35Watermark').textContent=`Dashboard and downloads frozen at generation ${c.generation} · ${new Date(c.watermarkAt).toISOString()} · cursors ${JSON.stringify(c.cursors)} · retained logical rows ${JSON.stringify(Object.fromEntries(Object.entries(c.retained).map(([k,v])=>[k,v.logicalRows])))}`;
+  await loadV3Status();return c;}
+async function downloadV3(channel){if(!v3ExportGeneration)await freezeV3Export();
+  window.location.href=channel==='summary'?`/api/v3/summary?generation=${v3ExportGeneration}`:`/api/v3/export?channel=${channel}&generation=${v3ExportGeneration}`;}
 async function loadV3Status() {
   try {
-    const info=await api('/api/v3/status');
+    const info=v3FrozenStatus||await api('/api/v3/status');
     const a=info.archive||{};
+    const h=info.holdout||{},telemetry=a.telemetry||{};
+    $('#v35Holdout').textContent=`Holdout start ${h.startedAt?new Date(h.startedAt).toISOString():h.notBeforeAt?'awaiting full UTC hour '+new Date(h.notBeforeAt).toISOString():'awaiting capture validation'} · unique filled episodes ${h.uniqueFilledEpisodes||0}/100 · symbols ${h.distinctSymbols||0}/30 · long/short ${h.longEpisodes||0}/${h.shortEpisodes||0} · regimes ${JSON.stringify(h.regimeCounts||{})} · largest symbol ${(100*(h.maxSymbolShare||0)).toFixed(1)}% · repeat eligible episodes ${h.repeatEligibleEpisodes||0}/30 · <1ATR evaluable filled episodes ${h.atrBufferEligibleFilledEpisodes||0}/20 · unresolved/censored ${h.unresolvedAdmissions||0}/${h.explicitlyCensoredAdmissions||0}`;
+    $('#v35Capture').textContent=`Consecutive complete clean UTC hours ${telemetry.cleanHours||0}/30 · trailing ${info.trailingState||'DORMANT'} · current-hour priority skips ${telemetry.currentPrioritySkips||0} · retention headroom ${fmtBytes(a.retentionHeadroomBytes||0)} · priority overflow ${fmtBytes(a.priorityOverflowBytes||0)} · RSS ${fmtBytes(info.memory?.rss||0)}`;
+    $('#v35Telemetry').textContent=(telemetry.currentHourCounters||[]).map(c=>`${c.priority} ${c.channel}/${c.recordType}: attempted ${c.attemptedRows} rows / ${c.attemptedBytes} bytes; accepted ${c.acceptedRows} / ${c.acceptedBytes}; skipped ${c.skippedRows} / ${c.skippedBytes}`).join('\n');
+    $('#v35Arms').textContent='Descriptive paired monitoring; no promotion\n'+JSON.stringify(h.pairedArms||{},null,2);
+    const daily=$('#v35Daily'),selected=daily.value;daily.innerHTML=(info.dailySnapshots||[]).map(d=>`<option value="${esc(d.day)}">${esc(d.day)} UTC</option>`).join('');if(selected)daily.value=selected;
+    $('#btnV3Daily').disabled=!daily.options.length;
     const mc=info.measurementCounts||{},ep=info.episodes||{},ce=info.captureErrors||{};
     $('#v34Control').textContent=`V3.4A measurement only · frozen control ${info.control?.version||'unavailable'} · fingerprint ${info.control?.fingerprint||'unavailable'} · V3 orders disabled`;
     const mt=info.measurementTradeCounts||{};
@@ -879,13 +892,16 @@ function init() {
   });
 
   const downloadFrom = (path) => { window.location.href = path; };
-  $('#btnExportV3').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=v3'));
-  $('#btnExportV3Summary').addEventListener('click',()=>downloadFrom('/api/v3/summary'));
-  $('#btnExportV3V2').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=v2'));
-  $('#btnExportV3AI').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=ai'));
-  $('#btnExportV3Trades').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=trades'));
-  $('#btnExportV3Errors').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=errors'));
-  $('#btnExportV3Paths').addEventListener('click',()=>downloadFrom('/api/v3/export?channel=paths'));
+  $('#btnExportV3').addEventListener('click',()=>downloadV3('v3'));
+  $('#btnExportV3Summary').addEventListener('click',()=>downloadV3('summary'));
+  $('#btnExportV3Arms').addEventListener('click',()=>downloadV3('arms'));
+  $('#btnV3Freeze').addEventListener('click',()=>freezeV3Export());
+  $('#btnV3Daily').addEventListener('click',()=>downloadFrom('/api/v3/daily?day='+$('#v35Daily').value));
+  $('#btnExportV3V2').addEventListener('click',()=>downloadV3('v2'));
+  $('#btnExportV3AI').addEventListener('click',()=>downloadV3('ai'));
+  $('#btnExportV3Trades').addEventListener('click',()=>downloadV3('trades'));
+  $('#btnExportV3Errors').addEventListener('click',()=>downloadV3('errors'));
+  $('#btnExportV3Paths').addEventListener('click',()=>downloadV3('paths'));
   const downloadGroqShadow = async () => {
     const button=$('#btnExportGroqShadow');
     if(button.dataset.protected!=='true')return downloadFrom('/api/journal/research/groq-shadow/export');

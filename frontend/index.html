@@ -81,6 +81,12 @@
         <p id="v34Control" aria-live="polite"></p>
         <p id="v34Measurements" aria-live="polite"></p>
         <p id="v34Errors" aria-live="polite"></p>
+        <h3>V3.4B prospective holdout · research monitoring</h3>
+        <p id="v35Holdout" aria-live="polite"></p>
+        <p id="v35Capture" aria-live="polite"></p>
+        <pre id="v35Telemetry"></pre>
+        <pre id="v35Arms"></pre>
+        <p id="v35Watermark"></p>
         <div class="research-download">
           <button class="btn primary" id="btnExportV3Summary">Download analysis summary</button>
           <button class="btn" id="btnExportV3">Download compressed V3 data</button>
@@ -89,8 +95,12 @@
           <button class="btn" id="btnExportV3Trades">Download shadow trades &amp; outcomes</button>
           <button class="btn" id="btnExportV3Errors">Download capture errors</button>
           <button class="btn" id="btnExportV3Paths">Download management replay paths</button>
+          <button class="btn" id="btnExportV3Arms">Download paired research arms</button>
+          <button class="btn" id="btnV3Freeze">Freeze shared export watermark</button>
+          <select id="v35Daily" aria-label="Immutable snapshot day"></select>
+          <button class="btn" id="btnV3Daily">Download immutable UTC daily snapshot</button>
         </div>
-        <p class="panel-sub">Use the small analysis summary first. Raw downloads are compressed JSONL with shared level and measurement definitions. The current cohort retains at least 30 hours within a 40 MiB archive cap; budget pauses are reported. Earlier evidence is preserved separately. AI output remains an observer annotation.</p>
+        <p class="panel-sub">Raw gzip JSONL preserves every captured value through immutable references and exact deltas. Freeze one watermark for matching downloads across all seven channels. Validated envelope: 8 MiB/hour, 320 MiB soft cap, protected 30-hour retention and a priority reserve. Priority overflow stays visible. Daily snapshots persist outside rolling retention. Cached pre-fill quotes are labeled with their age; historical modeled fills have no exact synchronized bid/ask. AI remains observer-only. No production rule is promoted.</p>
         <div class="v3-table-wrap"><table class="v3-table"><thead><tr><th>Update</th><th>Symbol</th><th>Side</th><th>Regime</th><th>Level</th><th>Reaction</th><th>Location</th><th>V3 decision</th></tr></thead><tbody id="v3Rows"></tbody></table></div>
         <h3>Would-be trades</h3>
         <p id="v3TradeStatus" aria-live="polite">Checking shadow outcomes…</p>

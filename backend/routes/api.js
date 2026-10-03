@@ -247,9 +247,11 @@ const routes = {
   'GET /api/journal/research/manifest': async () => researchManifest.buildManifest(),
 
   'GET /api/v3/status': async () => v3Shadow.status(),
-  'GET /api/v3/summary': async () => ({__file:true,contentType:'application/json',
-    filename:'orayan_v3_summary.json',body:JSON.stringify(v3Shadow.summary(),null,2)}),
-  'GET /api/v3/export': async ({query}) => v3Shadow.download(query.channel||'v3'),
+  'GET /api/v3/summary': async ({query}) => ({__file:true,contentType:'application/json',
+    filename:'orayan_v3_summary.json',body:JSON.stringify(v3Shadow.summary(query.generation),null,2)}),
+  'GET /api/v3/export': async ({query}) => v3Shadow.download(query.channel||'v3',query.generation),
+  'GET /api/v3/cohort': async () => v3Shadow.cohort(),
+  'GET /api/v3/daily': async ({query}) => v3Shadow.daily(query.day),
 
   'GET /api/journal/research/groq-shadow': async () => {
     const shadowStatus=await groqShadowProducer.status();
