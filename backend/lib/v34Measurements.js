@@ -101,6 +101,10 @@ function decision(row,{candles=[],minute=null,ticker=null,btcRegime=null,marketS
     sourceAt:available?.sourceAt??null,receivedAt:available?.receivedAt??null,capturedAt:row.decisionAt});
   n.atr15mSource={sourceAt:candleStamp?.sourceAt??null,receivedAt:candleStamp?.receivedAt??null,capturedAt:row.decisionAt,
     physicalAvailability:candleStamp?'RECEIVED_BEFORE_DECISION':'ALREADY_FETCHED_CONTROL_INPUT_RECEIPT_TIME_UNAVAILABLE'};
+  Object.assign(n,{measuredAtDecision:true,cachedAtDecision:Boolean(available),positiveAtr:Number.isFinite(n.atr1m)&&n.atr1m>0,
+    usableAtDecision:n.status==='AVAILABLE'&&n.atr1m>0&&available?.receivedAt<=row.decisionAt,
+    availabilityReason:!available?'CACHE_RECEIPT_UNAVAILABLE':n.status==='INSUFFICIENT_PRIOR_MINUTES'?'INSUFFICIENT_PRIOR_MINUTES':n.atr1m>0?'USABLE':'NON_POSITIVE_ATR',
+    sourceReceipt:available?{sourceAt:available.sourceAt,receivedAt:available.receivedAt}:null,recoveryJoin:{symbol:row.symbol,subsystem:'PRIOR_NOISE',retryCursor:null}});
   const q=quote(ticker,row.decisionAt),g=row.geometry||{},entry=g.entryPrice??row.referencePrice;
   const ranked=inventory(row,n),poc=(row.research?.levels||[]).find(l=>l.type==='POC'),ob=g.reactionLevel?.type==='ORDER_BLOCK'?g.reactionLevel:
     (row.research?.levels||[]).filter(l=>l.type==='ORDER_BLOCK'&&l.active&&l.direction===row.side).sort((a,b)=>Math.abs(a.price-entry)-Math.abs(b.price-entry))[0];
@@ -141,6 +145,12 @@ function observer(r,provider,capturedAt,decisionAt=null) {
     model:r.model??null,promptVersion:r.prompt_version??null,promptHash:r.prompt_hash??null,providerVersion:r.schema_version??null,
     completedAt,receivedAt,capturedAt,ttlMs:TTL,ageMs:age,status:r.status??'UNAVAILABLE',structured,
     availabilityAtDecision:age!==null&&age>=0&&age<=TTL&&watermark!==null&&completedAt!==null&&completedAt<=receivedAt&&capturedAt<=decisionAt&&watermark<=decisionAt,
+    presentAtDecision:age!==null&&age>=0&&capturedAt<=decisionAt,
+    usableAtDecision:r.status==='OK'&&age!==null&&age>=0&&age<=TTL&&watermark!==null&&completedAt!==null&&completedAt<=receivedAt&&capturedAt<=decisionAt&&watermark<=decisionAt,
+    requestHash:r.request_hash??null,responseSchemaHash:r.response_schema_hash??null,
+    providerFailureKind:r.api_error?.code==='json_validate_failed'?'GENERATED_OUTPUT_SCHEMA_VIOLATION':r.status==='API_400_SCHEMA'?'SCHEMA_ERROR_UNPROVEN_REQUEST_OR_GENERATION':null,
+    schemaViolation:r.api_error?.code==='json_validate_failed'?{code:r.api_error.code,field:(r.api_error.message||'').match(/'\/(reason_notes|evidence_keys|missing_or_stale|reason_codes|rationale_short)(?:\/\d+)?'/)?.[1]??null,
+      observedLength:Number((r.api_error.message||'').match(/got (\d+)/)?.[1])||null,allowedLength:Number((r.api_error.message||'').match(/want (\d+)/)?.[1])||null}:null,
     executionAuthority:false};
 }
 module.exports={VERSION,TTL,id,ratio,noise,quote,normalized,spatial,inventory,exactEvent,momentum,decision,observer};

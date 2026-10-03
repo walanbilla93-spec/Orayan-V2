@@ -167,9 +167,11 @@ async function loadV3Status() {
     const a=info.archive||{};
     const h=info.holdout||{},telemetry=a.telemetry||{};
     $('#v35Holdout').textContent=`Holdout start ${h.startedAt?new Date(h.startedAt).toISOString():h.notBeforeAt?'awaiting full UTC hour '+new Date(h.notBeforeAt).toISOString():'awaiting capture validation'} · unique filled episodes ${h.uniqueFilledEpisodes||0}/100 · symbols ${h.distinctSymbols||0}/30 · long/short ${h.longEpisodes||0}/${h.shortEpisodes||0} · regimes ${JSON.stringify(h.regimeCounts||{})} · largest symbol ${(100*(h.maxSymbolShare||0)).toFixed(1)}% · repeat eligible episodes ${h.repeatEligibleEpisodes||0}/30 · <1ATR evaluable filled episodes ${h.atrBufferEligibleFilledEpisodes||0}/20 · unresolved/censored ${h.unresolvedAdmissions||0}/${h.explicitlyCensoredAdmissions||0}`;
-    $('#v35Capture').textContent=`Consecutive complete clean UTC hours ${telemetry.cleanHours||0}/30 · trailing ${info.trailingState||'DORMANT'} · current-hour priority skips ${telemetry.currentPrioritySkips||0} · retention headroom ${fmtBytes(a.retentionHeadroomBytes||0)} · priority overflow ${fmtBytes(a.priorityOverflowBytes||0)} · RSS ${fmtBytes(info.memory?.rss||0)}`;
+    const complete=telemetry.completedHours||{},skips=telemetry.skipCounters||{};
+    $('#v35Capture').textContent=`Analytical status: ${telemetry.analyticallyClean?'FULL-RESEARCH-clean':'NOT YET FULL-RESEARCH-clean'} · PRIORITY-clean completed UTC hours ${complete.priority||0} · STANDARD-clean completed UTC hours ${complete.standard||0} · MEASUREMENT-complete completed UTC hours ${complete.measurement||0} · FULL-RESEARCH-clean completed UTC hours ${complete.fullResearch||0}/30 · current partial hour ${telemetry.currentHour} STANDARD/PRIORITY skips ${telemetry.currentStandardSkips||0}/${telemetry.currentPrioritySkips||0} · trailing ${info.trailingState||'DORMANT'} · headroom ${fmtBytes(a.retentionHeadroomBytes||0)} · RSS ${fmtBytes(info.memory?.rss||0)}`;
+    $('#v35SkipCounters').textContent=`Historical/pre-ledger residual ${skips.historicalResidual??'unresolved'} (UNRESOLVED) · ledger-era skips ${skips.ledgerEra||0} · current-holdout skips ${skips.currentHoldout??'cohort not started'} · current partial hour skips ${skips.currentHour||0} · ledger STANDARD/PRIORITY ${skips.standard||0}/${skips.priority||0} · recovered/permanent ${skips.recovered||0}/${skips.permanent||0}`;
     $('#v35Telemetry').textContent=(telemetry.currentHourCounters||[]).map(c=>`${c.priority} ${c.channel}/${c.recordType}: attempted ${c.attemptedRows} rows / ${c.attemptedBytes} bytes; accepted ${c.acceptedRows} / ${c.acceptedBytes}; skipped ${c.skippedRows} / ${c.skippedBytes}`).join('\n');
-    $('#v35Arms').textContent='Descriptive paired monitoring; no promotion\n'+JSON.stringify(h.pairedArms||{},null,2);
+    $('#v35Arms').textContent='Prospective shadow research; separate BUFFER and 1.5 ATR REPLACEMENT populations; no promotion\n'+JSON.stringify(h.pairedArms||{},null,2);
     const daily=$('#v35Daily'),selected=daily.value;daily.innerHTML=(info.dailySnapshots||[]).map(d=>`<option value="${esc(d.day)}">${esc(d.day)} UTC</option>`).join('');if(selected)daily.value=selected;
     $('#btnV3Daily').disabled=!daily.options.length;
     const mc=info.measurementCounts||{},ep=info.episodes||{},ce=info.captureErrors||{};
@@ -183,7 +185,7 @@ async function loadV3Status() {
       const touches=Object.entries(t.rawTouches||{}).map(([r,s])=>`${r}R ${new Date(s.earliestAt).toISOString()}–${new Date(s.latestAt).toISOString().slice(11)} (${s.precision})`).join('; ');
       return `<tr><td>${esc(t.symbol)}<br>${esc(t.episodeId||'—')} · #${esc(t.admissionOrdinal??'—')}</td><td>${esc([n.pct,n.atr1m,n.atr15m,n.spreads].map(val).join(' / '))}</td><td>${esc(val(t.intendedRR)+' / '+val(t.fillRR))}</td><td>${esc(val(t.objective))}</td><td>${esc(arm?`${arm.identicalToControl?'Same objective · ':''}${arm.status} · ${arm.outcome||'pending'} · ${val(arm.netR)}R`:'unavailable')}</td><td>${esc(touches||'—')}</td><td>${esc(t.premiumDiscount||'—')}</td><td>${esc((t.level||'—')+' / '+(t.reaction||'—'))}</td></tr>`;
     }).join('')||'<tr><td colspan="8">No V3.4A fills yet.</td></tr>';
-    $('#v3Status').textContent=`${info.enabled?'Enabled':'Disabled'} · V3.3 compact cohort started ${fmtDate(info.startedAt)} · V3 observations ${info.counts.v3} · AI context ${info.counts.ai} · capture errors ${info.lastScanErrors??'—'} / historical ${info.counts.errors} · current archive ${fmtBytes(info.sizeBytes)} / ${fmtBytes(a.maxBytes||0)} · old evidence ${fmtBytes(info.legacySizeBytes||0)} preserved${a.capturePausedUntil?` · BUDGET PAUSE until ${fmtDate(a.capturePausedUntil)}`:''} · budget-skipped records ${a.budgetSkippedRecords||0}`;
+    $('#v3Status').textContent=`${info.enabled?'Enabled':'Disabled'} · V3.3 compact cohort started ${fmtDate(info.startedAt)} · V3 observations ${info.counts.v3} · AI context ${info.counts.ai} · capture errors ${info.lastScanErrors??'—'} / historical ${info.counts.errors} · current archive ${fmtBytes(info.sizeBytes)} / ${fmtBytes(a.maxBytes||0)} · old evidence ${fmtBytes(info.legacySizeBytes||0)} preserved${a.capturePausedUntil?` · BUDGET PAUSE until ${fmtDate(a.capturePausedUntil)}`:''} · ledger reconciliation ${telemetry.reconciliation?.rowsReconciled?'exact':'unresolved'}`;
     $('#btnExportV3').disabled=!info.available;
     const labels={NO_TREND:'No trend',V3_1:'Trend regime blocked',V3_3:'Geometry pending'};
     const readable=value=>String(value||'—').toLowerCase().replace(/_/g,' ');
@@ -894,6 +896,8 @@ function init() {
   const downloadFrom = (path) => { window.location.href = path; };
   $('#btnExportV3').addEventListener('click',()=>downloadV3('v3'));
   $('#btnExportV3Summary').addEventListener('click',()=>downloadV3('summary'));
+  $('#btnExportV3Ledger').addEventListener('click',()=>downloadV3('ledger'));
+  $('#btnExportV3Tombstones').addEventListener('click',()=>downloadV3('tombstones'));
   $('#btnExportV3Arms').addEventListener('click',()=>downloadV3('arms'));
   $('#btnV3Freeze').addEventListener('click',()=>freezeV3Export());
   $('#btnV3Daily').addEventListener('click',()=>downloadFrom('/api/v3/daily?day='+$('#v35Daily').value));

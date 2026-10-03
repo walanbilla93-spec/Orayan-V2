@@ -1,0 +1,49 @@
+{
+  "version": "CAPTURE_HARDENING_LIVE_DENSITY_V4",
+  "sourceHour": "2026-10-03T06:00:00Z",
+  "sourceRetainedRows": 22988,
+  "knownOfferedRows": 25851,
+  "densityFactor": 1.4619062119366628,
+  "headroom": 0.3,
+  "augmentation": "Repeat complete retained changing rows to exceed peak ledger attempted density by 30%; lost payloads remain unavailable. Add 3,200 priority path/lifecycle/error/arm bursts.",
+  "counts": {
+    "v3": 16808,
+    "v2": 16810,
+    "ai": 58,
+    "trades": 800,
+    "paths": 800,
+    "errors": 800,
+    "arms": 800
+  },
+  "attemptedRows": 36876,
+  "acceptedRows": 36876,
+  "skippedRows": 0,
+  "attemptedLogicalBytes": 525976623,
+  "acceptedLogicalBytes": 525976623,
+  "skippedLogicalBytes": 0,
+  "physicalCompressedBytes": 8537694,
+  "exactReplayRows": {
+    "v3": 16808,
+    "v2": 16810,
+    "ai": 58
+  },
+  "peakRss": 441778176,
+  "peakHeap": 287959536,
+  "retention": {
+    "protectedHours": 31,
+    "retainedBytes": 264668514,
+    "capBytes": 335544320,
+    "restartBytesEqual": true,
+    "syntheticCapacityClones": true
+  },
+  "hourBudgetBytes": 10485760,
+  "estimatedDailySnapshotBytes": 204904656,
+  "writerRunPeakRssObservedExternally": 420200448,
+  "resumedCompletedWriterRun": true,
+  "additionalTailRepeatStressRows": 70,
+  "limitations": [
+    "Past lost payloads cannot be reconstructed. Augmented demand is a stress envelope, not recovery. Retention proof clones the validated complete worst-hour physical blocks."
+  ],
+  "peakWindowsWorkingSetObserved": 501891072,
+  "peakRssDefinition": "Sampled process.memoryUsage().rss; Windows peak working set independently observed. Offline decoder peak is included; the deployed writer does not decode historical exports."
+}

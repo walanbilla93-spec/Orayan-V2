@@ -26,14 +26,13 @@ test('gzip blocks and rows remain bounded; definitions precede references and re
   a.write(entries(row(at+HOUR)));assert.equal(rawRead(a.list('v3')).filter(r=>r.outputType==='V3_IMMUTABLE_PAYLOAD').length,2*n);
   assert.throws(()=>a.write(entries({...row(at),padding:'x'.repeat(8192)})),/COMPACT_ROW_TOO_LARGE/);
 });
-test('combined hourly budget preflights the complete batch; denied admission does not partially write',t=>{
-  const a=new Archive(tmp(t),{hourBytes:800});a.write([{channel:'v2',row:{capturedAt:at,hello:'world'}}]);
-  const before=a.total();assert.throws(()=>a.write([...entries({...row(),padding:require('crypto').randomBytes(1400).toString('hex')}),{channel:'ai',row:{capturedAt:at}}]),/BUDGET_PAUSED/);
-  assert.equal(a.total(),before);assert.equal(a.list('v3').length,0);assert.equal(a.list('ai').length,0);
-  assert.equal(a.status().budgetSkippedRecords,2);a.write([{channel:'ai',row:{capturedAt:at,status:'small'}}]);
-  assert.equal(a.status().capturePausedUntil,at+HOUR);
-  a.write(entries(row(at+HOUR)));assert.equal(a.status().capturePausedUntil,null);
+test('required multi-channel capture preserves all rows despite soft hourly budget pressure',t=>{
+ const a=new Archive(tmp(t),{hourBytes:800});a.write([{channel:'v2',row:{capturedAt:at,hello:'world'}}]);
+ assert.doesNotThrow(()=>a.write([...entries({...row(),padding:require('crypto').randomBytes(1400).toString('hex')}),{channel:'ai',row:{capturedAt:at}}]));
+ assert.ok(a.list('v3').length>0);assert.ok(a.list('ai').length>0);assert.equal(a.status().budgetSkippedRecords,0);
+ assert.ok(a.ledger.state.envelopeExceedances>0);assert.equal(a.status().capturePausedUntil,null);
 });
+
 test('128MiB cap covers 31 protected hourly budgets; rolling eviction preserves at least latest 30 hours',t=>{
   assert.ok(31*HOUR_BYTES<=MAX_BYTES);assert.equal(MAX_BYTES,320*1048576);
   const a=new Archive(tmp(t));for(let i=0;i<33;i++)a.write(entries(row(at+i*HOUR+1234)));
@@ -80,5 +79,6 @@ test('minute tracking retains only five-minute MARK samples and always keeps ter
   j.tradeEvent(trade,['MARK'],at);j.tradeEvent(trade,['MARK'],at+60000);assert.equal(j.counts.trades,1);
   j.tradeEvent(trade,['MARK'],at+300000);j.tradeEvent({...trade,status:'CLOSED'},['CLOSED'],at+360000);assert.equal(j.counts.trades,3);
   for(let i=0;i<31;i++)j.archive.summaryHours['2026-09-'+String(i+1).padStart(2,'0')+'-10']={v3:2000,v2:2000,ai:100,trades:400,accepted:32,rejected:1968};
-  assert.ok(Buffer.byteLength(JSON.stringify(j.summary(),null,2))<16384);
+  // Exact capture ledgers are now deliberately included; simulator paths remain excluded.
+  assert.ok(Buffer.byteLength(JSON.stringify(j.summary(),null,2))<65536);
 });

@@ -120,7 +120,7 @@ test('AI annotations read incrementally, redact secrets, and never become determ
   fs.appendFileSync(file,JSON.stringify({record_type:'SHADOW_DECISION',candidate_id:'v2-test',model:'qwen',status:'OK',
     available_to_system_at_utc:new Date().toISOString(),decision:{decision:'RETAIN',rationale_short:'test-private-key-12345'}})+'\n');
   j.observeAI('Alibaba',file);j.observeAI('Alibaba',file);
-  assert.equal(j.counts.ai,1);const text=zlib.gunzipSync(fs.readFileSync(j.files('ai')[0].path)).toString(),r=JSON.parse(text);
+  assert.equal(j.counts.ai,1);const text=j.files('ai').map(f=>zlib.gunzipSync(fs.readFileSync(f.path)).toString()).join(''),r=require('../lib/v34bCodec').decode(text.trim().split('\n').map(JSON.parse))[0];
   assert.equal(text.includes('test-private-key-12345'),false);assert.equal(r.agreedWithV2,true);
   assert.equal(r.agreedWithV3,false);assert.equal(r.executionAuthority,false);
   assert.ok(r.processBootId);assert.equal(r.implementationHash.length,64);
