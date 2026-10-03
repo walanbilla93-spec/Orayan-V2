@@ -133,7 +133,10 @@ function advance(research,controlTrade,bars,now){
         const loss=ce.lossPerUnit>0?ce.lossPerUnit:de.lossPerUnit,price=ce.lossPerUnit>0?fill:cg.entryPrice;
         const cq=round(Math.min(cg.sizing.riskUsdt/loss,cg.sizing.maxNotionalUsdt/price,cg.maxOrderQty||Infinity),cg.qtyStep,false);
         a.trade=resize(a.trade,controlTrade.plannedRiskUsdt||Math.max(0,loss*cq),a.policy==='ATR1M_1P5_REPLACEMENT');
-        if(a.policy==='ATR1M_1P5_REPLACEMENT')a.matchedFillSubset=Boolean(controlTrade.filledAt&&a.trade.filledAt===controlTrade.filledAt&&a.trade.entryPrice===controlTrade.entryPrice);
+        if(a.policy==='ATR1M_1P5_REPLACEMENT'){
+          a.matchedFillSubset=Boolean(controlTrade.filledAt&&a.trade.filledAt===controlTrade.filledAt&&a.trade.entryPrice===controlTrade.entryPrice);
+          a.newlyAdmittedOpportunity=a.newlyAdmittedOpportunity||Boolean(!controlTrade.filledAt&&controlTrade.status==='CANCELLED'&&controlTrade.outcome==='NEXT_OPEN_GEOMETRY_REJECTED');
+        }
       }
       if(control.terminal(a.trade))break;
     }

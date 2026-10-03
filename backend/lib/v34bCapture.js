@@ -52,11 +52,11 @@ class CaptureLedger {
       equation:'baselineRows(0) + attemptedRows = acceptedRows + skippedRows; historical residual is outside ledger epoch; recovery adjustments = 0',
       rowsReconciled:sum('attemptedRows')===sum('acceptedRows')+sum('skippedRows'),bytesReconciled:sum('attemptedBytes')===sum('acceptedBytes')+sum('skippedBytes')};
   }
-  key(channel,row,klass){return [channel,row.outputType||'UNKNOWN',klass,this.state.epochId,row.holdoutCohort||'PRE_COHORT'].join('|');}
+  key(channel,row,klass){return [channel,row.outputType||'UNKNOWN',klass,this.state.epochId,row.holdoutCohort||'PRE_COHORT',row.implementationHash||'UNAVAILABLE'].join('|');}
   detailedAccount(entries,outcome,klass,reason=null){
     for(const {channel,row} of entries){const h=hourOf(row.capturedAt),key=this.key(channel,row,klass),bytes=Buffer.byteLength(JSON.stringify(row)+'\n');
       for(const o of [this.state.totals,this.bucket(h)]){const b=o[key]||(o[key]={channel,recordType:row.outputType||'UNKNOWN',priority:klass,hour:h,
-        epochId:this.state.epochId,cohortId:row.holdoutCohort||null,writerImplementationHash:row.implementationHash||null,
+        epochId:this.state.epochId,cohortId:row.holdoutCohort||null,writerImplementationHash:row.implementationHash||null,writerImplementationHashScope:'EXACT_KEY_PARTITION',
         attemptedRows:0,attemptedBytes:0,acceptedRows:0,acceptedBytes:0,skippedRows:0,skippedBytes:0,physicalCompressedBytesWritten:0,physicalCompressedGrowthBytes:0,skipReasons:{}});
         b[outcome+'Rows']++;b[outcome+'Bytes']+=bytes;if(outcome==='attempted'||outcome==='accepted'){
           b['first'+(outcome==='attempted'?'Attempted':'Accepted')+'At']??=row.capturedAt;b['last'+(outcome==='attempted'?'Attempted':'Accepted')+'At']=row.capturedAt;}
@@ -75,11 +75,13 @@ class CaptureLedger {
   }
   records(){const out=[];for(const name of fs.readdirSync(this.dir).filter(n=>/^\d{4}-\d{2}-\d{2}-\d{2}\.json$/.test(n)).sort()){
     const hour=name.slice(0,-5);for(const b of Object.values(JSON.parse(fs.readFileSync(path.join(this.dir,name),'utf8'))))out.push({outputType:'CAPTURE_LEDGER_ROW',hour,...b,
-      epochId:b.epochId||'LEGACY_EXACT_OFFERED_V1',cohortId:b.cohortId??null,writerImplementationHash:b.writerImplementationHash??null,
+      epochId:b.epochId||'LEGACY_EXACT_OFFERED_V1',cohortId:b.cohortId??null,writerImplementationHash:b.writerImplementationHashScope==='EXACT_KEY_PARTITION'?(b.writerImplementationHash??null):null,
+      writerImplementationHashScope:b.writerImplementationHashScope||'UNPARTITIONED_LEGACY_UNVERIFIED',
+      legacyWriterImplementationHashHint:b.writerImplementationHashScope==='EXACT_KEY_PARTITION'?null:(b.writerImplementationHash??null),
       firstAttemptedAt:b.firstAttemptedAt??null,lastAttemptedAt:b.lastAttemptedAt??null,firstAcceptedAt:b.firstAcceptedAt??null,lastAcceptedAt:b.lastAcceptedAt??null,
       physicalCompressedBytesWritten:b.physicalCompressedBytesWritten??null,physicalCompressedGrowthBytes:b.physicalCompressedGrowthBytes??null,
       skipReasons:b.skipReasons??{UNAVAILABLE_LEGACY_EXACT_REASON_DETAIL:b.skippedRows},
-      legacyUnavailableFields:b.epochId?[]:['timestamps','physicalCompressedBytesWritten','skipReasons','cohortId','writerImplementationHash'],
+      legacyUnavailableFields:b.epochId?(b.writerImplementationHashScope==='EXACT_KEY_PARTITION'?[]:['writerImplementationHash']):['timestamps','physicalCompressedBytesWritten','skipReasons','cohortId','writerImplementationHash'],
       reconciliationChecksum:digest(b)});}return out;}
   beginCohort(id,at){this.state.cohortId=id;this.state.cohortStartedAt=at;this.state.completedHours={priority:0,standard:0,measurement:0,fullResearch:0};
     this.state.lastEvaluatedHour=Math.floor(at/HOUR)*HOUR-HOUR;this.state.cleanHours=0;delete this.state.trailingActivatedAt;this.save();}
@@ -121,13 +123,14 @@ class CaptureLedger {
     }this.save();
   }
   status(now=Date.now()){
-    const h=hourOf(now),current=Object.values(this.bucket(h));
-    const total=Object.values(this.state.totals),cohort=total.filter(b=>b.cohortId===this.state.cohortId),sum=(bs,k)=>bs.reduce((n,b)=>n+(b[k]||0),0);
+    const normalize=b=>b.writerImplementationHashScope==='EXACT_KEY_PARTITION'?b:{...b,writerImplementationHash:null,writerImplementationHashScope:'UNPARTITIONED_LEGACY_UNVERIFIED',legacyWriterImplementationHashHint:b.writerImplementationHash??null};
+    const h=hourOf(now),current=Object.values(this.bucket(h)).map(normalize);
+    const total=Object.values(this.state.totals).map(normalize),cohort=this.state.cohortId?total.filter(b=>b.cohortId===this.state.cohortId):[],sum=(bs,k)=>bs.reduce((n,b)=>n+(b[k]||0),0);
     return {...this.state,totals:total,currentHour:h,currentHourPartial:true,currentHourCounters:current,reconciliation:this.identity(),
       completedHours:this.state.completedHours||{priority:0,standard:0,measurement:0,fullResearch:0},
       analyticallyClean:Boolean(this.state.cohortId&&sum(cohort,'skippedRows')===0&&this.state.completedHours?.fullResearch>0),
       skipCounters:{historicalResidual:this.state.historicalResidual??null,historicalResidualStatus:'UNRESOLVED',ledgerEra:sum(total,'skippedRows'),
-        currentHoldout:sum(cohort,'skippedRows'),currentHour:sum(current,'skippedRows'),priority:sum(total.filter(b=>b.priority==='PRIORITY'),'skippedRows'),
+        currentHoldout:this.state.cohortId?sum(cohort,'skippedRows'):null,currentHoldoutStatus:this.state.cohortId?'ACTIVE_COHORT':'NO_ACTIVE_ANALYTICAL_COHORT',currentHour:sum(current,'skippedRows'),priority:sum(total.filter(b=>b.priority==='PRIORITY'),'skippedRows'),
         standard:sum(total.filter(b=>b.priority==='STANDARD'),'skippedRows'),recovered:0,permanent:sum(total,'skippedRows')},
       currentStandardSkips:sum(current.filter(b=>b.priority==='STANDARD'),'skippedRows'),
       currentPrioritySkips:current.filter(b=>b.priority==='PRIORITY').reduce((n,b)=>n+b.skippedRows,0),

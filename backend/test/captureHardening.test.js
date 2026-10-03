@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os'),zlib=require('zlib');
-const {Archive}=require('../lib/v3Archive'),{CaptureLedger,HOUR,atomic}=require('../lib/v34bCapture'),codec=require('../lib/v34bCodec');
+const {Archive}=require('../lib/v3Archive'),{CaptureLedger,HOUR,atomic,hourOf}=require('../lib/v34bCapture'),codec=require('../lib/v34bCodec');
 const r=require('../lib/v34bResearch'),c=require('../lib/v3Trades'),g=require('../lib/v3Geometry'),control=require('../lib/v34Control'),{ShadowJournal}=require('../lib/v3Shadow');
 const at=Date.UTC(2026,9,3,6),m=60000;
 const tmp=t=>{const p=fs.mkdtempSync(path.join(os.tmpdir(),'capture-hardening-'));t.after(()=>fs.rmSync(p,{recursive:true,force:true}));return p;};
@@ -107,4 +107,22 @@ test('cached immutable export counts never survive a mutable-head replacement',a
   const a=new Archive(tmp(t));a.write([entry()]);const first=await a.cohort();assert.equal(first.retained.v3.logicalRows,1);
   const item=a.list('v3')[0];assert.ok(item.retainedStats);a.write([{channel:'v3',row:{...entry().row,capturedAt:at+1}}]);
   assert.notEqual(a.list('v3')[0],item);const second=await a.cohort();assert.equal(second.retained.v3.logicalRows,2);
+});
+test('no active analytical cohort cannot inherit legacy unassigned skips',t=>{
+  const l=new CaptureLedger(tmp(t));l.account([entry()],'attempted','STANDARD');l.account([entry()],'skipped','STANDARD');
+  assert.equal(l.status(at).skipCounters.ledgerEra,1);assert.equal(l.status(at).skipCounters.currentHoldout,null);
+  assert.equal(l.status(at).skipCounters.currentHoldoutStatus,'NO_ACTIVE_ANALYTICAL_COHORT');
+});
+test('hourly ledgers partition writer hashes and disclose legacy unpartitioned attribution',t=>{
+  const a=new Archive(tmp(t));a.write([entry()]);a.write([{channel:'v3',row:{...entry().row,implementationHash:'SECOND_HASH',capturedAt:at+1}}]);
+  const rows=a.ledger.records();assert.equal(rows.length,2);assert.deepEqual(new Set(rows.map(b=>b.writerImplementationHash)),new Set(['HASH','SECOND_HASH']));
+  const b=JSON.parse(fs.readFileSync(path.join(a.ledger.dir,hourOf(at)+'.json'))),first=Object.values(b)[0];delete first.writerImplementationHashScope;
+  atomic(path.join(a.ledger.dir,hourOf(at)+'.json'),b);assert.equal(a.ledger.records()[0].writerImplementationHash,null);
+  assert.ok(a.ledger.records()[0].legacyUnavailableFields.includes('writerImplementationHash'));
+});
+test('replacement fill after control next-open geometry rejection is a new full-geometry opportunity',()=>{
+  const t=trade('BUY',3,8),bars=[bar(at+m,101.5,101.7,101.4,101.6)],ctl=c.step(t,bars,at+2*m).trade;
+  assert.equal(ctl.status,'CANCELLED');assert.equal(ctl.outcome,'NEXT_OPEN_GEOMETRY_REJECTED');
+  const a=r.advance(r.admit(t,noise),ctl,bars,at+2*m).arms.ATR1M_1P5_REPLACEMENT;
+  assert.equal(a.fillStatus,'FILLED');assert.equal(a.newlyAdmittedOpportunity,true);assert.equal(a.fullGeometrySubset,true);assert.equal(a.matchedFillSubset,false);
 });
