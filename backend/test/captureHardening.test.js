@@ -132,3 +132,14 @@ test('zero archive skips cannot hide incomplete standard source capture from ful
   assert.equal(l.state.completedHours.priority,1);assert.equal(l.state.completedHours.standard,0);assert.equal(l.state.completedHours.measurement,0);assert.equal(l.state.completedHours.fullResearch,0);
   assert.equal(l.state.lastCompletedHour.standardSourceComplete,false);assert.equal(l.status(at+HOUR).currentStandardSkips,0);assert.equal(l.status(at+HOUR).analyticallyClean,false);
 });
+test('paired-control display closes before funding and reports censored control gaps accurately',t=>{
+  const {Holdout}=require('../lib/v34bHoldout'),h=new Holdout(tmp(t));h.state.startedAt=at;
+  const tr=trade();tr.research35=r.admit(tr,noise);h.admission(tr,'BULL_TREND');
+  const bars=[bar(at+m,100,107,99.8,106)],ctl=c.step(tr,bars,at+2*m).trade;ctl.research35=r.advance(tr.research35,ctl,bars,at+2*m);h.update(ctl);
+  let s=h.status().pairedArms.FIRST_ADMISSION_ONLY;assert.equal(s.closes,1);assert.equal(s.open,0);assert.equal(s.filled,1);
+  const gap=c.step(tr,[bar(at+2*m)],at+3*m).trade;gap.research35=r.advance(tr.research35,gap,[],at+3*m);h.update(gap);
+  s=h.status().pairedArms.FIRST_ADMISSION_ONLY;assert.equal(s.censored,1);assert.equal(s.closes,0);
+  const filled=c.step(tr,[bar(at+m)],at+2*m).trade,afterFill=c.step(filled,[bar(at+3*m)],at+4*m).trade;
+  afterFill.research35=r.advance(tr.research35,afterFill,[],at+4*m);h.update(afterFill);
+  s=h.status().pairedArms.FIRST_ADMISSION_ONLY;assert.equal(s.censored,1);assert.equal(s.filled,1);assert.equal(s.open,0);
+});

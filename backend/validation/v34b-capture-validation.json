@@ -6,8 +6,8 @@
   "hourBudgetBytes": 10485760,
   "archiveCapBytes": 335544320,
   "tests": {
-    "total": 196,
-    "passed": 196,
+    "total": 197,
+    "passed": 197,
     "failed": 0,
     "skipped": 0,
     "command": "node --test backend/test/*.test.js research/groq-shadow/test/*.test.js research/alibaba-shadow/test/*.test.js"
@@ -66,5 +66,5 @@
     "persistentVolumeGB": 6
   },
   "rationale": "Actual worst offered-count live hour augmented by 30%, with additional priority lifecycle/path/error/arm bursts. Required channels never permanently reject at soft quotas. 10 MiB/hour alert and 320 MiB rolling cap; no reserve that silently excludes standard population rows. Completed 31-hour physical retention verification. New cohort requires independent post-deploy live qualification.",
-  "validatedAt": "2026-10-03T18:21:42.671Z"
+  "validatedAt": "2026-10-03T18:27:36.901Z"
 }

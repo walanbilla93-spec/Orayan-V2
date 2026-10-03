@@ -37,7 +37,7 @@ class Holdout {
     // Store descriptive totals rather than complete simulator copies in metadata.
     if(a.arms) a.arms=Object.fromEntries(Object.entries(a.arms).map(([k,v])=>[k,{status:v.status,eligible:v.eligible,repeatEligible:v.repeatEligible,
       fillStatus:v.fillStatus,outcome:v.outcome,opportunityNetCash:v.opportunityNetCash,netR:v.netR,complete:v.complete,
-      holdMs:v.holdMs??null,controlOutcome:t.outcome,controlNetCash:t.netPnl??null,controlNetR:t.realizedR??null,
+      holdMs:v.holdMs??null,controlStatus:t.status,controlOutcome:t.outcome,controlNetCash:t.netPnl??null,controlNetR:t.realizedR??null,
       controlWinnerWithReceipts:k==='RECEIPT_DEFENDED_TRAILING'&&t.netPnl>0&&v.receiptCount>0,
       decisionGeometryRejected:v.decisionGeometryRejected,fillGeometryRejected:v.fillGeometryRejected,matchedFillSubset:v.matchedFillSubset,
       fullGeometrySubset:v.fullGeometrySubset,newlyAdmittedOpportunity:v.newlyAdmittedOpportunity,firstAdmissionSensitivity:v.firstAdmissionSensitivity,
@@ -55,8 +55,9 @@ class Holdout {
         targets:0,immediateStops:0,controlWinnerDamageCash:0,opportunityLossCash:0,pairedResolved:0});
       if(!p.eligible)continue;s.eligibleAdmissions++;if(p.status==='SUPPRESSED')s.suppressed++;
       s.label='Prospective shadow research · no promotion';s.decisionGeometryRejects=(s.decisionGeometryRejects||0)+(p.decisionGeometryRejected?1:0);
-      s.fillGeometryRejects=(s.fillGeometryRejects||0)+(p.fillGeometryRejected?1:0);s.closes=(s.closes||0)+(p.status==='CLOSED'?1:0);
-      s.open=(s.open||0)+(p.status==='OPEN'?1:0);s.stops=(s.stops||0)+(p.outcome?.startsWith('STOP')?1:0);
+      const pairedControl=p.status==='PAIRED_CONTROL',closed=p.status==='CLOSED'||(pairedControl&&(p.controlStatus==='CLOSED'||(!p.controlStatus&&p.fillStatus==='FILLED'&&(p.outcome?.startsWith('TARGET')||p.outcome?.startsWith('STOP')||p.outcome==='TIMEOUT'))));
+      s.fillGeometryRejects=(s.fillGeometryRejects||0)+(p.fillGeometryRejected?1:0);s.closes=(s.closes||0)+(closed?1:0);
+      s.open=(s.open||0)+(p.status==='OPEN'||(pairedControl&&(p.controlStatus==='OPEN'||(!p.controlStatus&&p.fillStatus==='FILLED'&&!p.outcome)))?1:0);s.stops=(s.stops||0)+(p.outcome?.startsWith('STOP')?1:0);
       s.timeouts=(s.timeouts||0)+(p.outcome==='TIMEOUT'?1:0);s.gaps=(s.gaps||0)+(p.outcome?.includes('GAP')?1:0);
       s.matchedFillSubset=(s.matchedFillSubset||0)+(p.matchedFillSubset?1:0);s.fullGeometrySubset=(s.fullGeometrySubset||0)+(p.fullGeometrySubset?1:0);
       s.newlyAdmittedOpportunities=(s.newlyAdmittedOpportunities||0)+(p.newlyAdmittedOpportunity?1:0);
@@ -73,7 +74,7 @@ class Holdout {
         const delta=p.opportunityNetCash-a.netPnl;s.pairedNetCash+=delta;s.pairedResolved++;
         if(a.netPnl>0&&delta<0)s.controlWinnerDamageCash-=delta;if(p.opportunityNetCash===0&&a.netPnl>0)s.opportunityLossCash+=a.netPnl;
       }}
-      if(p.status==='DATA_GAP')s.censored++;
+      if(p.status==='DATA_GAP'||(pairedControl&&(p.controlStatus==='DATA_GAP'||p.fillStatus==='DATA_GAP')))s.censored++;
     }
     for(const [policy,s] of Object.entries(stats)){s.uniqueEpisodes=new Set(Object.values(this.state.admissions).filter(a=>a.arms?.[policy]?.eligible).map(a=>a.episodeId)).size;
       s.uniqueFilledEpisodes=new Set(Object.values(this.state.admissions).filter(a=>a.arms?.[policy]?.fillStatus==='FILLED').map(a=>a.episodeId)).size;}
