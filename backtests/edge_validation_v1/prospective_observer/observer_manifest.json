@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0",
   "cohortId": "ORAYAN_EDGE_VALIDATION_V1_SAME140",
-  "observerImplementationHash": "f41bbf2b369672f127a30d15425dd006c5413d79db7d36c73494369f1067da49",
+  "observerImplementationHash": "d6ae0de2af1dd4e40a894815d2bc02a4263030e50d39579ad3b2e176b816cce6",
   "branch": "feature/orayan-edge-validation-observer-v1",
   "baseCommit": "5eb0262e51747d76879d85eac877eec3ced0531a",
   "registrationHash": "19477a4948d6d37d3c49e4234852ba208b12bcb241e29bfe6541ff59e485c422",
@@ -41,5 +41,5 @@
   "noProductionBehavioralTradingRulePromoted": true,
   "modelRequested": "Sol High",
   "modelSwitchVerification": "Unavailable; no model switch claimed",
-  "createdAt": "2026-10-04T18:16:37.268275+00:00"
+  "createdAt": "2026-10-04T18:20:37.058285+00:00"
 }

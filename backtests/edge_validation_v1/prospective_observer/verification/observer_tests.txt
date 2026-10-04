@@ -5,6 +5,7 @@ test_exact_nanosecond_deadline_and_forming_bar (test_observer.Tests.test_exact_n
 test_full_elapsed_time_alone_and_untrusted_proof_cannot_pass (test_observer.Tests.test_full_elapsed_time_alone_and_untrusted_proof_cannot_pass) ... ok
 test_late_snapshot_never_rewritten_or_backfilled (test_observer.Tests.test_late_snapshot_never_rewritten_or_backfilled) ... ok
 test_outcomes_only_after_endpoint_complete_and_received (test_observer.Tests.test_outcomes_only_after_endpoint_complete_and_received) ... ok
+test_partial_surface_restart_does_not_skip_remaining_symbols (test_observer.Tests.test_partial_surface_restart_does_not_skip_remaining_symbols) ... ok
 test_premium_previous_1440_ddof_one_current_excluded (test_observer.Tests.test_premium_previous_1440_ddof_one_current_excluded) ... ok
 test_premium_zero_variance_and_short_baseline_unavailable (test_observer.Tests.test_premium_zero_variance_and_short_baseline_unavailable) ... ok
 test_restart_recovers_intent_and_exact_dedup (test_observer.Tests.test_restart_recovers_intent_and_exact_dedup) ... ok
@@ -16,6 +17,6 @@ test_unknown_clock_is_unavailable (test_observer.Tests.test_unknown_clock_is_una
 test_zero_hours_never_creates_readiness_or_activation_receipt (test_observer.Tests.test_zero_hours_never_creates_readiness_or_activation_receipt) ... ok
 
 ----------------------------------------------------------------------
-Ran 16 tests in 1.854s
+Ran 17 tests in 2.081s
 
 OK

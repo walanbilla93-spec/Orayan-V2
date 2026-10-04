@@ -2,7 +2,7 @@
 
 Implemented on `feature/orayan-edge-validation-observer-v1` from deployed baseline `5eb0262e51747d76879d85eac877eec3ced0531a`. Exact pushed commit/PR are recorded in delivery_identity.json after publication. No merge or Northflank deployment was performed. Readiness is INCOMPLETE: **0/24 live hours**. No production behavioral trading rule was promoted.
 
-Implementation SHA-256: `f41bbf2b369672f127a30d15425dd006c5413d79db7d36c73494369f1067da49`. Schema: `ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0`. Preregistration `19477a4948d6d37d3c49e4234852ba208b12bcb241e29bfe6541ff59e485c422`; universe `c2b89bd98b3deeeb07bf9dfc2192aeaa7cdc360013e1c99a55bd365344678775`. All four supplied artifacts are copied byte-for-byte under sources/. Their prior phase authorization restrictions describe that earlier phase; the current user's instruction authorizes this implementation. No frozen artifact, setting, cut, universe, or production file is modified.
+Implementation SHA-256: `d6ae0de2af1dd4e40a894815d2bc02a4263030e50d39579ad3b2e176b816cce6`. Schema: `ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0`. Preregistration `19477a4948d6d37d3c49e4234852ba208b12bcb241e29bfe6541ff59e485c422`; universe `c2b89bd98b3deeeb07bf9dfc2192aeaa7cdc360013e1c99a55bd365344678775`. All four supplied artifacts are copied byte-for-byte under sources/. Their prior phase authorization restrictions describe that earlier phase; the current user's instruction authorizes this implementation. No frozen artifact, setting, cut, universe, or production file is modified.
 
 ## Capture and causal evaluation
 

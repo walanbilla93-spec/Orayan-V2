@@ -176,4 +176,11 @@ class Tests(unittest.TestCase):
         act['actual_start_utc']='2026-10-07T00:00:00Z'
         with self.assertRaisesRegex(RuntimeError,'48H_REQUIRED'):o.validate_activation(act,self.ledger,obs.hash,'key')
 
+    def test_partial_surface_restart_does_not_skip_remaining_symbols(self):
+        with patch.object(o,'SYMBOLS',['AAAUSDT','BBBUSDT']):
+            self.ledger.append('ack-a',{'recordType':'SCAN_ACK','symbol':'AAAUSDT','barCloseAt':900000})
+            self.assertEqual(o.first_unacknowledged_surface(self.ledger,900000,2700000),900000)
+            self.ledger.append('ack-b',{'recordType':'SCAN_ACK','symbol':'BBBUSDT','barCloseAt':900000})
+            self.assertEqual(o.first_unacknowledged_surface(self.ledger,900000,2700000),1800000)
+
 if __name__=='__main__':unittest.main(verbosity=2)

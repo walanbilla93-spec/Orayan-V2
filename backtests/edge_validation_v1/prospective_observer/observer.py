@@ -231,9 +231,17 @@ class Feed:
     PATHS={'ohlcv':'/v5/market/kline','mark':'/v5/market/mark-price-kline','premium':'/v5/market/premium-index-kline','clock':'/v5/market/time'}
     def __init__(self,ledger):
         self.ledger=ledger;self.clock=None;self.rate=threading.Lock();self.next=0;self.clock_lock=threading.Lock()
+        self.clock_refresh_lock=threading.Lock()
 
     def request(self,source,query):
         if source not in self.PATHS:raise RuntimeError('READ_ONLY_PUBLIC_ENDPOINT_REQUIRED')
+        if source!='clock':
+            # Warmup can span several minutes: refresh independently of the
+            # collection cycle so old clock evidence never poisons warmup bars.
+            with self.clock_refresh_lock:
+                with self.clock_lock:clock=self.clock
+                if not clock or time.monotonic_ns()-clock['monotonicReceiptTick']>30000000000:
+                    self.calibrate()
         with self.rate:
             time.sleep(max(0,self.next-time.monotonic()))
             self.next=time.monotonic()+0.125
@@ -674,6 +682,14 @@ def validate_activation(receipt,ledger,hash,key_fingerprint):
     if receipt.get('durationDays')!=60 or receipt.get('maximumDurationDays')!=120:raise RuntimeError('FROZEN_END_RULE_REQUIRED')
     return start
 
+def first_unacknowledged_surface(ledger,start,end):
+    with ledger.lock:
+        rows=ledger.db.execute("SELECT i.bar,COUNT(DISTINCT i.symbol) FROM intents i JOIN records r ON i.id=r.id WHERE i.type='SCAN_ACK' AND i.bar>=? AND i.bar<? GROUP BY i.bar",(start,end)).fetchall()
+    counts=dict(rows)
+    for bar in range(start,end,SURFACE):
+        if counts.get(bar,0)!=len(SYMBOLS):return bar
+    return end
+
 def run(folder,key,port,activation=None):
     if not key:raise RuntimeError('BLOCKED: OUTCOME_PUBLIC_KEY_PATH_REQUIRED; do not start readiness without outcome seal')
     ledger=Ledger(folder);sealer=Sealer(Path(key).read_bytes());observer=Observer(ledger,sealer);feed=Feed(ledger)
@@ -720,10 +736,7 @@ def run(folder,key,port,activation=None):
                 'registrationHash':REGISTRATION,'universeHash':UNIVERSE,'classification':'READINESS_ONLY'})
         capture_start=activated if activated is not None else start['startAt']
         capture_end=capture_start+(60*86400000 if activated is not None else 86400000)
-        next_bar=capture_start
-        acknowledged=ledger.rows('SCAN_ACK')
-        acknowledged=[x for x in acknowledged if x['barCloseAt']>=capture_start]
-        if acknowledged:next_bar=max(x['barCloseAt'] for x in acknowledged)+SURFACE
+        next_bar=first_unacknowledged_surface(ledger,capture_start,capture_end)
         while not stop.is_set():
             now=stamp()
             if now>=next_bar+1 and next_bar<capture_end:
