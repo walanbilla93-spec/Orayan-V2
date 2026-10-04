@@ -17,8 +17,8 @@ def audit(observer,proofs,now=None):
     if now<end:incomplete.append('FULL_24_HOURS_NOT_ELAPSED')
     if start['implementationHash']!=observer.hash:failures.append('IMPLEMENTATION_CHANGED')
     expected={(s,b) for s in o.SYMBOLS for b in range(first,end,o.SURFACE)}
-    snaps=ledger.rows('INPUT_SNAPSHOT')
-    actual={(s['symbol'],s['barCloseAt']) for s in snaps if first<=s['barCloseAt']<end}
+    with ledger.lock:
+        actual=set(ledger.db.execute("SELECT i.symbol,i.bar FROM intents i JOIN records r ON r.id=i.id WHERE i.type='INPUT_SNAPSHOT' AND i.bar>=? AND i.bar<?",(first,end)).fetchall())
     if actual!=expected:incomplete.append('SCHEDULED_SYMBOL_SURFACE_COVERAGE_INCOMPLETE')
     for s,b in expected:
         if not ledger.get(f'ack:{s}:{b}'):incomplete.append('SCAN_ACK_MISSING');break
@@ -28,17 +28,16 @@ def audit(observer,proofs,now=None):
     if attempted!=accepted:failures.append('ATTEMPTED_NOT_DURABLY_ACCEPTED')
     checks=ledger.verify()
     if any(checks[k] for k in ['unresolvedRefs','chainFailures','rawHashFailures']):failures.append('WAL_OR_REFERENCE_HASH_RECONCILIATION_FAILED')
-    candidates=[c for c in ledger.rows('EDGE_CANDIDATE') if first<=c['barCloseAt']<end]
-    by_snapshot={}
-    for c in candidates:by_snapshot.setdefault(c['inputSnapshotId'],[]).append(c)
     late=0;eligible=0;feature_errors=0;late_use=0
-    for s in snaps:
+    for s in ledger.iter_rows('INPUT_SNAPSHOT'):
         if not first<=s['barCloseAt']<end:continue
         late+=bool(s['strictAvailabilityFailed'])
         material=observer.materialize(s)
         if any(not o.available(b,s['decisionAt']) for group in s['inputBarRefs'] for b in material[group]):late_use+=1
         f=o.feature_bundle(material)
-        for c in by_snapshot.get(s['inputSnapshotId'],[]):
+        for engine in ['V2','V3']:
+            c=ledger.get(f'candidate:{engine}:{s["symbol"]}:{s["barCloseAt"]}')
+            if not c:continue
             eligible+=c['prequoteEligible']
             for field in ['premiumZ','relativeStrength60','premiumBaselineHash','relativeStrength60DerivationHash']:
                 x,y=f[field],c[field]
@@ -75,11 +74,27 @@ def audit(observer,proofs,now=None):
     missing_outcomes=0
     receipt_folder=ledger.folder.parent/'outcome_receipts'
     receipt_ledger=o.ReadOnlyLedger(receipt_folder) if (receipt_folder/'capture.sqlite').exists() else None
-    for c in candidates:
+    for c in ledger.iter_rows('EDGE_CANDIDATE'):
+        if not first<=c['barCloseAt']<end:continue
         if not c['prequoteEligible']:continue
         for h in [15,30,60,120]:
             if not receipt_ledger or not receipt_ledger.get(f'outcome:{c["candidateId"]}:{h}'):missing_outcomes+=1
-    if receipt_ledger:receipt_ledger.close()
+    if receipt_ledger:
+        receipt_counts=receipt_ledger.count()
+        attempted+=sum(x['attempted'] for x in receipt_counts);accepted+=sum(x['accepted'] for x in receipt_counts)
+        receipt_checks=receipt_ledger.verify()
+        if any(receipt_checks[k] for k in ['chainFailures','unresolvedRefs','rawHashFailures']):failures.append('OUTCOME_RECEIPT_WAL_INVALID')
+        for r in receipt_ledger.iter_rows('SEALED_OUTCOME'):
+            if r.get('sealMode')!=o.SEAL_MODE or not r.get('privateOutcomeHash'):failures.append('OUTCOME_COMMIT_RECEIPT_INVALID')
+            if any(k in r for k in ['invertedDirectionalBps','pathReceipts','entryOpenRaw','endOpenRaw']):failures.append('OUTCOME_NAMESPACE_LEAK')
+        receipt_ledger.close()
+    worker_file=ledger.folder.parent/'outcome_receipts/worker_status.json'
+    worker=o.json.loads(worker_file.read_text()) if worker_file.exists() else {}
+    if worker.get('status')!='PASS' or worker.get('observerImplementationHash')!=observer.hash:incomplete.append('PRIVATE_OUTCOME_WORKER_VERIFICATION_REQUIRED')
+    else:
+        if worker.get('attempted')!=worker.get('accepted'):failures.append('PRIVATE_OUTCOME_ATTEMPT_NOT_ACCEPTED')
+        if any(worker.get('privateWAL',{}).get(k,1) for k in ['chainFailures','unresolvedRefs','rawHashFailures']):failures.append('PRIVATE_OUTCOME_WAL_INVALID')
+    if attempted!=accepted:failures.append('ALL_NAMESPACES_ATTEMPTED_NOT_ACCEPTED')
     if missing_outcomes:incomplete.append('OUTCOME_HORIZONS_OR_CENSOR_DRAIN_PENDING')
     if now<end:status='INCOMPLETE'
     elif failures:status='FAIL'

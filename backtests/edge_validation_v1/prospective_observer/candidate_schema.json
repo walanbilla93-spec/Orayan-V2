@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "EDGE_CANDIDATE",
-  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.1.0",
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.2.0",
   "type": "object",
   "required": [
     "recordType",

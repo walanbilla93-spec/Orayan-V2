@@ -118,7 +118,7 @@ def run(root,port,self_test=False):
     # Capacity is qualified conservatively. Never share/prune the trading volume.
     import shutil
     capacity=shutil.disk_usage(root)
-    if capacity.free<32*1024**3:raise RuntimeError('READINESS_STORAGE_QUALIFICATION_REQUIRES_32_GIB_FREE')
+    if capacity.free<4*1024**3:raise RuntimeError('READINESS_STORAGE_QUALIFICATION_REQUIRES_4_GIB_FREE_FOR_COMPRESSED_WAL')
     processes=[subprocess.Popen([sys.executable,'-u',str(o.ROOT/'observer.py'),'run','--data',str(root/'capture'),'--port',str(port)],preexec_fn=child(CAPTURE,[])),
         subprocess.Popen([sys.executable,'-u',str(o.ROOT/'outcome_worker.py'),'--root',str(root)],preexec_fn=child(OUTCOMES,[CAPTURE]))]
     drop(STATUS,[]);server=serve(root,port)

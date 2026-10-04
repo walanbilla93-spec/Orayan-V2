@@ -16,9 +16,10 @@ test_rs60_exact_four_closes_no_signed_or_percent_substitution (test_observer.Tes
 test_schema_full_required_candidate_fields_present_even_unavailable (test_observer.Tests.test_schema_full_required_candidate_fields_present_even_unavailable) ... ok
 test_snapshot_lossless_parquet_and_reference_reconciliation (test_observer.Tests.test_snapshot_lossless_parquet_and_reference_reconciliation) ... ok
 test_unknown_clock_is_unavailable (test_observer.Tests.test_unknown_clock_is_unavailable) ... ok
+test_wal_compression_is_lossless_and_hashes_original_bytes (test_observer.Tests.test_wal_compression_is_lossless_and_hashes_original_bytes) ... ok
 test_zero_hours_never_creates_readiness_or_activation_receipt (test_observer.Tests.test_zero_hours_never_creates_readiness_or_activation_receipt) ... ok
 
 ----------------------------------------------------------------------
-Ran 19 tests in 1.949s
+Ran 20 tests in 2.281s
 
 OK

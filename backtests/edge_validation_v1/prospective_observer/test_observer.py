@@ -37,6 +37,19 @@ class Tests(unittest.TestCase):
         b=bar(0);b['utcReceiptUpperNs']=None
         self.assertFalse(o.available(b,60001))
 
+    def test_wal_compression_is_lossless_and_hashes_original_bytes(self):
+        raw=(b'\x00\xff arbitrary exchange bytes\r\n'*1000)
+        self.assertEqual(o.unpack_raw(o.pack_raw(raw)),raw)
+        p={'recordType':'TEST','unicode':'\u03a3','null':None,'receiptRefs':[{'v':i,'at':900001} for i in range(1440)]}
+        self.ledger.append('compressed',p)
+        stored=self.ledger.db.execute('SELECT payload FROM records WHERE id=?',('compressed',)).fetchone()[0]
+        self.assertTrue(stored.startswith('z1:'))
+        self.assertEqual(self.ledger.get('compressed')['receiptRefs'],p['receiptRefs'])
+        v=self.ledger.receipt('clock',None,None,raw,{'responseReceivedAt':900001},[])
+        blob,h=self.ledger.db.execute('SELECT raw,raw_hash FROM responses WHERE version=?',(v,)).fetchone()
+        self.assertEqual(o.unpack_raw(blob),raw);self.assertEqual(h,o.digest(raw))
+        self.assertEqual(self.ledger.verify()['rawHashFailures'],0)
+
     def test_restart_recovers_intent_and_exact_dedup(self):
         p={'recordType':'EDGE_CANDIDATE','engine':'V2','symbol':'AAAUSDT','barCloseAt':900000}
         with self.assertRaisesRegex(RuntimeError,'INJECTED_CRASH'):self.ledger.append('a',p,True)

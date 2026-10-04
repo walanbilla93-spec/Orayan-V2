@@ -5,6 +5,8 @@ Receipts use the instant the entire response body has been read, before parsing.
 Historical warmup is never a historical receipt or an eligible past decision.
 """
 import argparse
+import base64
+import zlib
 import concurrent.futures
 import csv
 import datetime as dt
@@ -24,7 +26,7 @@ import urllib.parse
 import urllib.request
 
 ROOT=Path(__file__).resolve().parent
-SCHEMA='ORAYAN_PROSPECTIVE_OBSERVER_V1.1.0'
+SCHEMA='ORAYAN_PROSPECTIVE_OBSERVER_V1.2.0'
 MINUTE=60000
 SURFACE=900000
 COHORT=json.loads((ROOT/'sources/prospective_cohort_manifest.json').read_text())
@@ -39,6 +41,23 @@ def canonical(x):
 
 def digest(x):
     return hashlib.sha256(x if isinstance(x,bytes) else canonical(x)).hexdigest()
+
+def file_digest(path):
+    h=hashlib.sha256()
+    with Path(path).open('rb') as f:
+        for block in iter(lambda:f.read(1024*1024),b''):h.update(block)
+    return h.hexdigest()
+
+def pack_text(data):
+    return 'z1:'+base64.b64encode(zlib.compress(data.encode(),6)).decode()
+
+def unpack_text(data):
+    return zlib.decompress(base64.b64decode(data[3:])).decode() if data.startswith('z1:') else data
+
+def pack_raw(data):return b'ORAYAN_Z1\0'+zlib.compress(data,6)
+def unpack_raw(data):
+    data=bytes(data)
+    return zlib.decompress(data[10:]) if data.startswith(b'ORAYAN_Z1\0') else data
 
 def utc(ms):
     return dt.datetime.fromtimestamp(ms/1000,dt.timezone.utc).isoformat().replace('+00:00','Z')
@@ -77,6 +96,7 @@ class Ledger:
         self.db=sqlite3.connect(self.folder/'capture.sqlite',check_same_thread=False,isolation_level=None)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('PRAGMA synchronous=FULL')
+        self.db.create_function('unpack',1,unpack_text,deterministic=True)
         self.db.execute('PRAGMA foreign_keys=ON')
         self.db.execute('PRAGMA busy_timeout=30000')
         self.db.executescript('''
@@ -106,7 +126,7 @@ class Ledger:
     def get(self,id):
         with self.lock:
             row=self.db.execute('SELECT payload FROM records WHERE id=?',(id,)).fetchone()
-            return json.loads(row[0]) if row else None
+            return json.loads(unpack_text(row[0])) if row else None
 
     def append(self,id,payload,fail_after_intent=False):
         payload={'cohortId':COHORT['cohort_id'],**payload}
@@ -118,7 +138,7 @@ class Ledger:
             if not old:
                 self.db.execute('INSERT INTO intents VALUES(?,?,?,?,?,?,?,?)',
                     (id,payload['recordType'],payload.get('engine'),payload.get('symbol'),
-                     payload.get('barCloseAt'),stamp(),data,h))
+                     payload.get('barCloseAt'),stamp(),pack_text(data),h))
             if fail_after_intent:raise RuntimeError('INJECTED_CRASH_AFTER_DURABLE_INTENT')
             self._accept(id)
             return self.get(id)
@@ -127,13 +147,13 @@ class Ledger:
         if self.db.execute('SELECT 1 FROM records WHERE id=?',(id,)).fetchone():return
         self.db.execute('BEGIN IMMEDIATE')
         try:
-            data=self.db.execute('SELECT payload FROM intents WHERE id=?',(id,)).fetchone()[0]
+            data=unpack_text(self.db.execute('SELECT payload FROM intents WHERE id=?',(id,)).fetchone()[0])
             prev=self.db.execute('SELECT chain_hash FROM records ORDER BY seq DESC LIMIT 1').fetchone()
             prev=prev[0] if prev else '0'*64
             at=stamp()
             data=canonical({**json.loads(data),'committedAt':at}).decode()
             h=digest([prev,id,at,json.loads(data)])
-            self.db.execute('INSERT INTO records(id,committed_at,payload,previous_hash,chain_hash) VALUES(?,?,?,?,?)',(id,at,data,prev,h))
+            self.db.execute('INSERT INTO records(id,committed_at,payload,previous_hash,chain_hash) VALUES(?,?,?,?,?)',(id,at,pack_text(data),prev,h))
             self.db.execute('COMMIT')
         except BaseException:
             self.db.execute('ROLLBACK')
@@ -153,15 +173,15 @@ class Ledger:
             q='SELECT r.payload,r.committed_at FROM records r JOIN intents i ON i.id=r.id'
             args=()
             if type:q+=' WHERE i.type=?';args=(type,)
-            return [{**json.loads(p),'committedAt':at} for p,at in self.db.execute(q+' ORDER BY r.seq',args)]
+            return [{**json.loads(unpack_text(p)),'committedAt':at} for p,at in self.db.execute(q+' ORDER BY r.seq',args)]
 
     def count(self,start=None,end=None):
         where='';args=[]
         if start is not None:where=' WHERE i.attempted_at>=? AND i.attempted_at<?';args=[start,end]
         with self.lock:
-            rows=self.db.execute("SELECT json_extract(i.payload,'$.cohortId'),i.type,i.engine,i.bar,COUNT(*),COUNT(r.id) FROM intents i LEFT JOIN records r ON i.id=r.id"+where+' GROUP BY 1,i.type,i.engine,i.bar',args).fetchall()
+            rows=self.db.execute("SELECT json_extract(unpack(i.payload),'$.cohortId'),i.type,i.engine,i.bar,COUNT(*),COUNT(r.id) FROM intents i LEFT JOIN records r ON i.id=r.id"+where+' GROUP BY 1,i.type,i.engine,i.bar',args).fetchall()
             failures={}
-            for cohort,typ,engine,bar,field,n in self.db.execute("SELECT json_extract(i.payload,'$.cohortId'),i.type,i.engine,i.bar,j.value,COUNT(*) FROM intents i JOIN json_each(i.payload,'$.requiredInputFailures') j"+where+' GROUP BY 1,i.type,i.engine,i.bar,j.value',args):
+            for cohort,typ,engine,bar,field,n in self.db.execute("SELECT json_extract(unpack(i.payload),'$.cohortId'),i.type,i.engine,i.bar,j.value,COUNT(*) FROM intents i JOIN json_each(unpack(i.payload),'$.requiredInputFailures') j"+where+' GROUP BY 1,i.type,i.engine,i.bar,j.value',args):
                 failures.setdefault((cohort,typ,engine,bar),{})[field]=n
         return [{'cohortId':cohort,'recordType':t,'engine':e,'barCloseAt':b,'attempted':a,'accepted':n,'pending':a-n,'skipped':0,
                  'fieldFailureCounts':failures.get((cohort,t,e,b),{})} for cohort,t,e,b,a,n in rows]
@@ -173,18 +193,18 @@ class Ledger:
             with self.lock:
                 rows=self.db.execute('SELECT r.seq,r.payload FROM records r JOIN intents i ON i.id=r.id WHERE i.type=? AND r.seq>? ORDER BY r.seq LIMIT 16',(type,last)).fetchall()
             if not rows:return
-            for seq,payload in rows:last=seq;yield json.loads(payload)
+            for seq,payload in rows:last=seq;yield json.loads(unpack_text(payload))
 
     def receipt(self,source,symbol,interval,raw,evidence,bars):
         with self.lock:
             self.db.execute('BEGIN IMMEDIATE')
             try:
                 cur=self.db.execute('INSERT INTO responses(source,symbol,interval_ms,raw,raw_hash,evidence) VALUES(?,?,?,?,?,?)',
-                    (source,symbol,interval,raw,digest(raw),canonical(evidence).decode()))
+                    (source,symbol,interval,pack_raw(raw),digest(raw),canonical(evidence).decode()))
                 version=cur.lastrowid
                 for bar in bars:
                     native={k:bar[k] for k in ['ts','intervalMs','source','symbol','open','high','low','close','volume','turnover'] if k in bar}
-                    self.db.execute('INSERT INTO bars VALUES(?,?,?)',(version,bar['ts'],canonical(native).decode()))
+                    self.db.execute('INSERT INTO bars VALUES(?,?,?)',(version,bar['ts'],pack_text(canonical(native).decode())))
                 self.db.execute('COMMIT')
             except BaseException:
                 self.db.execute('ROLLBACK');raise
@@ -198,7 +218,7 @@ class Ledger:
               (source,symbol,interval,lo,hi,watermark or 2**63-1)).fetchall()
         result={}
         for p,version,h,evidence in rows:
-            b={**json.loads(p),**json.loads(evidence),'inputVersionId':version,'responseHash':h}
+            b={**json.loads(unpack_text(p)),**json.loads(evidence),'inputVersionId':version,'responseHash':h}
             # Prefer the first eligible receipt. Revisions append; they never rewrite a seal.
             if decision is not None and not available(b,decision):continue
             if b['exchangeEnvelopeTime']<b['ts']+interval:continue
@@ -213,22 +233,22 @@ class Ledger:
             row=self.db.execute('SELECT b.payload,r.raw_hash,r.evidence FROM bars b JOIN responses r ON r.version=b.version WHERE b.version=? AND b.open_at=?',
                 (ref['inputVersionId'],ref['barOpenAt'])).fetchone()
         if not row:raise RuntimeError('UNRESOLVED_BAR_REFERENCE')
-        return {**json.loads(row[0]),**json.loads(row[2]),'inputVersionId':ref['inputVersionId'],'responseHash':row[1]}
+        return {**json.loads(unpack_text(row[0])),**json.loads(row[2]),'inputVersionId':ref['inputVersionId'],'responseHash':row[1]}
 
     def verify(self,incremental=False):
         with self.lock:
             cache=getattr(self,'_verified',None) if incremental else None
             seq,version,prev,bad,refs,rawbad=cache or (0,0,'0'*64,0,0,0)
             for seq,id,at,p,prior,h in self.db.execute('SELECT seq,id,committed_at,payload,previous_hash,chain_hash FROM records WHERE seq>? ORDER BY seq',(seq,)):
-                if prior!=prev or digest([prev,id,at,json.loads(p)])!=h:bad+=1
+                if prior!=prev or digest([prev,id,at,json.loads(unpack_text(p))])!=h:bad+=1
                 prev=h
-                for v in json.loads(p).get('payloadRefs',[]):
+                for v in json.loads(unpack_text(p)).get('payloadRefs',[]):
                     if not self.db.execute('SELECT 1 FROM responses WHERE version=?',(v,)).fetchone():refs+=1
-                for group in json.loads(p).get('inputBarRefs',{}).values():
+                for group in json.loads(unpack_text(p)).get('inputBarRefs',{}).values():
                     for b in group:
                         if not self.db.execute('SELECT 1 FROM bars WHERE version=? AND open_at=?',(b['inputVersionId'],b['barOpenAt'])).fetchone():refs+=1
             for version,raw,h in self.db.execute('SELECT version,raw,raw_hash FROM responses WHERE version>? ORDER BY version',(version,)):
-                rawbad+=digest(bytes(raw))!=h
+                rawbad+=digest(unpack_raw(raw))!=h
             self._verified=(seq,version,prev,bad,refs,rawbad)
             return {'chainFailures':bad,'unresolvedRefs':refs,'rawHashFailures':rawbad,'chainHead':prev}
 
@@ -378,6 +398,7 @@ class ReadOnlyLedger(Ledger):
         self.folder=Path(folder);self.lock=threading.RLock()
         self.db=sqlite3.connect((self.folder/'capture.sqlite').resolve().as_uri()+'?mode=ro',uri=True,
             check_same_thread=False,isolation_level=None)
+        self.db.create_function('unpack',1,unpack_text,deterministic=True)
         self.db.execute('PRAGMA query_only=ON');self.db.execute('PRAGMA busy_timeout=30000')
     def append(self,*args,**kwargs):raise RuntimeError('READ_ONLY_LEDGER')
     def receipt(self,*args,**kwargs):raise RuntimeError('READ_ONLY_LEDGER')
@@ -418,7 +439,7 @@ class OutcomeStore:
             try:
                 for v in refs:
                     row=self.capture.db.execute('SELECT version,source,symbol,interval_ms,raw,raw_hash,evidence FROM responses WHERE version=?',(v,)).fetchone()
-                    if not row or digest(bytes(row[4]))!=row[5]:raise RuntimeError('OUTCOME_SOURCE_REFERENCE_INVALID')
+                    if not row or digest(unpack_raw(row[4]))!=row[5]:raise RuntimeError('OUTCOME_SOURCE_REFERENCE_INVALID')
                     self.private.db.execute('INSERT OR IGNORE INTO responses VALUES(?,?,?,?,?,?,?)',row)
                 self.private.db.execute('COMMIT')
             except BaseException:self.private.db.execute('ROLLBACK');raise
@@ -526,7 +547,7 @@ class Observer:
     def episode(self,symbol,side,d):
         key=side or 'WATCH'
         with self.ledger.lock:
-            old=[json.loads(row[0]) for row in self.ledger.db.execute('''SELECT r.payload FROM records r JOIN intents i ON r.id=i.id
+            old=[json.loads(unpack_text(row[0])) for row in self.ledger.db.execute('''SELECT r.payload FROM records r JOIN intents i ON r.id=i.id
                 WHERE i.type='EDGE_CANDIDATE' AND i.engine='V3' AND i.symbol=? AND i.bar<? ORDER BY i.bar DESC LIMIT 3''',(symbol,d-1))]
         old=[x for x in old if (x['originalSide'] or 'WATCH')==key]
         old.sort(key=lambda x:x['decisionAt'])
@@ -565,8 +586,8 @@ class Observer:
 
     def status(self):
         with self.ledger.lock:
-            snaps=[{'strictAvailabilityFailed':v} for (v,) in self.ledger.db.execute("SELECT json_extract(r.payload,'$.strictAvailabilityFailed') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='INPUT_SNAPSHOT'")]
-            candidates=[{'prequoteEligible':e,'requiredInputFailures':json.loads(f),'hypothesisEligibility':json.loads(h)} for e,f,h in self.ledger.db.execute("SELECT json_extract(r.payload,'$.prequoteEligible'),json_extract(r.payload,'$.requiredInputFailures'),json_extract(r.payload,'$.hypothesisEligibility') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='EDGE_CANDIDATE'")]
+            snaps=[{'strictAvailabilityFailed':v} for (v,) in self.ledger.db.execute("SELECT json_extract(unpack(r.payload),'$.strictAvailabilityFailed') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='INPUT_SNAPSHOT'")]
+            candidates=[{'prequoteEligible':e,'requiredInputFailures':json.loads(f),'hypothesisEligibility':json.loads(h)} for e,f,h in self.ledger.db.execute("SELECT json_extract(unpack(r.payload),'$.prequoteEligible'),json_extract(unpack(r.payload),'$.requiredInputFailures'),json_extract(unpack(r.payload),'$.hypothesisEligibility') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='EDGE_CANDIDATE'")]
         counts=self.ledger.count();now=stamp();start=self.ledger.get('readiness:start')
         late=sum(s['strictAvailabilityFailed'] for s in snaps)
         completed=self.completed_hours(start['startAt'] if start else None,now)
@@ -602,45 +623,77 @@ class Observer:
             if all(self.ledger.get(f'ack:{symbol}:{b}') for symbol in SYMBOLS for b in required):out.append(utc(hour))
         return out
 
-def daily_snapshot(ledger,day):
-    """Immutable directory published only after all Parquet/raw hashes reconcile.
+def array_hash(rows):
+    h=hashlib.sha256();h.update(b'[');first=True
+    for row in rows:
+        if not first:h.update(b',')
+        h.update(canonical(row));first=False
+    h.update(b']');return h.hexdigest()
 
-    The generic Parquet payload is canonical JSON, preserving every schema field
-    without lossy inferred nested types. Raw response bytes remain exact binary.
-    """
+def daily_snapshot(ledger,day):
+    """Stream exact decoded payloads/raw bytes to immutable Parquet/ZSTD."""
     import pyarrow as pa
     import pyarrow.parquet as pq
-    start=int(dt.datetime.fromisoformat(day).replace(tzinfo=dt.timezone.utc).timestamp()*1000)
-    end=start+86400000
+    start=int(dt.datetime.fromisoformat(day).replace(tzinfo=dt.timezone.utc).timestamp()*1000);end=start+86400000
     if stamp()<end:raise RuntimeError('CANNOT_SEAL_INCOMPLETE_UTC_DAY')
     final=ledger.folder/'daily'/day
     if final.exists():return verify_snapshot(final)
-    temp=ledger.folder/'daily'/f'.{day}-{time.monotonic_ns()}'
-    temp.mkdir(parents=True)
-    with ledger.lock:
-        records=ledger.db.execute('SELECT seq,id,committed_at,payload,previous_hash,chain_hash FROM records WHERE committed_at>=? AND committed_at<? ORDER BY seq',(start,end)).fetchall()
-        # References may point to earlier warmup days. Copy their raw payloads too.
-        refs={v for r in records for v in json.loads(r[3]).get('payloadRefs',[])}
-        raws=[]
-        for row in ledger.db.execute('SELECT version,source,symbol,interval_ms,raw,raw_hash,evidence FROM responses'):
-            e=json.loads(row[-1]);at=e['responseReceivedAt']
-            if start<=at<end or row[0] in refs:raws.append(row)
-        check=ledger.verify()
-        ledger_count=ledger.count(start,end)
+    temp=ledger.folder/'daily'/f'.{day}-{time.monotonic_ns()}';temp.mkdir(parents=True)
     rs=pa.schema([('seq',pa.int64()),('id',pa.string()),('committedAt',pa.int64()),('payload',pa.string()),('previousHash',pa.string()),('chainHash',pa.string())])
     bs=pa.schema([('inputVersionId',pa.int64()),('source',pa.string()),('symbol',pa.string()),('intervalMs',pa.int64()),('raw',pa.binary()),('rawHash',pa.string()),('evidence',pa.string())])
-    for file,data,schema in [('records.parquet',records,rs),('responses.parquet',raws,bs)]:
-        table=pa.Table.from_pylist([dict(zip(schema.names,r)) for r in data],schema=schema)
-        pq.write_table(table,temp/file,compression='zstd')
+    with ledger.lock:
+        max_seq=ledger.db.execute('SELECT COALESCE(MAX(seq),0) FROM records').fetchone()[0]
+        max_version=ledger.watermark()
+    refs=set();boundary=[None,None];counts=[0,0]
+    def records():
+        last=0
+        while True:
+            with ledger.lock:
+                batch=ledger.db.execute('SELECT seq,id,committed_at,payload,previous_hash,chain_hash FROM records WHERE committed_at>=? AND committed_at<? AND seq>? AND seq<=? ORDER BY seq LIMIT 8',(start,end,last,max_seq)).fetchall()
+            if not batch:return
+            for r in batch:
+                last=r[0];r=(*r[:3],unpack_text(r[3]),*r[4:])
+                refs.update(json.loads(r[3]).get('payloadRefs',[]));counts[0]+=1
+                if boundary[0] is None:boundary[0]=r[0]
+                boundary[1]=r[0];yield r
+    def responses():
+        last=0
+        while True:
+            with ledger.lock:
+                batch=ledger.db.execute('SELECT version,source,symbol,interval_ms,raw,raw_hash,evidence FROM responses WHERE version>? AND version<=? ORDER BY version LIMIT 16',(last,max_version)).fetchall()
+            if not batch:return
+            for r in batch:
+                last=r[0];at=json.loads(r[-1])['responseReceivedAt']
+                if start<=at<end or r[0] in refs:
+                    counts[1]+=1;yield (*r[:4],unpack_raw(r[4]),*r[5:])
+    def export(file,iterator,schema,logical):
+        writer=pq.ParquetWriter(temp/file,schema,compression='zstd');h=hashlib.sha256();h.update(b'[');first=True;batch=[]
+        try:
+            for r in iterator:
+                if not first:h.update(b',')
+                h.update(canonical(logical(r)));first=False
+                batch.append(dict(zip(schema.names,r)))
+                if len(batch)==8:writer.write_table(pa.Table.from_pylist(batch,schema=schema));batch=[]
+            if batch:writer.write_table(pa.Table.from_pylist(batch,schema=schema))
+        finally:writer.close()
+        h.update(b']')
         with (temp/file).open('r+b') as f:os.fsync(f.fileno())
-    manifest={'schemaVersion':SCHEMA,'day':day,'createdAt':stamp(),'recordCount':len(records),'responseCount':len(raws),
-      'firstSequence':records[0][0] if records else None,'lastSequence':records[-1][0] if records else None,
-      'recordLogicalHash':digest([list(r) for r in records]),'rawLogicalHash':digest([(r[0],r[5]) for r in raws]),
-      'files':{f:digest((temp/f).read_bytes()) for f in ['records.parquet','responses.parquet']},
-      'captureLedger':ledger_count,'verification':check,'retention':'LOSSLESS_ENTIRE_COHORT_PLUS_ANALYSIS_NO_PRUNE'}
-    immutable(temp/'manifest.json',canonical(manifest))
-    verify_snapshot(temp)
-    temp.rename(final)
+        return h.hexdigest()
+    rh=export('records.parquet',records(),rs,lambda r:list(r))
+    # A referenced market response may use an earlier UTC calibration receipt.
+    # Include that raw provenance too, even when received on a prior warmup day.
+    for v in list(refs):
+        with ledger.lock:row=ledger.db.execute('SELECT evidence FROM responses WHERE version=?',(v,)).fetchone()
+        if row:
+            clock=json.loads(row[0]).get('clockEvidenceVersion')
+            if clock is not None:refs.add(clock)
+    bh=export('responses.parquet',responses(),bs,lambda r:[r[0],r[5]])
+    check=ledger.verify();ledger_count=ledger.count(start,end)
+    manifest={'schemaVersion':SCHEMA,'day':day,'createdAt':stamp(),'recordCount':counts[0],'responseCount':counts[1],
+        'firstSequence':boundary[0],'lastSequence':boundary[1],'recordLogicalHash':rh,'rawLogicalHash':bh,
+        'files':{f:file_digest(temp/f) for f in ['records.parquet','responses.parquet']},
+        'captureLedger':ledger_count,'verification':check,'retention':'LOSSLESS_ENTIRE_COHORT_PLUS_ANALYSIS_NO_PRUNE'}
+    immutable(temp/'manifest.json',canonical(manifest));verify_snapshot(temp);temp.rename(final)
     if os.name!='nt':
         fd=os.open(final.parent,os.O_RDONLY)
         try:os.fsync(fd)
@@ -649,20 +702,25 @@ def daily_snapshot(ledger,day):
 
 def verify_snapshot(folder):
     import pyarrow.parquet as pq
-    folder=Path(folder);m=json.loads((folder/'manifest.json').read_text())
-    for f,h in m['files'].items():
-        if digest((folder/f).read_bytes())!=h:raise RuntimeError('SNAPSHOT_FILE_HASH_MISMATCH')
-    records=pq.read_table(folder/'records.parquet').to_pylist()
-    responses=pq.read_table(folder/'responses.parquet').to_pylist()
-    if len(records)!=m['recordCount'] or len(responses)!=m['responseCount']:raise RuntimeError('SNAPSHOT_COUNT_MISMATCH')
-    if digest([list(r.values()) for r in records])!=m['recordLogicalHash']:raise RuntimeError('SNAPSHOT_LOGICAL_MISMATCH')
-    if digest([(r['inputVersionId'],r['rawHash']) for r in responses])!=m['rawLogicalHash']:raise RuntimeError('SNAPSHOT_RAW_LOGICAL_MISMATCH')
-    versions={r['inputVersionId'] for r in responses}
-    for r in responses:
-        if digest(r['raw'])!=r['rawHash']:raise RuntimeError('SNAPSHOT_RAW_HASH_MISMATCH')
-    for r in records:
-        if any(v not in versions for v in json.loads(r['payload']).get('payloadRefs',[])):raise RuntimeError('SNAPSHOT_UNRESOLVED_REFERENCE')
-    return {'status':'PASS','day':m['day'],'records':len(records),'responses':len(responses),'manifestHash':digest((folder/'manifest.json').read_bytes())}
+    folder=Path(folder);m=json.loads((folder/'manifest.json').read_text());versions=set()
+    for file,h in m['files'].items():
+        if file_digest(folder/file)!=h:raise RuntimeError('SNAPSHOT_FILE_HASH_MISMATCH')
+    def responses():
+        for batch in pq.ParquetFile(folder/'responses.parquet').iter_batches(batch_size=8):
+            for r in batch.to_pylist():
+                if digest(r['raw'])!=r['rawHash']:raise RuntimeError('SNAPSHOT_RAW_HASH_MISMATCH')
+                versions.add(r['inputVersionId']);yield [r['inputVersionId'],r['rawHash']]
+    if array_hash(responses())!=m['rawLogicalHash']:raise RuntimeError('SNAPSHOT_RAW_LOGICAL_MISMATCH')
+    count=0
+    def records():
+        nonlocal count
+        for batch in pq.ParquetFile(folder/'records.parquet').iter_batches(batch_size=8):
+            for r in batch.to_pylist():
+                if any(v not in versions for v in json.loads(r['payload']).get('payloadRefs',[])):raise RuntimeError('SNAPSHOT_UNRESOLVED_REFERENCE')
+                count+=1;yield list(r.values())
+    if array_hash(records())!=m['recordLogicalHash']:raise RuntimeError('SNAPSHOT_LOGICAL_MISMATCH')
+    if count!=m['recordCount'] or len(versions)!=m['responseCount']:raise RuntimeError('SNAPSHOT_COUNT_MISMATCH')
+    return {'status':'PASS','day':m['day'],'records':count,'responses':len(versions),'manifestHash':digest((folder/'manifest.json').read_bytes())}
 
 def emit_report(observer,folder):
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
@@ -676,7 +734,7 @@ def emit_report(observer,folder):
             for hour in range(first,now//3600000*3600000+1,3600000):
                 end=hour+3600000
                 with observer.ledger.lock:
-                    ss=[{'symbol':symbol,'barCloseAt':bar,'strictAvailabilityFailed':late} for symbol,bar,late in observer.ledger.db.execute("SELECT i.symbol,i.bar,json_extract(r.payload,'$.strictAvailabilityFailed') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='INPUT_SNAPSHOT' AND i.bar>=? AND i.bar<?",(hour,end))]
+                    ss=[{'symbol':symbol,'barCloseAt':bar,'strictAvailabilityFailed':late} for symbol,bar,late in observer.ledger.db.execute("SELECT i.symbol,i.bar,json_extract(unpack(r.payload),'$.strictAvailabilityFailed') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='INPUT_SNAPSHOT' AND i.bar>=? AND i.bar<?",(hour,end))]
                 cs=observer.ledger.count(hour,end)
                 writer.writerow({'utc_hour':utc(hour),'state':'CURRENT_PARTIAL' if end>now else 'COMPLETED_ACCOUNTED' if utc(hour) in s['completedUtcHours'] else 'INCOMPLETE',
                   'scheduled_surfaces':len(SYMBOLS)*4,'acknowledged_surfaces':sum(bool(observer.ledger.get(f'ack:{x["symbol"]}:{x["barCloseAt"]}')) for x in ss),
@@ -722,7 +780,7 @@ def serve(observer,port):
     threading.Thread(target=server.serve_forever,daemon=True).start()
     return server
 
-def validate_activation(receipt,ledger,hash,key_fingerprint):
+def validate_activation(receipt,ledger,hash,seal_mode):
     ready=ledger.get('readiness:pass')
     if not ready or ready['status']!='PASS':raise RuntimeError('READINESS_PASS_RECEIPT_REQUIRED')
     ready_at=ready['receiptCommittedAt']
@@ -730,7 +788,7 @@ def validate_activation(receipt,ledger,hash,key_fingerprint):
     earliest=math.ceil((max(ready_at,registered)+48*3600000)/86400000)*86400000
     start=int(dt.datetime.fromisoformat(receipt['actual_start_utc'].replace('Z','+00:00')).timestamp()*1000)
     if start!=earliest:raise RuntimeError('FIRST_MIDNIGHT_AFTER_BOTH_PLUS_48H_REQUIRED')
-    for k,expected in [('registrationHash',REGISTRATION),('universeHash',UNIVERSE),('observerImplementationHash',hash),('outcomeSealMode',key_fingerprint)]:
+    for k,expected in [('registrationHash',REGISTRATION),('universeHash',UNIVERSE),('observerImplementationHash',hash),('outcomeSealMode',seal_mode)]:
         if receipt.get(k)!=expected:raise RuntimeError('ACTIVATION_HASH_MISMATCH:'+k)
     if receipt.get('readinessReceiptHash')!=digest({k:v for k,v in ready.items() if k not in ['recordType','committedAt']}):raise RuntimeError('ACTIVATION_READINESS_RECEIPT_HASH_MISMATCH')
     if receipt['receiptCommittedAt']>=start:raise RuntimeError('ACTIVATION_MUST_BE_COMMITTED_BEFORE_START')
