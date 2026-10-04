@@ -1,4 +1,3 @@
-import base64
 import json
 from pathlib import Path
 import sqlite3
@@ -100,35 +99,46 @@ class Tests(unittest.TestCase):
         s[0]['ts']+=o.MINUTE
         self.assertIsNone(o.feature_bundle({'decisionAt':cut+1,'symbolMinutes':s,'btcMinutes':b,'premiumMinutes':[]})['relativeStrength60'])
 
-    def test_encryption_private_key_forbidden_and_roundtrip_custodian_only(self):
-        from cryptography.hazmat.primitives.asymmetric import rsa,padding
-        from cryptography.hazmat.primitives import serialization,hashes
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        key=rsa.generate_private_key(public_exponent=65537,key_size=3072)
-        public=key.public_key().public_bytes(serialization.Encoding.PEM,serialization.PublicFormat.SubjectPublicKeyInfo)
-        private=key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption())
-        with self.assertRaisesRegex(RuntimeError,'PRIVATE_KEY_FORBIDDEN'):o.Sealer(private)
-        seal=o.Sealer(public);p={'candidateId':'a','horizonMin':15,'endAt':100,'computedAt':200,'pathComplete':True,'censorReason':None,'invertedDirectionalBps':12.3456}
-        e=seal.encrypt(p);self.assertNotIn('invertedDirectionalBps',e)
-        aes=key.decrypt(base64.b64decode(e['wrappedKey']),padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
-        result=json.loads(AESGCM(aes).decrypt(base64.b64decode(e['nonce']),base64.b64decode(e['ciphertext']),base64.b64decode(e['aad'])))
-        self.assertEqual(result,p)
+    def test_keyless_private_commit_and_safe_ack_crash_recovery(self):
+        with tempfile.TemporaryDirectory() as private,tempfile.TemporaryDirectory() as receipts:
+            store=o.OutcomeStore(self.ledger,private,receipts)
+            p={'recordType':'OUTCOME','schemaVersion':o.SCHEMA,'candidateId':'c','horizonMin':15,
+                'endAt':100,'computedAt':200,'pathComplete':True,'censorReason':None,
+                'pathReceipts':[],'invertedDirectionalBps':12.3456}
+            with self.assertRaisesRegex(RuntimeError,'CRASH_BEFORE_OUTCOME_ACK'):store.commit('outcome:c:15',p,True)
+            self.assertEqual(len(store.receipts.rows()),0);store.close()
+            store=o.OutcomeStore(self.ledger,private,receipts)
+            self.assertEqual(len(store.private.rows('OUTCOME')),1)
+            ack=store.get('outcome:c:15');self.assertNotIn('invertedDirectionalBps',ack)
+            self.assertEqual(ack['sealMode'],o.SEAL_MODE)
+            self.assertEqual(store.private.rows('OUTCOME')[0]['invertedDirectionalBps'],12.3456)
+            self.assertEqual(len(self.ledger.rows('OUTCOME')),0)
+            self.assertEqual(len(store.receipts.rows()),1);store.close()
 
     def test_outcomes_only_after_endpoint_complete_and_received(self):
-        from cryptography.hazmat.primitives.asymmetric import rsa
-        from cryptography.hazmat.primitives import serialization
-        key=rsa.generate_private_key(public_exponent=65537,key_size=3072)
-        pub=key.public_key().public_bytes(serialization.Encoding.PEM,serialization.PublicFormat.SubjectPublicKeyInfo)
-        obs=o.Observer(self.ledger,o.Sealer(pub),StubAdapter())
-        c={'recordType':'EDGE_CANDIDATE','candidateId':'c','prequoteEligible':True,'decisionAt':900001,'originalSide':'BUY','symbol':'AAAUSDT'}
-        self.ledger.append('c',c);entry=16*o.MINUTE
-        for i in range(16):self.receipt(bar(entry+i*o.MINUTE,100+i,receipt=(entry+17*o.MINUTE)*1000000))
-        obs.outcomes(entry+16*o.MINUTE)
-        self.assertEqual(len(self.ledger.rows('SEALED_OUTCOME')),0)
-        obs.outcomes(entry+17*o.MINUTE)
-        self.assertEqual(len(self.ledger.rows('SEALED_OUTCOME')),1)
-        obs.outcomes(entry+17*o.MINUTE);self.assertEqual(len(self.ledger.rows('SEALED_OUTCOME')),1)
-        self.assertNotIn('invertedDirectionalBps',self.ledger.rows('SEALED_OUTCOME')[0])
+        with tempfile.TemporaryDirectory() as private,tempfile.TemporaryDirectory() as receipts:
+            store=o.OutcomeStore(self.ledger,private,receipts)
+            obs=o.Observer(self.ledger,store,StubAdapter())
+            c={'recordType':'EDGE_CANDIDATE','candidateId':'c','prequoteEligible':True,'decisionAt':900001,'originalSide':'BUY','symbol':'AAAUSDT'}
+            self.ledger.append('c',c);entry=16*o.MINUTE
+            for i in range(16):self.receipt(bar(entry+i*o.MINUTE,100+i,receipt=(entry+17*o.MINUTE)*1000000))
+            obs.outcomes(entry+16*o.MINUTE);self.assertEqual(len(store.receipts.rows()),0)
+            obs.outcomes(entry+17*o.MINUTE);self.assertEqual(len(store.receipts.rows()),1)
+            obs.outcomes(entry+17*o.MINUTE);self.assertEqual(len(store.receipts.rows()),1)
+            self.assertNotIn('invertedDirectionalBps',store.receipts.rows()[0])
+            self.assertEqual(store.private.verify()['unresolvedRefs'],0)
+            self.assertEqual(len(self.ledger.rows('OUTCOME')),0);store.close()
+
+    def test_read_only_worker_cannot_mutate_capture(self):
+        reader=o.ReadOnlyLedger(self.tmp.name)
+        with self.assertRaisesRegex(RuntimeError,'READ_ONLY_LEDGER'):reader.append('x',{'recordType':'TEST'})
+        with self.assertRaises(sqlite3.OperationalError):reader.db.execute('INSERT INTO intents VALUES(1,2,3,4,5,6,7,8)')
+        reader.close()
+
+    def test_linux_separation_cannot_be_replaced_by_windows_chmod(self):
+        import keyless_runtime as k
+        with patch.object(k.os,'name','nt'):
+            with self.assertRaisesRegex(RuntimeError,'LINUX_ROOT_BOOTSTRAP_REQUIRED'):k.setup(self.tmp.name)
 
     def test_snapshot_lossless_parquet_and_reference_reconciliation(self):
         b=bar(0);v=self.receipt(b)
@@ -157,7 +167,7 @@ class Tests(unittest.TestCase):
 
     def test_full_elapsed_time_alone_and_untrusted_proof_cannot_pass(self):
         obs=o.Observer(self.ledger,adapter=StubAdapter())
-        self.ledger.append('readiness:start',{'recordType':'READINESS_START','startAt':0,'implementationHash':obs.hash,'keyFingerprint':'x'})
+        self.ledger.append('readiness:start',{'recordType':'READINESS_START','startAt':0,'implementationHash':obs.hash,'outcomeSealMode':o.SEAL_MODE})
         fake={k:{'status':'PASS','observerImplementationHash':obs.hash} for k in ['deployment','outcome_isolation','fixture_parity','wal_restart','snapshot']}
         r=ra.audit(obs,fake,now=86400000)
         self.assertNotEqual(r['status'],'PASS');self.assertEqual(r['accountedSurfaces'],0)
@@ -170,7 +180,7 @@ class Tests(unittest.TestCase):
             'observerImplementationHash':obs.hash,'schemaVersion':o.SCHEMA,'cohortId':o.COHORT['cohort_id']}
         self.ledger.append('readiness:pass',{'recordType':'READINESS_RECEIPT',**receipt})
         act={'actual_start_utc':'2026-10-09T00:00:00Z','registrationHash':o.REGISTRATION,'universeHash':o.UNIVERSE,
-            'observerImplementationHash':obs.hash,'publicKeyFingerprint':'key','readinessReceiptHash':o.digest(receipt),
+            'observerImplementationHash':obs.hash,'outcomeSealMode':'key','readinessReceiptHash':o.digest(receipt),
             'receiptCommittedAt':receipt['receiptCommittedAt']+1,'durationDays':60,'maximumDurationDays':120}
         self.assertEqual(o.validate_activation(act,self.ledger,obs.hash,'key'),int(o.dt.datetime(2026,10,9,tzinfo=o.dt.timezone.utc).timestamp()*1000))
         act['actual_start_utc']='2026-10-07T00:00:00Z'

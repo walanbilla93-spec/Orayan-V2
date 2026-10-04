@@ -1,5 +1,5 @@
-# WAL recovery verification
+# WAL and outcome recovery verification
 
-Local PASS. A record intent is durably committed, an injected crash occurs before acceptance, the database is closed/reopened, and recovery accepts exactly one pending record. Exact replay produces one attempt and one acceptance; conflicting payload IDs fail. Append-only triggers reject mutation/deletion. Hash chains and payload references reconcile. These tests are in verification/observer_tests.txt.
+Local PASS: durable intent interrupted before acceptance recovers exactly once; exact replay deduplicates; conflicting payloads fail; append-only mutation rejects. A new key-free outcome test interrupts after private outcome commit and before public acknowledgement. Restart publishes exactly one safe receipt from the original committed outcome, with no return value in the capture/receipt namespace. Public input reading rejects mutation.
 
-Live Northflank process restart, mounted-volume recovery and disk-failure behavior remain NOT RUN and block readiness proof. Do not substitute this local result for the deployed WAL restart requirement.
+19-test output: verification/observer_tests.txt. These are local mechanics, not live Northflank restart/readiness proof. A mounted-volume observer restart has not run.

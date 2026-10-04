@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0",
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.1.0",
   "$defs": {
     "receipt": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "INPUT_RECEIPT",
-      "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0",
+      "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.1.0",
       "type": "object",
       "required": [
         "inputVersionId",
@@ -88,7 +88,7 @@
     "snapshot": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "title": "INPUT_SNAPSHOT",
-      "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0",
+      "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.1.0",
       "type": "object",
       "required": [
         "recordType",

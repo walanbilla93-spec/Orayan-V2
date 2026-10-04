@@ -5,7 +5,6 @@ Receipts use the instant the entire response body has been read, before parsing.
 Historical warmup is never a historical receipt or an eligible past decision.
 """
 import argparse
-import base64
 import concurrent.futures
 import csv
 import datetime as dt
@@ -25,7 +24,7 @@ import urllib.parse
 import urllib.request
 
 ROOT=Path(__file__).resolve().parent
-SCHEMA='ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0'
+SCHEMA='ORAYAN_PROSPECTIVE_OBSERVER_V1.1.0'
 MINUTE=60000
 SURFACE=900000
 COHORT=json.loads((ROOT/'sources/prospective_cohort_manifest.json').read_text())
@@ -50,7 +49,7 @@ def stamp():
 def implementation_hash():
     names=['observer.py','adapter.js','observer_schema.json','candidate_schema.json',
            'outcome_schema.json','capture_ledger_schema.json','frozen_source_manifest.json','requirements.txt',
-           'readiness_audit.py','Dockerfile.observer','status.html']
+           'readiness_audit.py','Dockerfile.observer','status.html','keyless_runtime.py','outcome_worker.py']
     return digest({n:digest((ROOT/n).read_bytes()) for n in names})
 
 def immutable(path,data):
@@ -167,6 +166,15 @@ class Ledger:
         return [{'cohortId':cohort,'recordType':t,'engine':e,'barCloseAt':b,'attempted':a,'accepted':n,'pending':a-n,'skipped':0,
                  'fieldFailureCounts':failures.get((cohort,t,e,b),{})} for cohort,t,e,b,a,n in rows]
 
+    def iter_rows(self,type):
+        # Stream full-schema records without loading a whole capture day into RAM.
+        last=0
+        while True:
+            with self.lock:
+                rows=self.db.execute('SELECT r.seq,r.payload FROM records r JOIN intents i ON i.id=r.id WHERE i.type=? AND r.seq>? ORDER BY r.seq LIMIT 16',(type,last)).fetchall()
+            if not rows:return
+            for seq,payload in rows:last=seq;yield json.loads(payload)
+
     def receipt(self,source,symbol,interval,raw,evidence,bars):
         with self.lock:
             self.db.execute('BEGIN IMMEDIATE')
@@ -207,10 +215,11 @@ class Ledger:
         if not row:raise RuntimeError('UNRESOLVED_BAR_REFERENCE')
         return {**json.loads(row[0]),**json.loads(row[2]),'inputVersionId':ref['inputVersionId'],'responseHash':row[1]}
 
-    def verify(self):
+    def verify(self,incremental=False):
         with self.lock:
-            prev='0'*64;bad=0;refs=0
-            for id,at,p,prior,h in self.db.execute('SELECT id,committed_at,payload,previous_hash,chain_hash FROM records ORDER BY seq'):
+            cache=getattr(self,'_verified',None) if incremental else None
+            seq,version,prev,bad,refs,rawbad=cache or (0,0,'0'*64,0,0,0)
+            for seq,id,at,p,prior,h in self.db.execute('SELECT seq,id,committed_at,payload,previous_hash,chain_hash FROM records WHERE seq>? ORDER BY seq',(seq,)):
                 if prior!=prev or digest([prev,id,at,json.loads(p)])!=h:bad+=1
                 prev=h
                 for v in json.loads(p).get('payloadRefs',[]):
@@ -218,7 +227,9 @@ class Ledger:
                 for group in json.loads(p).get('inputBarRefs',{}).values():
                     for b in group:
                         if not self.db.execute('SELECT 1 FROM bars WHERE version=? AND open_at=?',(b['inputVersionId'],b['barOpenAt'])).fetchone():refs+=1
-            rawbad=sum(digest(bytes(raw))!=h for raw,h in self.db.execute('SELECT raw,raw_hash FROM responses'))
+            for version,raw,h in self.db.execute('SELECT version,raw,raw_hash FROM responses WHERE version>? ORDER BY version',(version,)):
+                rawbad+=digest(bytes(raw))!=h
+            self._verified=(seq,version,prev,bad,refs,rawbad)
             return {'chainFailures':bad,'unresolvedRefs':refs,'rawHashFailures':rawbad,'chainHead':prev}
 
 def available(bar,decision):
@@ -361,29 +372,60 @@ class Adapter:
     def close(self):
         self.p.terminate();self.p.wait(timeout=10)
 
-class Sealer:
-    def __init__(self,pem):
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
-        if b'PRIVATE KEY' in pem:raise RuntimeError('PRIVATE_KEY_FORBIDDEN_IN_OBSERVER')
-        self.key=serialization.load_pem_public_key(pem)
-        if not isinstance(self.key,RSAPublicKey) or self.key.key_size<3072:raise RuntimeError('RSA_PUBLIC_KEY_MINIMUM_3072')
-        self.fingerprint=digest(pem)
-    def encrypt(self,outcome):
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.asymmetric import padding
-        key=AESGCM.generate_key(bit_length=256);nonce=os.urandom(12)
-        context=canonical({'schemaVersion':SCHEMA,'candidateId':outcome['candidateId'],'horizonMin':outcome['horizonMin']})
-        ciphertext=AESGCM(key).encrypt(nonce,canonical(outcome),context)
-        wrapped=self.key.encrypt(key,padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
-        # No plaintext outcome or return statistic is persisted anywhere else.
-        return {'recordType':'SEALED_OUTCOME','schemaVersion':SCHEMA,'candidateId':outcome['candidateId'],
-            'horizonMin':outcome['horizonMin'],'endAt':outcome['endAt'],'computedAt':outcome['computedAt'],
-            'pathComplete':outcome['pathComplete'],'censorReason':outcome['censorReason'],
-            'keyFingerprint':self.fingerprint,'algorithm':'RSA-OAEP-SHA256/AES-256-GCM',
-            'nonce':base64.b64encode(nonce).decode(),'wrappedKey':base64.b64encode(wrapped).decode(),
-            'ciphertext':base64.b64encode(ciphertext).decode(),'aad':base64.b64encode(context).decode()}
+class ReadOnlyLedger(Ledger):
+    """Reader cannot initialize, recover, append, or mutate the capture database."""
+    def __init__(self,folder):
+        self.folder=Path(folder);self.lock=threading.RLock()
+        self.db=sqlite3.connect((self.folder/'capture.sqlite').resolve().as_uri()+'?mode=ro',uri=True,
+            check_same_thread=False,isolation_level=None)
+        self.db.execute('PRAGMA query_only=ON');self.db.execute('PRAGMA busy_timeout=30000')
+    def append(self,*args,**kwargs):raise RuntimeError('READ_ONLY_LEDGER')
+    def receipt(self,*args,**kwargs):raise RuntimeError('READ_ONLY_LEDGER')
+    def recover(self):raise RuntimeError('READ_ONLY_LEDGER')
+
+SEAL_MODE='OS_ACCESS_SEPARATION_V1'
+
+class OutcomeStore:
+    """Used solely by the separate outcome UID, never by capture or HTTP roles.
+
+    Commit full outcome to private WAL first. Publish only its hash and operational
+    receipt to the worker-owned acknowledgement WAL. Crash between commits is
+    recovered by replaying the private record, never recomputing its outcome.
+    """
+    def __init__(self,capture,private_folder,receipt_folder):
+        self.capture=capture;self.private=Ledger(private_folder);self.receipts=Ledger(receipt_folder)
+        self.fingerprint=SEAL_MODE
+        for row in self.private.rows('OUTCOME'):
+            self._ack(f'outcome:{row["candidateId"]}:{row["horizonMin"]}',row)
+    def _ack(self,id,row):
+        old=self.receipts.get(id)
+        if old:return old
+        clean={k:v for k,v in row.items() if k!='committedAt'}
+        return self.receipts.append(id,{'recordType':'SEALED_OUTCOME','schemaVersion':SCHEMA,
+            'candidateId':row['candidateId'],'horizonMin':row['horizonMin'],'endAt':row['endAt'],
+            'computedAt':row['computedAt'],'pathComplete':row['pathComplete'],'censorReason':row['censorReason'],
+            'sealMode':SEAL_MODE,'privateOutcomeHash':digest(clean),
+            'externalPayloadRefs':row.get('payloadRefs',[]),'privateCommittedAt':row['committedAt']})
+    def get(self,id):
+        row=self.private.get(id)
+        return self._ack(id,row) if row else None
+    def commit(self,id,outcome,fail_before_ack=False):
+        # Preserve the exact original version IDs/raw bytes in the private archive
+        # so its lossless daily snapshot can reconcile every endpoint reference.
+        refs=references(outcome['pathReceipts'])
+        with self.capture.lock,self.private.lock:
+            self.private.db.execute('BEGIN IMMEDIATE')
+            try:
+                for v in refs:
+                    row=self.capture.db.execute('SELECT version,source,symbol,interval_ms,raw,raw_hash,evidence FROM responses WHERE version=?',(v,)).fetchone()
+                    if not row or digest(bytes(row[4]))!=row[5]:raise RuntimeError('OUTCOME_SOURCE_REFERENCE_INVALID')
+                    self.private.db.execute('INSERT OR IGNORE INTO responses VALUES(?,?,?,?,?,?,?)',row)
+                self.private.db.execute('COMMIT')
+            except BaseException:self.private.db.execute('ROLLBACK');raise
+        row=self.private.append(id,{**outcome,'payloadRefs':refs})
+        if fail_before_ack:raise RuntimeError('INJECTED_CRASH_BEFORE_OUTCOME_ACK')
+        return self._ack(id,row)
+    def close(self):self.private.close();self.receipts.close()
 
 class Observer:
     def __init__(self,ledger,sealer=None,adapter=None):
@@ -494,12 +536,12 @@ class Observer:
     def outcomes(self,now=None):
         now=now or stamp()
         if not self.sealer:raise RuntimeError('OUTCOME_SEAL_REQUIRED')
-        for c in self.ledger.rows('EDGE_CANDIDATE'):
+        for c in self.ledger.iter_rows('EDGE_CANDIDATE'):
             if not c['prequoteEligible']:continue
             entry=math.ceil(c['decisionAt']/MINUTE)*MINUTE
             for h in [15,30,60,120]:
                 end=entry+h*MINUTE;id=f'outcome:{c["candidateId"]}:{h}'
-                if self.ledger.get(id) or now<end+MINUTE:continue
+                if self.sealer.get(id) or now<end+MINUTE:continue
                 path=self.ledger.select('ohlcv',c['symbol'],MINUTE,entry,end+MINUTE)
                 good=complete(path,entry,h+1,MINUTE)
                 # Endpoints complete + physically received; no forming-bar return ever written.
@@ -519,16 +561,16 @@ class Observer:
                   'allInterveningSourceBarHashes':[b['responseHash'] for b in path],
                   'pathReceipts':path,'pathComplete':good,'outcomeKnownAt':known,'computedAt':now,
                   'invertedDirectionalBps':inv,'censorReason':None if good else 'MISSING_CONTIGUOUS_MINUTE_PATH'}
-                sealed=self.sealer.encrypt(outcome)
-                sealed['payloadRefs']=references(path)
-                self.ledger.append(id,sealed)
+                self.sealer.commit(id,outcome)
 
     def status(self):
-        snaps=self.ledger.rows('INPUT_SNAPSHOT');candidates=self.ledger.rows('EDGE_CANDIDATE')
+        with self.ledger.lock:
+            snaps=[{'strictAvailabilityFailed':v} for (v,) in self.ledger.db.execute("SELECT json_extract(r.payload,'$.strictAvailabilityFailed') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='INPUT_SNAPSHOT'")]
+            candidates=[{'prequoteEligible':e,'requiredInputFailures':json.loads(f),'hypothesisEligibility':json.loads(h)} for e,f,h in self.ledger.db.execute("SELECT json_extract(r.payload,'$.prequoteEligible'),json_extract(r.payload,'$.requiredInputFailures'),json_extract(r.payload,'$.hypothesisEligibility') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='EDGE_CANDIDATE'")]
         counts=self.ledger.count();now=stamp();start=self.ledger.get('readiness:start')
         late=sum(s['strictAvailabilityFailed'] for s in snaps)
         completed=self.completed_hours(start['startAt'] if start else None,now)
-        check=self.ledger.verify()
+        check=self.ledger.verify(incremental=True)
         return {'observerStatus':'RESEARCH_ONLY','schemaVersion':SCHEMA,'cohortId':COHORT['cohort_id'],
           'preregistrationHash':REGISTRATION,'universeHash':UNIVERSE,'observerImplementationHash':self.hash,
           'readinessState':'INCOMPLETE','completedReadinessHours':len(completed),'requiredReadinessHours':24,
@@ -536,13 +578,20 @@ class Observer:
           'skippedRequiredRecords':0,'pendingRequiredRecords':sum(x['pending'] for x in counts),
           'strictUnavailableSurfaces':late,'totalSurfaces':len(snaps),'strictUnavailableSurfaceRate':late/len(snaps) if snaps else None,
           'eligibleCandidates':sum(c['prequoteEligible'] for c in candidates),'unresolvedRefs':check['unresolvedRefs'],
-          'outcomeSealStatus':'RSA_PUBLIC_KEY_ONLY' if self.sealer else 'BLOCKED_CUSTODIAN_PUBLIC_KEY_MISSING',
+          'outcomeSealStatus':self.isolation_status(),
           'actualCohortStart':utc(self.active_start) if self.active_start is not None else None,'executionAllowed':False,'mode':'PAPER_RESEARCH_ONLY',
           'completedUtcHours':completed,'currentUtcHour':utc(now//3600000*3600000),
           'currentHourAccounting':self.ledger.count(now//3600000*3600000,(now//3600000+1)*3600000),
           'fieldFailures':{k:sum(k in c['requiredInputFailures'] for c in candidates) for k in ['symbol200Bars','btc200Bars','turnover1440Minutes','markReference']},
           'hypothesisCounts':{h:sum(c['hypothesisEligibility'][h] for c in candidates) for h in ['H1','H2','H3','H4','H5']},
           **check}
+
+    def isolation_status(self):
+        proof=self.ledger.folder.parent/'status/isolation_proof.json'
+        try:
+            p=json.loads(proof.read_text())
+            return SEAL_MODE if p.get('status')=='PASS' and p.get('observerImplementationHash')==self.hash else 'UNVERIFIED_OS_ISOLATION'
+        except (OSError,ValueError):return 'UNVERIFIED_OS_ISOLATION'
 
     def completed_hours(self,start,now):
         if start is None:return []
@@ -626,7 +675,8 @@ def emit_report(observer,folder):
             first=start['startAt']//3600000*3600000
             for hour in range(first,now//3600000*3600000+1,3600000):
                 end=hour+3600000
-                ss=[x for x in observer.ledger.rows('INPUT_SNAPSHOT') if hour<=x['barCloseAt']<end]
+                with observer.ledger.lock:
+                    ss=[{'symbol':symbol,'barCloseAt':bar,'strictAvailabilityFailed':late} for symbol,bar,late in observer.ledger.db.execute("SELECT i.symbol,i.bar,json_extract(r.payload,'$.strictAvailabilityFailed') FROM records r JOIN intents i ON i.id=r.id WHERE i.type='INPUT_SNAPSHOT' AND i.bar>=? AND i.bar<?",(hour,end))]
                 cs=observer.ledger.count(hour,end)
                 writer.writerow({'utc_hour':utc(hour),'state':'CURRENT_PARTIAL' if end>now else 'COMPLETED_ACCOUNTED' if utc(hour) in s['completedUtcHours'] else 'INCOMPLETE',
                   'scheduled_surfaces':len(SYMBOLS)*4,'acknowledged_surfaces':sum(bool(observer.ledger.get(f'ack:{x["symbol"]}:{x["barCloseAt"]}')) for x in ss),
@@ -634,7 +684,7 @@ def emit_report(observer,folder):
                   'strict_unavailable_surfaces':sum(x['strictAvailabilityFailed'] for x in ss)})
     with (folder/'late_input_analysis.csv').open('w',newline='') as f:
         w=csv.writer(f);w.writerow(['symbol','bar_close_utc','decision_at_utc','field','required_latest_bar','first_physical_receipt_ns','deadline_delta_ms','unavailable_at_decision'])
-        for x in observer.ledger.rows('INPUT_SNAPSHOT'):
+        for x in observer.ledger.iter_rows('INPUT_SNAPSHOT'):
             for source,symbol,interval,field in [('ohlcv',x['symbol'],SURFACE,'symbol200Bars'),('ohlcv','BTCUSDT',SURFACE,'btc200Bars'),('ohlcv',x['symbol'],MINUTE,'turnover1440Minutes'),('mark',x['symbol'],MINUTE,'markReference')]:
                 bs=observer.ledger.select(source,symbol,interval,x['barCloseAt']-interval,x['barCloseAt'])
                 b=bs[0] if bs else None
@@ -645,12 +695,17 @@ def emit_report(observer,folder):
     # evidence must all be supplied and audited. No activation command exists.
     blockers=[]
     if s['completedReadinessHours']<24:blockers.append('FULL_24H_ACCOUNTING_NOT_COMPLETE')
-    if not observer.sealer:blockers.append('OUTCOME_CUSTODIAN_PUBLIC_KEY_MISSING')
+    if observer.isolation_status()!=SEAL_MODE:blockers.append('OS_OUTCOME_ACCESS_SEPARATION_NOT_VERIFIED')
     if s['strictUnavailableSurfaces']:blockers.append('STRICT_PLUS_1MS_SURFACE_INPUT_UNAVAILABLE')
     report={'status':'INCOMPLETE','completedHours':s['completedReadinessHours'],'blockers':blockers,
       'operationalStatus':s,'actual_start_utc':None,'readiness_receipt':None,'activation_receipt':None}
     (folder/'readiness_state.json').write_bytes(canonical(report))
     return report
+
+def publish_status(observer):
+    folder=observer.ledger.folder.parent/'status';folder.mkdir(exist_ok=True)
+    target=folder/'operational_status.json';temp=folder/f'.status-{time.monotonic_ns()}'
+    temp.write_bytes(canonical(observer.status()));os.chmod(temp,0o644);temp.replace(target)
 
 def serve(observer,port):
     page=(ROOT/'status.html').read_bytes()
@@ -675,7 +730,7 @@ def validate_activation(receipt,ledger,hash,key_fingerprint):
     earliest=math.ceil((max(ready_at,registered)+48*3600000)/86400000)*86400000
     start=int(dt.datetime.fromisoformat(receipt['actual_start_utc'].replace('Z','+00:00')).timestamp()*1000)
     if start!=earliest:raise RuntimeError('FIRST_MIDNIGHT_AFTER_BOTH_PLUS_48H_REQUIRED')
-    for k,expected in [('registrationHash',REGISTRATION),('universeHash',UNIVERSE),('observerImplementationHash',hash),('publicKeyFingerprint',key_fingerprint)]:
+    for k,expected in [('registrationHash',REGISTRATION),('universeHash',UNIVERSE),('observerImplementationHash',hash),('outcomeSealMode',key_fingerprint)]:
         if receipt.get(k)!=expected:raise RuntimeError('ACTIVATION_HASH_MISMATCH:'+k)
     if receipt.get('readinessReceiptHash')!=digest({k:v for k,v in ready.items() if k not in ['recordType','committedAt']}):raise RuntimeError('ACTIVATION_READINESS_RECEIPT_HASH_MISMATCH')
     if receipt['receiptCommittedAt']>=start:raise RuntimeError('ACTIVATION_MUST_BE_COMMITTED_BEFORE_START')
@@ -690,15 +745,15 @@ def first_unacknowledged_surface(ledger,start,end):
         if counts.get(bar,0)!=len(SYMBOLS):return bar
     return end
 
-def run(folder,key,port,activation=None):
-    if not key:raise RuntimeError('BLOCKED: OUTCOME_PUBLIC_KEY_PATH_REQUIRED; do not start readiness without outcome seal')
-    ledger=Ledger(folder);sealer=Sealer(Path(key).read_bytes());observer=Observer(ledger,sealer);feed=Feed(ledger)
+def run(folder,port,activation=None):
+    ledger=Ledger(folder);observer=Observer(ledger);feed=Feed(ledger)
+    if observer.isolation_status()!=SEAL_MODE:raise RuntimeError('VERIFIED_OS_OUTCOME_ISOLATION_REQUIRED')
     start=ledger.get('readiness:start')
-    if start and (start['implementationHash']!=observer.hash or start['keyFingerprint']!=sealer.fingerprint):raise RuntimeError('READINESS_IMPLEMENTATION_OR_SEAL_CHANGED_NEW_AUDIT_REQUIRED')
+    if start and (start['implementationHash']!=observer.hash or start['outcomeSealMode']!=SEAL_MODE):raise RuntimeError('READINESS_IMPLEMENTATION_OR_SEAL_CHANGED_NEW_AUDIT_REQUIRED')
     activated=None
     if activation:
         receipt=json.loads(Path(activation).read_text())
-        activated=validate_activation(receipt,ledger,observer.hash,sealer.fingerprint)
+        activated=validate_activation(receipt,ledger,observer.hash,SEAL_MODE)
         if stamp()>activated and not ledger.get('activation:receipt'):raise RuntimeError('NO_RETROSPECTIVE_COHORT_ACTIVATION')
         ledger.append('activation:receipt',{'recordType':'ACTIVATION_RECEIPT',**receipt})
         observer.active_start=activated
@@ -724,7 +779,7 @@ def run(folder,key,port,activation=None):
                 stop.wait(1)
         except BaseException as e:
             failure.append(str(e));stop.set()
-    threading.Thread(target=collect,daemon=True).start();server=serve(observer,port)
+    threading.Thread(target=collect,daemon=True).start();server=None
     try:
         while not feed_ready.wait(1):
             if stop.is_set():raise RuntimeError('FEED_WARMUP_FAILED:'+str(failure))
@@ -732,7 +787,7 @@ def run(folder,key,port,activation=None):
             # Full UTC day gives an immutable daily snapshot at end of dry run.
             first=(stamp()//86400000+1)*86400000
             start=ledger.append('readiness:start',{'recordType':'READINESS_START','startAt':first,'schemaVersion':SCHEMA,
-                'implementationHash':observer.hash,'keyFingerprint':sealer.fingerprint,'cohortId':COHORT['cohort_id'],
+                'implementationHash':observer.hash,'outcomeSealMode':SEAL_MODE,'cohortId':COHORT['cohort_id'],
                 'registrationHash':REGISTRATION,'universeHash':UNIVERSE,'classification':'READINESS_ONLY'})
         capture_start=activated if activated is not None else start['startAt']
         capture_end=capture_start+(60*86400000 if activated is not None else 86400000)
@@ -742,9 +797,10 @@ def run(folder,key,port,activation=None):
             if now>=next_bar+1 and next_bar<capture_end:
                 for symbol in SYMBOLS:observer.surface(symbol,next_bar)
                 next_bar+=SURFACE
-            observer.outcomes(now)
             if now//60000!=locals().get('last_report_minute'):
-                emit_report(observer,ledger.folder/'audit');last_report_minute=now//60000
+                publish_status(observer);last_report_minute=now//60000
+            if now//3600000!=locals().get('last_report_hour'):
+                emit_report(observer,ledger.folder/'audit');last_report_hour=now//3600000
             yesterday=dt.datetime.now(dt.timezone.utc).date()-dt.timedelta(days=1)
             if now>=start['startAt']+86400000 or (ledger.folder/'daily'/str(yesterday)).exists():
                 daily_snapshot(ledger,str(yesterday))
@@ -760,14 +816,14 @@ def run(folder,key,port,activation=None):
             stop.wait(1)
         raise RuntimeError('CAPTURE_STOPPED:'+str(failure))
     finally:
-        stop.set();server.shutdown();observer.adapter.close();ledger.close()
+        stop.set();observer.adapter.close();ledger.close()
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('command',choices=['run','report','snapshot']);p.add_argument('--data',default=os.getenv('OBSERVER_DATA_DIR','runtime'))
     p.add_argument('--activation-receipt')
-    p.add_argument('--public-key',default=os.getenv('OUTCOME_PUBLIC_KEY_PATH'));p.add_argument('--port',type=int,default=int(os.getenv('PORT','8080')));p.add_argument('--day')
+    p.add_argument('--port',type=int,default=int(os.getenv('PORT','8080')));p.add_argument('--day')
     args=p.parse_args()
-    if args.command=='run':run(args.data,args.public_key,args.port,args.activation_receipt)
+    if args.command=='run':run(args.data,args.port,args.activation_receipt)
     elif args.command=='snapshot':
         ledger=Ledger(args.data)
         try:print(json.dumps(daily_snapshot(ledger,args.day)))

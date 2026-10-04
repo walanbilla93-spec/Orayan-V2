@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0",
-  "observerImplementationHash": "d6ae0de2af1dd4e40a894815d2bc02a4263030e50d39579ad3b2e176b816cce6",
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.1.0",
+  "observerImplementationHash": "050235a4e99a9dec2e47e69453ac3e5642e548733d6844f0d3e995b96a7a8658",
   "localUnitTests": {
-    "passed": 17,
+    "passed": 19,
     "failed": 0
   },
   "fixtureParity": {
@@ -66,12 +66,13 @@
   "liveSnapshot": "NOT_CREATED",
   "unitWALRecovery": "PASS",
   "unitSnapshotRoundtripAndCorruptionDetection": "PASS",
-  "unitSealRoundtripAndPrivateKeyRejection": "PASS",
-  "createdAt": "2026-10-04T18:20:37.058285+00:00",
+  "createdAt": "2026-10-04T23:31:37.405609+00:00",
   "files": {
     "verification/fixture_parity.json": "5291809d3e90ac2fe8236fff721beb7080e997c936080904810c4355c30f69f0",
     "verification/live_control_verification.json": "fa58d280f642971b5a67bf58b597f2b25cf608130234c6d563841111686b109d",
     "verification/observer_tests.txt": "99d73fc255aed94bbc134f576a996322fc53126897f8fb083abd27ae6427afd5",
     "verification/production_source_verification.json": "78f6120dd0bf5694c98dd0e88256607ce9f13979aed8dde98497553f1eecf668"
-  }
+  },
+  "unitPrivateOutcomeCommitAndSafeReceiptCrashRecovery": "PASS",
+  "linuxOSAccessSeparation": "PENDING_DEPLOYED_QUALIFICATION"
 }

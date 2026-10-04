@@ -1,8 +1,8 @@
 """Independent, fail-closed readiness evaluator. Never fabricates evidence.
 
 Proof file format is described in observer_implementation_handover.md. External
-deployment and custodian isolation attestations must match this exact executable
-and audit key. Unit fixtures and local snapshots are insufficient live evidence.
+deployment and OS isolation attestations must match this exact executable
+and seal mode. Unit fixtures and local snapshots are insufficient live evidence.
 """
 import argparse
 import json
@@ -53,8 +53,11 @@ def audit(observer,proofs,now=None):
         if not proof or proof.get('status')!='PASS':incomplete.append(k.upper()+'_PROOF_REQUIRED');continue
         if proof.get('observerImplementationHash')!=observer.hash:failures.append(k.upper()+'_IMPLEMENTATION_MISMATCH')
     isolation=proofs.get('outcome_isolation',{})
-    if isolation.get('publicKeyFingerprint')!=start['keyFingerprint']:incomplete.append('CUSTODIAN_KEY_ATTESTATION_MISMATCH')
-    if not isolation.get('privateKeyExcludedFromObserverAndResearchers'):incomplete.append('PRIVATE_KEY_ACCESS_SEPARATION_NOT_PROVEN')
+    if isolation.get('sealMode')!=start['outcomeSealMode']:incomplete.append('OUTCOME_SEAL_MODE_MISMATCH')
+    required=['captureCannotReadOutcomes','statusCannotReadOutcomes','statusCannotReadCapture',
+        'outcomesCannotWriteCapture','outcomesCanReadCapture','outcomesCanReadOwnArchive',
+        'statusCannotWriteReceiptWAL','captureCannotWriteReceiptWAL','outcomesReadLiveSQLiteWAL']
+    if not all(isolation.get('checks',{}).get(k) is True for k in required):incomplete.append('OS_ACCESS_SEPARATION_NOT_PROVEN')
     deployment=proofs.get('deployment',{})
     for k in ['build','deployment','pod','baselineSettingsHash','postSettingsHash','baselineV2Hash','postV2Hash','baselineV3Hash','postV3Hash']:
         if not deployment.get(k):incomplete.append('DEPLOYMENT_IDENTITIES_AND_CONTROLS_UNVERIFIED');break
@@ -70,10 +73,13 @@ def audit(observer,proofs,now=None):
     # Delayed outcomes for the last surface require a final drain. Uncompleted
     # horizons do not become zeros and do not disappear from attempted counts.
     missing_outcomes=0
+    receipt_folder=ledger.folder.parent/'outcome_receipts'
+    receipt_ledger=o.ReadOnlyLedger(receipt_folder) if (receipt_folder/'capture.sqlite').exists() else None
     for c in candidates:
         if not c['prequoteEligible']:continue
         for h in [15,30,60,120]:
-            if not ledger.get(f'outcome:{c["candidateId"]}:{h}'):missing_outcomes+=1
+            if not receipt_ledger or not receipt_ledger.get(f'outcome:{c["candidateId"]}:{h}'):missing_outcomes+=1
+    if receipt_ledger:receipt_ledger.close()
     if missing_outcomes:incomplete.append('OUTCOME_HORIZONS_OR_CENSOR_DRAIN_PENDING')
     if now<end:status='INCOMPLETE'
     elif failures:status='FAIL'
@@ -87,7 +93,7 @@ def audit(observer,proofs,now=None):
       'unresolvedRefs':checks['unresolvedRefs'],'missingOutcomeRecords':missing_outcomes,'dailySnapshots':daily,
       'failures':sorted(set(failures)),'blockers':sorted(set(incomplete)),
       'observerImplementationHash':observer.hash,'registrationHash':o.REGISTRATION,'universeHash':o.UNIVERSE,
-      'publicKeyFingerprint':start['keyFingerprint'],'proofsHash':o.digest(proofs),'actual_start_utc':None,
+      'outcomeSealMode':start['outcomeSealMode'],'proofsHash':o.digest(proofs),'actual_start_utc':None,
       'timingStudyV2Needed':bool(late and eligible==0),'noProductionBehavioralTradingRulePromoted':True}
 
 def finalize(observer,proofs,folder):
