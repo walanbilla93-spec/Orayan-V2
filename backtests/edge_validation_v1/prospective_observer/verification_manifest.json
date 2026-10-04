@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0",
+  "observerImplementationHash": "f41bbf2b369672f127a30d15425dd006c5413d79db7d36c73494369f1067da49",
+  "localUnitTests": {
+    "passed": 16,
+    "failed": 0
+  },
+  "fixtureParity": {
+    "V2": {
+      "attempted": 60,
+      "passed": 60,
+      "failures": []
+    },
+    "V3": {
+      "attempted": 36,
+      "passed": 36,
+      "failures": []
+    },
+    "excluded": [
+      {
+        "engine": "V3",
+        "symbol": "XAUTUSDT",
+        "reason": "NO_KNOWN_SOURCE_INPUT_FIXTURE"
+      },
+      {
+        "engine": "V3",
+        "symbol": "2ZUSDT",
+        "reason": "NO_KNOWN_SOURCE_INPUT_FIXTURE"
+      }
+    ],
+    "importIsolation": "PASS"
+  },
+  "productionSource": {
+    "baseCommit": "5eb0262e51747d76879d85eac877eec3ced0531a",
+    "backendTree": "973bffe7cf96d6e84fa74cbb80b91b59d7f9cd3a",
+    "frontendTree": "94f625f16fadb445f9ea4c692061288b0345f6c7",
+    "researchTree": "7584a1d8337b4dafacb6aacd94e12b2c745af694",
+    "productionChangedFiles": "",
+    "currentBackendTree": "973bffe7cf96d6e84fa74cbb80b91b59d7f9cd3a",
+    "frozenSourceBytesMatch": {
+      "frozen\\lib\\gates.js": true,
+      "frozen\\lib\\indicators.js": true,
+      "frozen\\lib\\signals.js": true,
+      "frozen\\lib\\signals_structure.js": true,
+      "frozen\\lib\\signals_trend.js": true,
+      "frozen\\lib\\signals_trend_v30.js": true,
+      "frozen\\lib\\structure.js": true,
+      "frozen\\lib\\structureV2.js": true,
+      "frozen\\lib\\util.js": true,
+      "frozen\\lib\\v3Contracts.js": true,
+      "frozen\\lib\\v3Levels.js": true
+    },
+    "allFrozenSourceBytesMatch": true
+  },
+  "liveControlsUnchanged": {
+    "settingsHash": true,
+    "overridesHash": true,
+    "benchmarkCommit": true,
+    "executionAllowed": true,
+    "implementationHash": true,
+    "control": true
+  },
+  "liveAuditHours": 0,
+  "liveAuditResult": "INCOMPLETE",
+  "liveWALRecovery": "NOT_RUN",
+  "liveSnapshot": "NOT_CREATED",
+  "unitWALRecovery": "PASS",
+  "unitSnapshotRoundtripAndCorruptionDetection": "PASS",
+  "unitSealRoundtripAndPrivateKeyRejection": "PASS",
+  "createdAt": "2026-10-04T18:16:37.268275+00:00",
+  "files": {
+    "verification/fixture_parity.json": "5291809d3e90ac2fe8236fff721beb7080e997c936080904810c4355c30f69f0",
+    "verification/live_control_verification.json": "fa58d280f642971b5a67bf58b597f2b25cf608130234c6d563841111686b109d",
+    "verification/observer_tests.txt": "98592249b081a7f30fe59110945aab30d240c95b2797c83071174112cf368029",
+    "verification/production_source_verification.json": "78f6120dd0bf5694c98dd0e88256607ce9f13979aed8dde98497553f1eecf668"
+  }
+}

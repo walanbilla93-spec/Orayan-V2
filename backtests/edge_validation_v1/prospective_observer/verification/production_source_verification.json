@@ -1,0 +1,22 @@
+{
+  "baseCommit": "5eb0262e51747d76879d85eac877eec3ced0531a",
+  "backendTree": "973bffe7cf96d6e84fa74cbb80b91b59d7f9cd3a",
+  "frontendTree": "94f625f16fadb445f9ea4c692061288b0345f6c7",
+  "researchTree": "7584a1d8337b4dafacb6aacd94e12b2c745af694",
+  "productionChangedFiles": "",
+  "currentBackendTree": "973bffe7cf96d6e84fa74cbb80b91b59d7f9cd3a",
+  "frozenSourceBytesMatch": {
+    "frozen\\lib\\gates.js": true,
+    "frozen\\lib\\indicators.js": true,
+    "frozen\\lib\\signals.js": true,
+    "frozen\\lib\\signals_structure.js": true,
+    "frozen\\lib\\signals_trend.js": true,
+    "frozen\\lib\\signals_trend_v30.js": true,
+    "frozen\\lib\\structure.js": true,
+    "frozen\\lib\\structureV2.js": true,
+    "frozen\\lib\\util.js": true,
+    "frozen\\lib\\v3Contracts.js": true,
+    "frozen\\lib\\v3Levels.js": true
+  },
+  "allFrozenSourceBytesMatch": true
+}

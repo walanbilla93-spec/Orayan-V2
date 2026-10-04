@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0",
+  "cohortId": "ORAYAN_EDGE_VALIDATION_V1_SAME140",
+  "observerImplementationHash": "f41bbf2b369672f127a30d15425dd006c5413d79db7d36c73494369f1067da49",
+  "branch": "feature/orayan-edge-validation-observer-v1",
+  "baseCommit": "5eb0262e51747d76879d85eac877eec3ced0531a",
+  "registrationHash": "19477a4948d6d37d3c49e4234852ba208b12bcb241e29bfe6541ff59e485c422",
+  "universeHash": "c2b89bd98b3deeeb07bf9dfc2192aeaa7cdc360013e1c99a55bd365344678775",
+  "status": "IMPLEMENTED_NOT_DEPLOYED_READINESS_INCOMPLETE",
+  "actual_start_utc": null,
+  "readiness_receipt": null,
+  "activation_receipt": null,
+  "completedReadinessHours": 0,
+  "requiredReadinessHours": 24,
+  "liveRequiredRecords": {
+    "attempted": 0,
+    "accepted": 0,
+    "skipped": 0
+  },
+  "strictLateInputRate": null,
+  "strictLateInputRateReason": "NO_LIVE_AUDIT_SURFACES",
+  "outcomeSealLiveStatus": "CUSTODIAN_PUBLIC_KEY_MISSING",
+  "deployment": {
+    "status": "NOT_DEPLOYED",
+    "build": null,
+    "deployment": null,
+    "pod": null,
+    "imageHash": null,
+    "blocker": "Computer Use stopped: current browser URL could not be verified sufficiently to enforce policy; no supported Northflank connector or API credential configured."
+  },
+  "timingStudyV2Needed": "UNDETERMINED_UNTIL_LIVE_AUDIT; REQUIRED_IF_STRICT_TIMING_IMPRACTICAL",
+  "tradingBehaviorChanged": false,
+  "productionSettingsUnchanged": {
+    "settingsHash": true,
+    "overridesHash": true,
+    "benchmarkCommit": true,
+    "executionAllowed": true,
+    "implementationHash": true,
+    "control": true
+  },
+  "noProductionBehavioralTradingRulePromoted": true,
+  "modelRequested": "Sol High",
+  "modelSwitchVerification": "Unavailable; no model switch claimed",
+  "createdAt": "2026-10-04T18:16:37.268275+00:00"
+}

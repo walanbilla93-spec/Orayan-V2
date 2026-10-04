@@ -1,0 +1,21 @@
+test_activation_requires_pass_and_first_correct_midnight (test_observer.Tests.test_activation_requires_pass_and_first_correct_midnight) ... ok
+test_append_only_tables_reject_mutation (test_observer.Tests.test_append_only_tables_reject_mutation) ... ok
+test_encryption_private_key_forbidden_and_roundtrip_custodian_only (test_observer.Tests.test_encryption_private_key_forbidden_and_roundtrip_custodian_only) ... ok
+test_exact_nanosecond_deadline_and_forming_bar (test_observer.Tests.test_exact_nanosecond_deadline_and_forming_bar) ... ok
+test_full_elapsed_time_alone_and_untrusted_proof_cannot_pass (test_observer.Tests.test_full_elapsed_time_alone_and_untrusted_proof_cannot_pass) ... ok
+test_late_snapshot_never_rewritten_or_backfilled (test_observer.Tests.test_late_snapshot_never_rewritten_or_backfilled) ... ok
+test_outcomes_only_after_endpoint_complete_and_received (test_observer.Tests.test_outcomes_only_after_endpoint_complete_and_received) ... ok
+test_premium_previous_1440_ddof_one_current_excluded (test_observer.Tests.test_premium_previous_1440_ddof_one_current_excluded) ... ok
+test_premium_zero_variance_and_short_baseline_unavailable (test_observer.Tests.test_premium_zero_variance_and_short_baseline_unavailable) ... ok
+test_restart_recovers_intent_and_exact_dedup (test_observer.Tests.test_restart_recovers_intent_and_exact_dedup) ... ok
+test_retries_are_new_versions_and_first_eligible_retained (test_observer.Tests.test_retries_are_new_versions_and_first_eligible_retained) ... ok
+test_rs60_exact_four_closes_no_signed_or_percent_substitution (test_observer.Tests.test_rs60_exact_four_closes_no_signed_or_percent_substitution) ... ok
+test_schema_full_required_candidate_fields_present_even_unavailable (test_observer.Tests.test_schema_full_required_candidate_fields_present_even_unavailable) ... ok
+test_snapshot_lossless_parquet_and_reference_reconciliation (test_observer.Tests.test_snapshot_lossless_parquet_and_reference_reconciliation) ... ok
+test_unknown_clock_is_unavailable (test_observer.Tests.test_unknown_clock_is_unavailable) ... ok
+test_zero_hours_never_creates_readiness_or_activation_receipt (test_observer.Tests.test_zero_hours_never_creates_readiness_or_activation_receipt) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 1.854s
+
+OK

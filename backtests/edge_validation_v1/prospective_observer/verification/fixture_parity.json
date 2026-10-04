@@ -1,0 +1,25 @@
+{
+  "V2": {
+    "attempted": 60,
+    "passed": 60,
+    "failures": []
+  },
+  "V3": {
+    "attempted": 36,
+    "passed": 36,
+    "failures": []
+  },
+  "excluded": [
+    {
+      "engine": "V3",
+      "symbol": "XAUTUSDT",
+      "reason": "NO_KNOWN_SOURCE_INPUT_FIXTURE"
+    },
+    {
+      "engine": "V3",
+      "symbol": "2ZUSDT",
+      "reason": "NO_KNOWN_SOURCE_INPUT_FIXTURE"
+    }
+  ],
+  "importIsolation": "PASS"
+}

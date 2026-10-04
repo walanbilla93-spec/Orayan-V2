@@ -1,0 +1,443 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EDGE_CANDIDATE",
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.0.0",
+  "type": "object",
+  "required": [
+    "recordType",
+    "schemaVersion",
+    "cohortId",
+    "registrationHash",
+    "universeHash",
+    "engine",
+    "sourcePopulation",
+    "candidateId",
+    "episodeId",
+    "symbol",
+    "orientation",
+    "sourceHash",
+    "configHash",
+    "adapterHash",
+    "observerImplementationHash",
+    "attemptKind",
+    "inputSnapshotId",
+    "classification",
+    "barOpenAt",
+    "barCloseAt",
+    "decisionAt",
+    "computedAt",
+    "committedAt",
+    "utcHour",
+    "originalSide",
+    "reactionType",
+    "levelId",
+    "levelKnownAt",
+    "levelSourceReceiptMax",
+    "premium",
+    "premiumZ",
+    "premiumBarOpenAt",
+    "premiumBarCloseAt",
+    "premiumReceivedAt",
+    "premiumBaselineMean",
+    "premiumBaselineSampleStd",
+    "relativeStrength60",
+    "symbolCloseCurrent",
+    "symbolClose60Prior",
+    "btcCloseCurrent",
+    "btcClose60Prior",
+    "markReference",
+    "turnover24h",
+    "preMove15",
+    "preMove60",
+    "trendExtension",
+    "premiumBaselineCount",
+    "premiumBaselineHash",
+    "premiumDerivationHash",
+    "relativeStrength60DerivationHash",
+    "premiumBaselineReceipts",
+    "btcRegimeReceipts",
+    "turnoverReceiptSet",
+    "payloadRefs",
+    "nativeReasonList",
+    "nativeGateChecks",
+    "requiredInputFailures",
+    "featureValidity",
+    "featureGapReasons",
+    "relativeStrength60Bars",
+    "optionalContext",
+    "hypothesisEligibility",
+    "btcRegime",
+    "markReferenceReceipt",
+    "premiumSourceReceipt",
+    "symbolCloseCurrentBarOpenAt",
+    "symbolCloseCurrentBarCloseAt",
+    "symbolCloseCurrentReceivedAt",
+    "symbolClose60PriorBarOpenAt",
+    "symbolClose60PriorBarCloseAt",
+    "symbolClose60PriorReceivedAt",
+    "btcCloseCurrentBarOpenAt",
+    "btcCloseCurrentBarCloseAt",
+    "btcCloseCurrentReceivedAt",
+    "btcClose60PriorBarOpenAt",
+    "btcClose60PriorBarCloseAt",
+    "btcClose60PriorReceivedAt",
+    "prequoteEligible"
+  ],
+  "properties": {
+    "recordType": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "cohortId": {
+      "type": "string"
+    },
+    "registrationHash": {
+      "type": "string"
+    },
+    "universeHash": {
+      "type": "string"
+    },
+    "engine": {
+      "type": "string"
+    },
+    "sourcePopulation": {
+      "type": "string"
+    },
+    "candidateId": {
+      "type": "string"
+    },
+    "episodeId": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "orientation": {
+      "type": "string"
+    },
+    "sourceHash": {
+      "type": "string"
+    },
+    "configHash": {
+      "type": "string"
+    },
+    "adapterHash": {
+      "type": "string"
+    },
+    "observerImplementationHash": {
+      "type": "string"
+    },
+    "attemptKind": {
+      "type": "string"
+    },
+    "inputSnapshotId": {
+      "type": "string"
+    },
+    "classification": {
+      "type": "string"
+    },
+    "barOpenAt": {
+      "type": "integer"
+    },
+    "barCloseAt": {
+      "type": "integer"
+    },
+    "decisionAt": {
+      "type": "integer"
+    },
+    "computedAt": {
+      "type": "integer"
+    },
+    "committedAt": {
+      "type": "integer"
+    },
+    "utcHour": {
+      "type": "integer"
+    },
+    "originalSide": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reactionType": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "levelId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "levelKnownAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "levelSourceReceiptMax": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "premium": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "premiumZ": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "premiumBarOpenAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "premiumBarCloseAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "premiumReceivedAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "premiumBaselineMean": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "premiumBaselineSampleStd": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "relativeStrength60": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "symbolCloseCurrent": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "symbolClose60Prior": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "btcCloseCurrent": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "btcClose60Prior": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "markReference": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "turnover24h": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "preMove15": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "preMove60": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "trendExtension": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "premiumBaselineCount": {
+      "type": "integer"
+    },
+    "premiumBaselineHash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "premiumDerivationHash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "relativeStrength60DerivationHash": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "premiumBaselineReceipts": {
+      "type": "array"
+    },
+    "btcRegimeReceipts": {
+      "type": "array"
+    },
+    "turnoverReceiptSet": {
+      "type": "array"
+    },
+    "payloadRefs": {
+      "type": "array"
+    },
+    "nativeReasonList": {
+      "type": "array"
+    },
+    "nativeGateChecks": {
+      "type": "array"
+    },
+    "requiredInputFailures": {
+      "type": "array"
+    },
+    "featureValidity": {
+      "type": "object"
+    },
+    "featureGapReasons": {
+      "type": "object"
+    },
+    "relativeStrength60Bars": {
+      "type": "object"
+    },
+    "optionalContext": {
+      "type": "object"
+    },
+    "hypothesisEligibility": {
+      "type": "object"
+    },
+    "btcRegime": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "markReferenceReceipt": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "premiumSourceReceipt": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "symbolCloseCurrentBarOpenAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "symbolCloseCurrentBarCloseAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "symbolCloseCurrentReceivedAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "symbolClose60PriorBarOpenAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "symbolClose60PriorBarCloseAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "symbolClose60PriorReceivedAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "btcCloseCurrentBarOpenAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "btcCloseCurrentBarCloseAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "btcCloseCurrentReceivedAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "btcClose60PriorBarOpenAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "btcClose60PriorBarCloseAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "btcClose60PriorReceivedAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "prequoteEligible": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}
