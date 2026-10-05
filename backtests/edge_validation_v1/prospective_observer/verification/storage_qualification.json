@@ -1,7 +1,7 @@
 {
   "classification": "SYNTHETIC_SCHEMA_STORAGE_QUALIFICATION_NOT_LIVE_AUDIT",
   "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.2.0",
-  "observerImplementationHash": "1099fd292850307e2182e05e9e8dacefb9919e51ad3a54ae682224f454db905e",
+  "observerImplementationHash": "48f8a796218073c1e0283e0997be1741007792ab4e7b8bf6177c70a0c9245bf3",
   "perSymbolSurfaceIntentAndAcceptanceBytes": {
     "INPUT_SNAPSHOT": 28554,
     "EDGE_CANDIDATE": 61716,
@@ -9,8 +9,6 @@
   },
   "perSurfaceTotalBytes": 90916,
   "scheduledSymbolSurfaces": 13440,
-  "24hCanonicalPayloadBytesAtFullHistory": 1221911040,
-  "24hCanonicalPayloadGiB": 1.137993335723877,
   "excludes": [
     "SQLite page/index/WAL overhead",
     "native bars and raw source bytes",
@@ -18,7 +16,9 @@
     "private outcome archive"
   ],
   "freeProjectVolumeGB": 6,
-  "qualification": "INSUFFICIENT_FOR_DENSE_ALL_SYMBOLS_LOSSLESS_24H",
+  "qualification": "SYNTHETIC_COMPRESSED_PAYLOAD_BUDGET_ONLY; TOTAL_24H_CAPACITY_UNPROVEN",
   "readinessHours": 0,
-  "tradingBehaviorChanged": false
+  "tradingBehaviorChanged": false,
+  "compressedPayloadGiB": 1.137993335723877,
+  "compressedPayloadBytes": 1221911040
 }
