@@ -1,0 +1,166 @@
+- banner:
+  - link "Jump to project navigation":
+    - /url: "#project-navigation"
+  - link "Jump to main content":
+    - /url: "#content"
+  - link "Northflank Cloud Platform logo, to the homepage":
+    - /url: /t/black-viper9275s-team
+    - img "Northflank Cloud Platform logo, to the homepage"
+  - 'link "Current team: Black-viper9275''s Team"':
+    - /url: /t/black-viper9275s-team
+    - generic: BT
+    - generic: "Current team:"
+    - generic: Black-viper9275's Team
+  - button "Select a team…":
+    - img "Select a team…"
+  - 'link "Current project: Orayan V2 Free"':
+    - /url: /t/black-viper9275s-team/project/orayan-v2
+    - generic: "Current project:"
+    - generic: Orayan V2
+    - generic: Free
+  - button "Select a project…":
+    - img "Select a project…"
+  - link "Upgrade":
+    - /url: /t/black-viper9275s-team/billing/plans
+    - generic: Upgrade
+  - button "Search Search":
+    - img "Search"
+    - generic: Search Ctrl+K
+  - button "Support Support":
+    - img "Support"
+    - generic: Support
+  - button "New navigation Try the new nav":
+    - img "New navigation"
+    - generic: Try the new nav
+  - button "Amila Prabath":
+    - generic: AP
+    - generic: Amila Prabath
+- navigation "Project navigation":
+  - heading "Project navigation" [level=1]
+  - list:
+    - link "Environments":
+      - /url: /t/black-viper9275s-team/project/orayan-v2
+      - generic: Environments
+    - link "Harnesses":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/harnesses
+      - generic: Harnesses
+    - link "Services":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/services
+      - generic: Services
+    - link "Jobs":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/jobs
+      - generic: Jobs
+    - link "Volumes" [active]:
+      - /url: /t/black-viper9275s-team/project/orayan-v2/volumes
+      - generic: Volumes
+    - link "Addons":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/addons
+      - generic: Addons
+    - link "Secrets":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/secrets
+      - generic: Secrets
+    - link "Templates":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/templates
+      - generic: Templates
+  - list:
+    - generic: No template
+    - link "Project template":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/view-template
+      - generic: Project template
+    - link "Project settings":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/settings
+      - generic: Project settings
+- main:
+  - button "Volumes":
+    - generic: Volumes
+  - button "Volume backups":
+    - generic: Volume backups
+  - button "Addon volumes":
+    - generic: Addon volumes
+  - heading "Volumes" [level=2]
+  - generic: Showing 1-1 of 1 items
+  - textbox:
+    - /placeholder: Search
+  - link "Create volume":
+    - /url: /t/black-viper9275s-team/project/orayan-v2/create/volume
+    - generic: Create volume
+  - button "Toggle table preferences":
+    - img "Toggle table preferences"
+  - table:
+    - row "Name Disk Status Usage IOPS (R) IOPS (W) Throughput (R) Throughput (W) Actions":
+      - columnheader "Name":
+        - generic: Name
+      - columnheader "Disk":
+        - generic: Disk
+      - columnheader "Status":
+        - generic: Status
+      - columnheader "Usage":
+        - generic: Usage
+      - columnheader "IOPS (R)":
+        - generic: IOPS (R)
+      - columnheader "IOPS (W)":
+        - generic: IOPS (W)
+      - columnheader "Throughput (R)":
+        - generic: Throughput (R)
+      - columnheader "Throughput (W)":
+        - generic: Throughput (W)
+      - columnheader "Actions":
+        - generic: Actions
+    - rowgroup:
+      - link "Volume Orayan Data Attached to Service min-service Open in new tab 6.0 GB NVMe ReadWriteOnce Bound 0.82 GB 14% 0.00 /s 3.15 /s 0.00 MB/s 0.48 MB/s":
+        - /url: /t/black-viper9275s-team/project/orayan-v2/volumes/orayan-data
+        - row "Volume Orayan Data Attached to Service min-service Open in new tab 6.0 GB NVMe ReadWriteOnce Bound 0.82 GB 14% 0.00 /s 3.15 /s 0.00 MB/s 0.48 MB/s":
+          - cell "Volume Orayan Data Attached to Service min-service Open in new tab":
+            - img "Volume"
+            - generic: Orayan Data
+            - text: Attached to
+            - link "Service min-service Open in new tab":
+              - /url: /t/black-viper9275s-team/project/orayan-v2/services/min-service
+              - img "Service"
+              - generic: min-service
+              - img "Open in new tab"
+          - cell "6.0 GB NVMe ReadWriteOnce":
+            - generic: 6.0 GB NVMe
+            - generic: ReadWriteOnce
+          - cell "Bound":
+            - generic: Bound
+          - cell "0.82 GB 14%":
+            - generic: 0.82 GB
+            - generic: 14%
+          - cell "0.00 /s":
+            - generic: 0.00 /s
+          - cell "3.15 /s":
+            - generic: 3.15 /s
+          - cell "0.00 MB/s":
+            - generic: 0.00 MB/s
+          - cell "0.48 MB/s":
+            - generic: 0.48 MB/s
+          - cell:
+            - button:
+            - button:
+            - button [disabled]:
+  - generic: Page size
+  - generic: "10"
+  - textbox
+  - list:
+    - link "Home":
+      - /url: https://northflank.com
+    - text: "|"
+    - link "Docs":
+      - /url: https://northflank.com/docs
+    - text: "|"
+    - link "Changelog":
+      - /url: https://northflank.com/changelog
+    - text: "|"
+    - link "Blog":
+      - /url: https://northflank.com/blog
+    - text: "|"
+  - link "All services normal":
+    - /url: https://status.northflank.com
+    - generic: All services normal
+- region "Harness dock":
+  - button "Collapse harness bar":
+  - button "My Harnesses":
+    - generic: My Harnesses
+  - button "New harness":
+    - generic: New

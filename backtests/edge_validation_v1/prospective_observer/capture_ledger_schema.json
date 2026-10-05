@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Counts from immutable durable intents/acceptances; no inferred losses",
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.2.0",
+  "type": "object",
+  "required": [
+    "cohortId",
+    "recordType",
+    "engine",
+    "barCloseAt",
+    "attempted",
+    "accepted",
+    "pending",
+    "skipped",
+    "fieldFailureCounts"
+  ],
+  "properties": {
+    "cohortId": {
+      "type": "string"
+    },
+    "recordType": {
+      "type": "string"
+    },
+    "engine": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "barCloseAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "attempted": {
+      "type": "integer"
+    },
+    "accepted": {
+      "type": "integer"
+    },
+    "pending": {
+      "type": "integer"
+    },
+    "skipped": {
+      "type": "integer"
+    },
+    "fieldFailureCounts": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

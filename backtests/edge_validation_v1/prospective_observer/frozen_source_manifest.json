@@ -1,0 +1,22 @@
+{
+  "fixtures/parity_fixtures.json": "f6a5272bdda10f1f640d9decad43747c82e58c3fa98085d497f7bcf793afaa48",
+  "fixtures/v2_parity_fixtures.json": "5f73537f3129a75023c7ee5307ce503d1fd4c2388b009e1caac91d5c0bad6b53",
+  "sources/adapters.js": "a8ccbb9fec9a902cbf2199fce316fae7c5ef552819c02a3c0b6ca4bd841cc9a4",
+  "sources/frozen_config.json": "d3f2184d2d691b20d8a23b301eb36714e79daf0231a55cee2fde5063e4274d97",
+  "sources/prospective_capture_requirement_matrix.csv": "a06c01a3d21f20747f3e68ead4e300ebd4671dc2e58e72b22260789b775519ed",
+  "sources/prospective_cohort_manifest.json": "63acb7104c6d9cff46e1192b4a1f40e8032aac2ce1253bb1232b14ee3a455e9a",
+  "sources/prospective_instrumentation_spec.md": "44d22d19333af7693ac0a8af9f45b369d565105f83273750ad4b0423b6e7e726",
+  "sources/prospective_validation_protocol.md": "cf43385ace3a3acf56c297dd40c5de27eae4ab620d26a81b2b686a580dc23f9e",
+  "sources/validation_preregistration.json": "19477a4948d6d37d3c49e4234852ba208b12bcb241e29bfe6541ff59e485c422",
+  "frozen/lib/gates.js": "fdcfe04db9eed0509e2f790ecc44f75a726ff2bb51b66a2b7e0e8320c6fb6cc5",
+  "frozen/lib/indicators.js": "61059474cb16dd8f9d91f95aee8d0e20a3f0f6ea6f60d4905365633290ff0683",
+  "frozen/lib/signals.js": "d7e28720b4129038d46b2a8cf2c2b867efb533fed09ede70837672814820b15b",
+  "frozen/lib/signals_structure.js": "914157a40c1854333f12a2db272b5e5bdc85fe41ece5f5757e4868c877359778",
+  "frozen/lib/signals_trend.js": "9d6ab25fd0a1a180f385ce7aa2df1dfc2e6126e8179d034c2f10daa93e925ace",
+  "frozen/lib/signals_trend_v30.js": "55b58f6b2a261811396afe2c209a41abfa2ceba24999163fd037aef8c521f82a",
+  "frozen/lib/structure.js": "e8921b7e7fb5514d4e5d1f740aaa127972323a64ee2346de7b89a73a12d52d9f",
+  "frozen/lib/structureV2.js": "2efb8e6d281cb42726bd8e3e7b96202817666c237b7610f74f6c451a09c0d4e3",
+  "frozen/lib/util.js": "69ae7e7e09df310a40c5900d72f7fecf60c92d34b81092a0d35de0eb38e0d276",
+  "frozen/lib/v3Contracts.js": "6eefbb99402cc829d3102a1c9f52845659d558e9a946ea86f549f9539dfc69cf",
+  "frozen/lib/v3Levels.js": "9795fd64081f6f3b7094602aecf84ece138efb1490955b4934882883eb13bd23"
+}

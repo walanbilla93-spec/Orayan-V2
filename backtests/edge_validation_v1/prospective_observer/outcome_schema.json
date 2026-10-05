@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OUTCOME - private OS-separated WAL; inaccessible to capture and status roles",
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.2.0",
+  "type": "object",
+  "required": [
+    "recordType",
+    "schemaVersion",
+    "candidateId",
+    "entryAt",
+    "horizonMin",
+    "endAt",
+    "outcomeKnownAt",
+    "computedAt",
+    "entryOpenRaw",
+    "endOpenRaw",
+    "invertedDirectionalBps",
+    "entryResponseReceipt",
+    "endResponseReceipt",
+    "allInterveningSourceBarHashes",
+    "pathReceipts",
+    "pathComplete",
+    "censorReason"
+  ],
+  "properties": {
+    "recordType": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string"
+    },
+    "candidateId": {
+      "type": "string"
+    },
+    "entryAt": {
+      "type": "integer"
+    },
+    "horizonMin": {
+      "type": "integer"
+    },
+    "endAt": {
+      "type": "integer"
+    },
+    "outcomeKnownAt": {
+      "type": "integer"
+    },
+    "computedAt": {
+      "type": "integer"
+    },
+    "entryOpenRaw": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "endOpenRaw": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "invertedDirectionalBps": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "entryResponseReceipt": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "endResponseReceipt": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "allInterveningSourceBarHashes": {
+      "type": "array"
+    },
+    "pathReceipts": {
+      "type": "array"
+    },
+    "pathComplete": {
+      "type": "boolean"
+    },
+    "censorReason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

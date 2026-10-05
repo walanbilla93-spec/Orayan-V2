@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.2.0",
+  "$defs": {
+    "receipt": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "INPUT_RECEIPT",
+      "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.2.0",
+      "type": "object",
+      "required": [
+        "inputVersionId",
+        "responseReceivedAtNs",
+        "responseReceivedAt",
+        "monotonicReceiptTick",
+        "exchangeEnvelopeTime",
+        "requestStartedAtNs",
+        "requestStartedMonotonicNs",
+        "requestUrl",
+        "httpStatus",
+        "clockEvidenceVersion",
+        "utcClockOffsetNs",
+        "utcClockUncertaintyNs",
+        "utcReceiptUpperNs",
+        "responseHash",
+        "classification"
+      ],
+      "properties": {
+        "inputVersionId": {
+          "type": "integer"
+        },
+        "responseReceivedAtNs": {
+          "type": "integer"
+        },
+        "responseReceivedAt": {
+          "type": "integer"
+        },
+        "monotonicReceiptTick": {
+          "type": "integer"
+        },
+        "exchangeEnvelopeTime": {
+          "type": "integer"
+        },
+        "requestStartedAtNs": {
+          "type": "integer"
+        },
+        "requestStartedMonotonicNs": {
+          "type": "integer"
+        },
+        "requestUrl": {
+          "type": "string"
+        },
+        "httpStatus": {
+          "type": "integer"
+        },
+        "clockEvidenceVersion": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "utcClockOffsetNs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "utcClockUncertaintyNs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "utcReceiptUpperNs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "responseHash": {
+          "type": "string"
+        },
+        "classification": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "snapshot": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "INPUT_SNAPSHOT",
+      "schemaVersion": "ORAYAN_PROSPECTIVE_OBSERVER_V1.2.0",
+      "type": "object",
+      "required": [
+        "recordType",
+        "schemaVersion",
+        "cohortId",
+        "registrationHash",
+        "universeHash",
+        "symbol",
+        "inputSnapshotId",
+        "snapshotHash",
+        "classification",
+        "barCloseAt",
+        "decisionAt",
+        "computedAt",
+        "committedAt",
+        "inputWatermark",
+        "scheduledDeadlineNs",
+        "inputBarRefs",
+        "unavailableFields",
+        "payloadRefs",
+        "strictAvailabilityFailed"
+      ],
+      "properties": {
+        "recordType": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "string"
+        },
+        "cohortId": {
+          "type": "string"
+        },
+        "registrationHash": {
+          "type": "string"
+        },
+        "universeHash": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "inputSnapshotId": {
+          "type": "string"
+        },
+        "snapshotHash": {
+          "type": "string"
+        },
+        "classification": {
+          "type": "string"
+        },
+        "barCloseAt": {
+          "type": "integer"
+        },
+        "decisionAt": {
+          "type": "integer"
+        },
+        "computedAt": {
+          "type": "integer"
+        },
+        "committedAt": {
+          "type": "integer"
+        },
+        "inputWatermark": {
+          "type": "integer"
+        },
+        "scheduledDeadlineNs": {
+          "type": "integer"
+        },
+        "inputBarRefs": {
+          "type": "object"
+        },
+        "unavailableFields": {
+          "type": "array"
+        },
+        "payloadRefs": {
+          "type": "array"
+        },
+        "strictAvailabilityFailed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "$ref": "#/$defs/snapshot"
+}

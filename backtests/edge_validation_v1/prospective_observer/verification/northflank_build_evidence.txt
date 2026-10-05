@@ -1,0 +1,513 @@
+- banner:
+  - link "Jump to project navigation":
+    - /url: "#project-navigation"
+  - link "Jump to main content":
+    - /url: "#content"
+  - link "Northflank Cloud Platform logo, to the homepage":
+    - /url: /t/black-viper9275s-team
+    - img "Northflank Cloud Platform logo, to the homepage"
+  - 'link "Current team: Black-viper9275''s Team"':
+    - /url: /t/black-viper9275s-team
+    - generic: BT
+    - generic: "Current team:"
+    - generic: Black-viper9275's Team
+  - button "Select a team…":
+    - img "Select a team…"
+  - 'link "Current project: Orayan V2 Free"':
+    - /url: /t/black-viper9275s-team/project/orayan-v2
+    - generic: "Current project:"
+    - generic: Orayan V2
+    - generic: Free
+  - button "Select a project…":
+    - img "Select a project…"
+  - link "Upgrade":
+    - /url: /t/black-viper9275s-team/billing/plans
+    - generic: Upgrade
+  - button "Search Search":
+    - img "Search"
+    - generic: Search Ctrl+K
+  - button "Support Support":
+    - img "Support"
+    - generic: Support
+  - button "New navigation Try the new nav":
+    - img "New navigation"
+    - generic: Try the new nav
+  - button "Amila Prabath":
+    - generic: AP
+    - generic: Amila Prabath
+- navigation "Project navigation":
+  - heading "Project navigation" [level=1]
+  - list:
+    - link "Environments":
+      - /url: /t/black-viper9275s-team/project/orayan-v2
+      - generic: Environments
+    - link "Harnesses":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/harnesses
+      - generic: Harnesses
+    - link "Services":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/services
+      - generic: Services
+    - link "Jobs":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/jobs
+      - generic: Jobs
+    - link "Volumes":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/volumes
+      - generic: Volumes
+    - link "Addons":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/addons
+      - generic: Addons
+    - link "Secrets":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/secrets
+      - generic: Secrets
+    - link "Templates":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/templates
+      - generic: Templates
+  - list:
+    - generic: No template
+    - link "Project template":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/view-template
+      - generic: Project template
+    - link "Project settings":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/settings
+      - generic: Project settings
+- main:
+  - generic: orayan-edge-observer-v1
+  - button "Not selected as favourite. Click to add.":
+    - img "Not selected as favourite. Click to add."
+  - generic: Free
+  - generic: "Job ID:"
+  - generic: orayan-edge-observer-v1
+  - button:
+  - paragraph: Add a description
+  - button "Add tags":
+    - generic: Add tags
+  - text: Europe - West
+  - generic: (London)
+  - generic: Northflank
+  - link "walanbilla93-spec/Orayan-V2":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2
+    - generic: walanbilla93-spec/Orayan-V2
+  - link "feature/orayan-edge-validation-observer-v1":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2/tree/feature/orayan-edge-validation-observer-v1
+    - generic: feature/orayan-edge-validation-observer-v1
+  - link:
+    - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/build-options
+  - link "latest":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2/commit/26745b6dfbf560d8023c8ed550d11bf9fc6e27c3
+    - generic: latest
+  - generic: Success
+  - generic: CI
+  - checkbox "CI"
+  - generic "Use latest build":
+    - generic: CD
+    - checkbox "CD" [checked]
+  - button:
+  - button:
+  - button "View more":
+    - img "View more"
+  - navigation "Job navigation":
+    - heading "Job navigation" [level=2]
+    - list:
+      - link "Overview":
+        - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1
+        - paragraph: Overview
+      - heading "Job" [level=3]
+      - list:
+        - link "Observe":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/observe
+          - paragraph: Observe
+        - link "Runs":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/runs
+          - paragraph: Runs
+        - link "Settings":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/settings
+          - paragraph: Settings
+      - heading "Run" [level=3]
+      - list:
+        - link "Volumes":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/volumes
+          - paragraph: Volumes
+        - link "Resources":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/resources
+          - paragraph: Resources
+        - link "Environment":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/environment
+          - paragraph: Environment
+        - link "Health checks":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/health-checks
+          - paragraph: Health checks
+        - link "CMD override":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/cmd-override
+          - paragraph: CMD override
+        - link "Workload identities":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/workload-identities
+          - paragraph: Workload identities
+      - heading "Code" [level=3]
+      - list:
+        - link "Builds":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/builds
+          - paragraph: Builds
+        - link "Build options":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/build-options
+          - paragraph: Build options
+        - link "Build arguments":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/parameters
+          - paragraph: Build arguments
+        - link "Commits":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/commits
+          - paragraph: Commits
+      - link "Billing":
+        - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/billing
+        - paragraph: Billing
+  - text: orayan-edge-observer-v1
+  - generic: /
+  - text: Builds
+  - generic: /
+  - generic: acoustic-spark-2930
+  - button:
+  - button:
+  - button:
+  - text: Success
+  - img "Commit message"
+  - generic: Compress lossless observer WAL and stream immutable snapshot verification
+  - img "Commit hash"
+  - generic: 26745b6
+  - generic: 26745b6dfbf560d8023c8ed550d11bf9fc6e27c3
+  - button:
+  - img "Repository"
+  - link "walanbilla93-spec/Orayan-V2":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2
+  - img "Branch"
+  - generic: feature/orayan-edge-validation-observer-v1
+  - button:
+  - img "Started"
+  - generic: 18 minutes ago
+  - img "Duration"
+  - generic: 00m 24s
+  - button "Show additional detail":
+    - img "Show additional detail"
+  - generic: codex
+  - img "Build type"
+  - generic: Dockerfile (buildkit)
+  - img "Remote cache"
+  - generic: Remote cache disabled
+  - img "Docker workdir"
+  - generic: /
+  - img "Dockerfile path"
+  - generic: /backtests/edge_validation_v1/prospective_observer/Dockerfile.observer
+  - generic: x86
+  - img "Triggered by"
+  - generic: Triggered by user via UI
+  - button "View arguments":
+    - generic: View arguments
+  - button "Rebuild":
+    - generic: Rebuild
+  - button "Pull Docker image":
+    - generic: Pull Docker image
+  - button "Deployed" [disabled]:
+    - generic: Deployed
+  - button "Build progress":
+    - generic: Build progress
+  - button "Metrics":
+    - generic: Metrics
+  - button "Logs" [active]:
+    - generic: Logs
+  - button "Health":
+    - generic: Health
+  - button "Events":
+    - generic: Events
+  - button "Dockerfile":
+    - generic: Dockerfile
+  - generic: Connection
+  - text: Custom range (UTC)
+  - textbox
+  - textbox:
+    - /placeholder: Select a date
+    - text: 2026-10-04T23:52
+  - textbox:
+    - /placeholder: Select a date
+    - text: 2026-10-04T23:57
+  - button "Range already focused around current pod" [disabled]:
+  - generic: Search logs
+  - textbox "Search logs == != ABC (.*) Search":
+    - /placeholder: Search logs
+  - button "=="
+  - button "!="
+  - button "ABC"
+  - button "(.*)"
+  - button "Search":
+    - img "Search"
+  - generic: Returned 193 lines
+  - generic: Newest on top
+  - generic: Newest on bottom
+  - generic: 04 Oct 23:55:16.749
+  - generic: 2026-10-04T23:55:16.612115413Z stdout F [2026-10-04T23:55:16Z INFO ] Process terminated with exit code 0
+  - generic: 04 Oct 23:55:16.749
+  - generic: 2026-10-04T23:55:16.605403849Z stdout F [info] BuildService - Build successful.
+  - generic: 04 Oct 23:55:15.490
+  - generic: "2026-10-04T23:55:15.33561774Z stdout F #15 DONE 4.9s"
+  - generic: 04 Oct 23:55:15.490
+  - generic: "2026-10-04T23:55:15.335586064Z stdout F #15 pushing manifest for remote-registry/6ac2e29f99f96de5169888ae:6ac2e74b7fd436d52db775ac@sha256:ffdba94e7caced8d15a8de7c8cbdb565a6bac22fe54d4d01b5742fc45857dde6 0.7s done"
+  - generic: 04 Oct 23:55:14.738
+  - generic: "2026-10-04T23:55:14.667549616Z stdout F #15 pushing manifest for remote-registry/6ac2e29f99f96de5169888ae:6ac2e74b7fd436d52db775ac@sha256:ffdba94e7caced8d15a8de7c8cbdb565a6bac22fe54d4d01b5742fc45857dde6"
+  - generic: 04 Oct 23:55:14.738
+  - generic: "2026-10-04T23:55:14.667512058Z stdout F #15 pushing layers 2.7s done"
+  - generic: 04 Oct 23:55:12.232
+  - generic: "2026-10-04T23:55:12.14457831Z stdout F #15 pushing layers"
+  - generic: 04 Oct 23:55:12.232
+  - generic: "2026-10-04T23:55:12.144576777Z stdout F #15 exporting config sha256:0b2682e4b1e4cf68f6aef12c8f27ffa550893978a146d74ab1e3e5a26bbeaec3 done"
+  - generic: 04 Oct 23:55:12.232
+  - generic: "2026-10-04T23:55:12.144575113Z stdout F #15 exporting manifest sha256:ffdba94e7caced8d15a8de7c8cbdb565a6bac22fe54d4d01b5742fc45857dde6 done"
+  - generic: 04 Oct 23:55:12.232
+  - generic: "2026-10-04T23:55:12.144573245Z stdout F #15 exporting to image"
+  - generic: 04 Oct 23:55:12.232
+  - generic: 2026-10-04T23:55:12.144571795Z stdout F
+  - generic: 04 Oct 23:55:12.232
+  - generic: "2026-10-04T23:55:12.144570805Z stdout F #16 DONE 0.0s"
+  - generic: 04 Oct 23:55:12.230
+  - generic: "2026-10-04T23:55:12.144569351Z stdout F #16 [auth] 6ac2e29f99f96de5169888ae:pull,push token for remote registry"
+  - generic: 04 Oct 23:55:12.230
+  - generic: 2026-10-04T23:55:12.144566385Z stdout F
+  - generic: 04 Oct 23:55:12.230
+  - generic: "2026-10-04T23:55:12.144533691Z stdout F #15 ..."
+  - generic: 04 Oct 23:55:11.979
+  - generic: "2026-10-04T23:55:11.928739091Z stdout F #15 exporting layers 1.5s done"
+  - generic: 04 Oct 23:55:10.726
+  - generic: "2026-10-04T23:55:10.613234404Z stdout F #15 exporting layers"
+  - generic: 04 Oct 23:55:10.726
+  - generic: "2026-10-04T23:55:10.613228254Z stdout F #15 exporting to image"
+  - generic: 04 Oct 23:55:10.726
+  - generic: 2026-10-04T23:55:10.61114392Z stdout F
+  - generic: 04 Oct 23:55:10.475
+  - generic: "2026-10-04T23:55:10.45786789Z stdout F #14 DONE 0.8s"
+  - generic: 04 Oct 23:55:09.974
+  - generic: "2026-10-04T23:55:09.7635814Z stdout F #14 [stage-1 8/8] RUN mkdir /capture"
+  - generic: 04 Oct 23:55:09.974
+  - generic: 2026-10-04T23:55:09.763578718Z stdout F
+  - generic: 04 Oct 23:55:09.974
+  - generic: "2026-10-04T23:55:09.763543778Z stdout F #13 DONE 3.4s"
+  - generic: 04 Oct 23:55:09.723
+  - generic: "2026-10-04T23:55:09.595397878Z stdout F #13 3.402 {\"outcomeIsolation\": {\"status\": \"PASS\", \"observerImplementationHash\": \"48f8a796218073c1e0283e0997be1741007792ab4e7b8bf6177c70a0c9245bf3\", \"sealMode\": \"OS_ACCESS_SEPARATION_V1\", \"captureUid\": 10001, \"outcomeUid\": 10002, \"statusUid\": 10003, \"checks\": {\"captureCannotReadOutcomes\": true, \"statusCannotReadOutcomes\": true, \"statusCannotReadCapture\": true, \"outcomesCannotWriteCapture\": true, \"outcomesCanReadCapture\": true, \"outcomesCanReadOwnArchive\": true, \"statusCannotWriteReceiptWAL\": true, \"captureCannotWriteReceiptWAL\": true, \"outcomesReadLiveSQLiteWAL\": true}, \"hypothesisResearcherRole\": \"status/capture; private outcomes inaccessible\", \"noKeysOrPasswords\": true, \"cloudAdministratorCustody\": true, \"checkedAt\": 1791158109581}}"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270214663Z stdout F #13 3.076 }"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270213409Z stdout F #13 3.076 \"importIsolation\": \"PASS\""
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270211968Z stdout F #13 3.076 ],"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270210718Z stdout F #13 3.076 }"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270209536Z stdout F #13 3.076 \"reason\": \"NO_KNOWN_SOURCE_INPUT_FIXTURE\""
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270208206Z stdout F #13 3.076 \"symbol\": \"2ZUSDT\","
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270206879Z stdout F #13 3.076 \"engine\": \"V3\","
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270205558Z stdout F #13 3.076 {"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270204246Z stdout F #13 3.076 },"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270202747Z stdout F #13 3.076 \"reason\": \"NO_KNOWN_SOURCE_INPUT_FIXTURE\""
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270200374Z stdout F #13 3.076 \"symbol\": \"XAUTUSDT\","
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270198014Z stdout F #13 3.076 \"engine\": \"V3\","
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270196149Z stdout F #13 3.076 {"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.27019483Z stdout F #13 3.076 \"excluded\": ["
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270193725Z stdout F #13 3.076 },"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270192481Z stdout F #13 3.076 \"failures\": []"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270191066Z stdout F #13 3.076 \"passed\": 36,"
+  - generic: 04 Oct 23:55:09.473
+  - generic: "2026-10-04T23:55:09.270189846Z stdout F #13 3.076 \"attempted\": 36,"
+  - generic: 04 Oct 23:55:09.472
+  - generic: "2026-10-04T23:55:09.270188584Z stdout F #13 3.076 \"V3\": {"
+  - generic: 04 Oct 23:55:09.472
+  - generic: "2026-10-04T23:55:09.27017371Z stdout F #13 3.076 },"
+  - generic: 04 Oct 23:55:09.472
+  - generic: "2026-10-04T23:55:09.270172528Z stdout F #13 3.076 \"failures\": []"
+  - generic: 04 Oct 23:55:09.472
+  - generic: "2026-10-04T23:55:09.270171382Z stdout F #13 3.076 \"passed\": 60,"
+  - generic: 04 Oct 23:55:09.472
+  - generic: "2026-10-04T23:55:09.270170061Z stdout F #13 3.076 \"attempted\": 60,"
+  - generic: 04 Oct 23:55:09.472
+  - generic: "2026-10-04T23:55:09.27016646Z stdout F #13 3.076 \"V2\": {"
+  - generic: 04 Oct 23:55:09.472
+  - generic: "2026-10-04T23:55:09.27011847Z stdout F #13 3.076 {"
+  - generic: 04 Oct 23:55:08.469
+  - generic: "2026-10-04T23:55:08.389988292Z stdout F #13 2.042 OK"
+  - generic: 04 Oct 23:55:08.469
+  - generic: "2026-10-04T23:55:08.389987253Z stdout F #13 2.042"
+  - generic: 04 Oct 23:55:08.469
+  - generic: "2026-10-04T23:55:08.389985924Z stdout F #13 2.042 Ran 20 tests in 1.174s"
+  - generic: 04 Oct 23:55:08.469
+  - generic: "2026-10-04T23:55:08.389984655Z stdout F #13 2.042 ----------------------------------------------------------------------"
+  - generic: 04 Oct 23:55:08.469
+  - generic: "2026-10-04T23:55:08.389982576Z stdout F #13 2.042"
+  - generic: 04 Oct 23:55:08.469
+  - generic: "2026-10-04T23:55:08.389966048Z stdout F #13 2.015 test_zero_hours_never_creates_readiness_or_activation_receipt (test_observer.Tests.test_zero_hours_never_creates_readiness_or_activation_receipt) ... ok"
+  - generic: 04 Oct 23:55:08.469
+  - generic: "2026-10-04T23:55:08.389568685Z stdout F #13 1.973 test_wal_compression_is_lossless_and_hashes_original_bytes (test_observer.Tests.test_wal_compression_is_lossless_and_hashes_original_bytes) ... ok"
+  - generic: 04 Oct 23:55:08.218
+  - generic: "2026-10-04T23:55:08.167365651Z stdout F #13 1.943 test_unknown_clock_is_unavailable (test_observer.Tests.test_unknown_clock_is_unavailable) ... ok"
+  - generic: 04 Oct 23:55:08.218
+  - generic: "2026-10-04T23:55:08.167034934Z stdout F #13 1.869 test_snapshot_lossless_parquet_and_reference_reconciliation (test_observer.Tests.test_snapshot_lossless_parquet_and_reference_reconciliation) ... ok"
+  - generic: 04 Oct 23:55:08.218
+  - generic: "2026-10-04T23:55:08.062881155Z stdout F #13 1.824 test_schema_full_required_candidate_fields_present_even_unavailable (test_observer.Tests.test_schema_full_required_candidate_fields_present_even_unavailable) ... ok"
+  - generic: 04 Oct 23:55:08.218
+  - generic: "2026-10-04T23:55:08.062880191Z stdout F #13 1.797 test_rs60_exact_four_closes_no_signed_or_percent_substitution (test_observer.Tests.test_rs60_exact_four_closes_no_signed_or_percent_substitution) ... ok"
+  - generic: 04 Oct 23:55:08.218
+  - generic: "2026-10-04T23:55:08.062877507Z stdout F #13 1.774 test_retries_are_new_versions_and_first_eligible_retained (test_observer.Tests.test_retries_are_new_versions_and_first_eligible_retained) ... ok"
+  - generic: 04 Oct 23:55:08.218
+  - generic: "2026-10-04T23:55:08.062849763Z stdout F #13 1.737 test_restart_recovers_intent_and_exact_dedup (test_observer.Tests.test_restart_recovers_intent_and_exact_dedup) ... ok"
+  - generic: 04 Oct 23:55:07.968
+  - generic: "2026-10-04T23:55:07.931006544Z stdout F #13 1.623 test_read_only_worker_cannot_mutate_capture (test_observer.Tests.test_read_only_worker_cannot_mutate_capture) ... ok"
+  - generic: 04 Oct 23:55:07.968
+  - generic: "2026-10-04T23:55:07.816348379Z stdout F #13 1.590 test_premium_zero_variance_and_short_baseline_unavailable (test_observer.Tests.test_premium_zero_variance_and_short_baseline_unavailable) ... ok"
+  - generic: 04 Oct 23:55:07.968
+  - generic: "2026-10-04T23:55:07.816346263Z stdout F #13 1.533 test_premium_previous_1440_ddof_one_current_excluded (test_observer.Tests.test_premium_previous_1440_ddof_one_current_excluded) ... ok"
+  - generic: 04 Oct 23:55:07.968
+  - generic: "2026-10-04T23:55:07.816314334Z stdout F #13 1.502 test_partial_surface_restart_does_not_skip_remaining_symbols (test_observer.Tests.test_partial_surface_restart_does_not_skip_remaining_symbols) ... ok"
+  - generic: 04 Oct 23:55:07.717
+  - generic: "2026-10-04T23:55:07.695996034Z stdout F #13 1.392 test_outcomes_only_after_endpoint_complete_and_received (test_observer.Tests.test_outcomes_only_after_endpoint_complete_and_received) ... ok"
+  - generic: 04 Oct 23:55:07.717
+  - generic: "2026-10-04T23:55:07.695968549Z stdout F #13 1.361 test_linux_separation_cannot_be_replaced_by_windows_chmod (test_observer.Tests.test_linux_separation_cannot_be_replaced_by_windows_chmod) ... ok"
+  - generic: 04 Oct 23:55:07.717
+  - generic: "2026-10-04T23:55:07.554540289Z stdout F #13 1.076 test_late_snapshot_never_rewritten_or_backfilled (test_observer.Tests.test_late_snapshot_never_rewritten_or_backfilled) ... ok"
+  - generic: 04 Oct 23:55:07.466
+  - generic: "2026-10-04T23:55:07.419980307Z stdout F #13 0.985 test_keyless_private_commit_and_safe_ack_crash_recovery (test_observer.Tests.test_keyless_private_commit_and_safe_ack_crash_recovery) ... ok"
+  - generic: 04 Oct 23:55:07.215
+  - generic: "2026-10-04T23:55:07.178351986Z stdout F #13 0.952 test_full_elapsed_time_alone_and_untrusted_proof_cannot_pass (test_observer.Tests.test_full_elapsed_time_alone_and_untrusted_proof_cannot_pass) ... ok"
+  - generic: 04 Oct 23:55:07.215
+  - generic: "2026-10-04T23:55:07.178350693Z stdout F #13 0.928 test_exact_nanosecond_deadline_and_forming_bar (test_observer.Tests.test_exact_nanosecond_deadline_and_forming_bar) ... ok"
+  - generic: 04 Oct 23:55:07.215
+  - generic: "2026-10-04T23:55:07.178341161Z stdout F #13 0.898 test_append_only_tables_reject_mutation (test_observer.Tests.test_append_only_tables_reject_mutation) ... ok"
+  - generic: 04 Oct 23:55:07.215
+  - generic: "2026-10-04T23:55:07.178309662Z stdout F #13 0.868 test_activation_requires_pass_and_first_correct_midnight (test_observer.Tests.test_activation_requires_pass_and_first_correct_midnight) ... ok"
+  - generic: 04 Oct 23:55:06.464
+  - generic: "2026-10-04T23:55:06.344762307Z stdout F #13 [stage-1 7/8] RUN python -m unittest test_observer -v && node fixture_parity.js && python keyless_runtime.py --self-test"
+  - generic: 04 Oct 23:55:06.464
+  - generic: 2026-10-04T23:55:06.344418373Z stdout F
+  - generic: 04 Oct 23:55:06.214
+  - generic: "2026-10-04T23:55:06.193128835Z stdout F #12 DONE 0.6s"
+  - generic: 04 Oct 23:55:05.964
+  - generic: "2026-10-04T23:55:05.776360358Z stdout F #12 [stage-1 6/8] COPY backtests/edge_validation_v1/prospective_observer/ ."
+  - generic: 04 Oct 23:55:05.964
+  - generic: 2026-10-04T23:55:05.775980656Z stdout F
+  - generic: 04 Oct 23:55:05.713
+  - generic: "2026-10-04T23:55:05.624202751Z stdout F #11 DONE 3.4s"
+  - generic: 04 Oct 23:55:05.713
+  - generic: "2026-10-04T23:55:05.57417083Z stdout F #11 3.222 [notice] To update, run: pip install --upgrade pip"
+  - generic: 04 Oct 23:55:05.713
+  - generic: "2026-10-04T23:55:05.574168382Z stdout F #11 3.222 [notice] A new release of pip is available: 25.0.1 -> 26.2.1"
+  - generic: 04 Oct 23:55:05.713
+  - generic: "2026-10-04T23:55:05.574165233Z stdout F #11 3.222"
+  - generic: 04 Oct 23:55:05.713
+  - text: "2026-10-04T23:55:05.574131435Z stdout F #11 3.130 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead:"
+  - link "https://pip.pypa.io/warnings/venv.":
+    - /url: https://pip.pypa.io/warnings/venv.
+  - text: Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+  - generic: 04 Oct 23:55:05.463
+  - generic: "2026-10-04T23:55:05.331218624Z stdout F #11 3.129 Successfully installed pyarrow-25.0.1"
+  - generic: 04 Oct 23:55:04.710
+  - generic: "2026-10-04T23:55:04.464440632Z stdout F #11 2.112 Installing collected packages: pyarrow"
+  - generic: 04 Oct 23:55:04.460
+  - generic: "2026-10-04T23:55:04.268125023Z stdout F #11 2.066 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 50.1/50.1 MB 149.4 MB/s eta 0:00:00"
+  - generic: 04 Oct 23:55:04.210
+  - generic: "2026-10-04T23:55:04.056182551Z stdout F #11 1.704 Downloading pyarrow-25.0.1-cp312-cp312-manylinux_2_28_x86_64.whl (50.1 MB)"
+  - generic: 04 Oct 23:55:04.210
+  - generic: "2026-10-04T23:55:04.055788005Z stdout F #11 1.696 Downloading pyarrow-25.0.1-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (3.0 kB)"
+  - generic: 04 Oct 23:55:03.960
+  - generic: "2026-10-04T23:55:03.839345964Z stdout F #11 1.638 Collecting pyarrow==25.0.1 (from -r requirements.txt (line 1))"
+  - generic: 04 Oct 23:55:02.456
+  - generic: "2026-10-04T23:55:02.35223914Z stdout F #11 [stage-1 5/8] RUN pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --no-create-home capture && useradd --uid 10002 --no-create-home outcomes && useradd --uid 10003 --no-create-home status"
+  - generic: 04 Oct 23:55:02.456
+  - generic: 2026-10-04T23:55:02.351910366Z stdout F
+  - generic: 04 Oct 23:55:02.205
+  - generic: "2026-10-04T23:55:02.200421971Z stdout F #10 DONE 0.3s"
+  - generic: 04 Oct 23:55:02.205
+  - generic: "2026-10-04T23:55:02.054077528Z stdout F #10 [stage-1 4/8] COPY backtests/edge_validation_v1/prospective_observer/requirements.txt ."
+  - generic: 04 Oct 23:55:02.205
+  - generic: 2026-10-04T23:55:02.05403154Z stdout F
+  - generic: 04 Oct 23:55:01.955
+  - generic: "2026-10-04T23:55:01.900755949Z stdout F #9 DONE 0.3s"
+  - generic: 04 Oct 23:55:01.955
+  - generic: "2026-10-04T23:55:01.752507554Z stdout F #9 [stage-1 3/8] WORKDIR /observer"
+  - generic: 04 Oct 23:55:01.955
+  - generic: 2026-10-04T23:55:01.752211695Z stdout F
+  - generic: 04 Oct 23:55:01.705
+  - generic: "2026-10-04T23:55:01.600360323Z stdout F #8 DONE 0.3s"
+  - generic: 04 Oct 23:55:01.454
+  - generic: "2026-10-04T23:55:01.319648323Z stdout F #8 [stage-1 2/8] COPY --from=node /usr/local/bin/node /usr/local/bin/node"
+  - generic: 04 Oct 23:55:01.454
+  - generic: 2026-10-04T23:55:01.319271338Z stdout F
+  - generic: 04 Oct 23:55:01.454
+  - generic: "2026-10-04T23:55:01.218081265Z stdout F #7 DONE 3.3s"
+  - generic: 04 Oct 23:55:01.454
+  - generic: "2026-10-04T23:55:01.218068424Z stdout F #7 extracting sha256:dc40c63c08b5453854c13da6d72b3182737b2e223156b786c67779e0d6f4e8e0 0.3s done"
+  - generic: 04 Oct 23:55:01.204
+  - generic: "2026-10-04T23:55:01.059169976Z stdout F #7 extracting sha256:dc40c63c08b5453854c13da6d72b3182737b2e223156b786c67779e0d6f4e8e0"
+  - generic: 04 Oct 23:55:01.204
+  - generic: "2026-10-04T23:55:01.059147557Z stdout F #7 [node 1/1] FROM docker.io/library/node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c"
+  - generic: 04 Oct 23:55:01.204
+  - generic: 2026-10-04T23:55:01.057540235Z stdout F
+  - generic: 04 Oct 23:55:00.954
+  - generic: "2026-10-04T23:55:00.907422263Z stdout F #7 DONE 3.0s"
+  - generic: 04 Oct 23:55:00.954
+  - generic: "2026-10-04T23:55:00.907365466Z stdout F #7 extracting sha256:8d9d84ee31888adba85837fbf8f0e6eca99263904b2ba04d79e7d4fc1da40056 0.5s done"
+  - generic: 04 Oct 23:55:00.703
+  - generic: "2026-10-04T23:55:00.602629366Z stdout F #7 extracting sha256:8d9d84ee31888adba85837fbf8f0e6eca99263904b2ba04d79e7d4fc1da40056"
+  - generic: 04 Oct 23:55:00.703
+  - generic: "2026-10-04T23:55:00.602616601Z stdout F #7 [node 1/1] FROM docker.io/library/node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c"
+  - generic: 04 Oct 23:55:00.703
+  - generic: 2026-10-04T23:55:00.602575395Z stdout F
+  - generic: 04 Oct 23:55:00.453
+  - generic: "2026-10-04T23:55:00.45150996Z stdout F #7 DONE 2.6s"
+  - generic: 04 Oct 23:55:00.453
+  - generic: "2026-10-04T23:55:00.451508674Z stdout F #7 extracting sha256:61592f5b60306b96e5208206668cdf0fa62d3cda3a3baeed26efdcd1a21aaba5 1.0s done"
+  - generic: 04 Oct 23:55:00.453
+  - generic: "2026-10-04T23:55:00.451504247Z stdout F #7 [node 1/1] FROM docker.io/library/node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c"
+  - generic: 04 Oct 23:55:00.453
+  - generic: 2026-10-04T23:55:00.449988511Z stdout F
+  - generic: 04 Oct 23:55:00.453
+  - generic: "2026-10-04T23:55:00.331059205Z stdout F #5 DONE 2.5s"
+  - generic: 04 Oct 23:55:00.453
+  - generic: "2026-10-04T23:55:00.33105814Z stdout F #5 extracting sha256:59fc966a4f9d30ea2c9c65a11edd7670cfd41fe7f820f39793b2f2679d7bd47f 0.3s done"
+  - generic: 04 Oct 23:55:00.453
+  - generic: "2026-10-04T23:55:00.331056228Z stdout F #5 [stage-1 1/8] FROM docker.io/library/python:3.12-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3"
+  - generic: 04 Oct 23:55:00.453
+  - generic: 2026-10-04T23:55:00.331051029Z stdout F
+  - generic: 04 Oct 23:55:00.453
+  - generic: "2026-10-04T23:55:00.330617765Z stdout F #7 ..."
+  - generic: 04 Oct 23:55:00.201
+  - generic: "2026-10-04T23:55:00.078429295Z stdout F #7 [node 1/1] FROM docker.io/library/node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c"
+  - generic: 04 Oct 23:55:00.201
+  - generic: 2026-10-04T23:55:00.07842547Z stdout F
+  - list:
+    - link "Home":
+      - /url: https://northflank.com
+    - text: "|"
+    - link "Docs":
+      - /url: https://northflank.com/docs
+    - text: "|"
+    - link "Changelog":
+      - /url: https://northflank.com/changelog
+    - text: "|"
+    - link "Blog":
+      - /url: https://northflank.com/blog
+    - text: "|"
+  - link "All services normal":
+    - /url: https://status.northflank.com
+    - generic: All services normal
+- region "Harness dock":
+  - button "Collapse harness bar":
+  - button "My Harnesses":
+    - generic: My Harnesses
+  - button "New harness":
+    - generic: New
+- alert
+- alert

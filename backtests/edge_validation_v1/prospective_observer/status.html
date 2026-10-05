@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orayan Research Capture</title>
+<style>body{font:15px system-ui;background:#101822;color:#e7edf5;max-width:850px;margin:40px auto;padding:20px}h1{font-size:22px}.tag{color:#a8c5e7}dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#182635;padding:24px;border-radius:12px}dd{margin:0;overflow-wrap:anywhere}dt{color:#aebed1}small{color:#aebed1}</style>
+<h1>Prospective research capture</h1><p class="tag">PAPER · Research only · Execution disabled</p><dl id="status"><dt>Observer</dt><dd>Loading</dd></dl>
+<small>Validation operations only. Cohort activation requires a successful 24-hour audit and a committed activation receipt.</small>
+<script>
+const fields={observerStatus:'Observer',preregistrationHash:'Preregistration hash',universeHash:'Universe hash',readinessState:'Readiness',completedReadinessHours:'Completed hours / 24',attemptedRequiredRecords:'Attempted required records',acceptedRequiredRecords:'Accepted required records',skippedRequiredRecords:'Skipped required records',strictUnavailableSurfaces:'Late or unavailable surfaces',strictUnavailableSurfaceRate:'Strict deadline failure fraction',unresolvedRefs:'Unresolved references',outcomeSealStatus:'Outcome seal',actualCohortStart:'Actual cohort start',currentUtcHour:'Current UTC hour'};
+async function refresh(){try{const r=await fetch('/status');if(!r.ok)throw Error('Status unavailable');const s=await r.json();const el=document.querySelector('#status');el.replaceChildren();for(const[k,label]of Object.entries(fields)){const a=document.createElement('dt'),b=document.createElement('dd');a.textContent=label;b.textContent=s[k]===null?'null':String(s[k]);if(k==='completedReadinessHours')b.textContent+=' / 24';el.append(a,b);}}catch(e){document.querySelector('#status').textContent=e.message;}}refresh();setInterval(refresh,30000);
+</script></html>

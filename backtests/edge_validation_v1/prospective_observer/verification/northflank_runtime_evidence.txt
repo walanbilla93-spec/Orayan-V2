@@ -1,0 +1,292 @@
+- banner:
+  - link "Jump to project navigation":
+    - /url: "#project-navigation"
+  - link "Jump to main content":
+    - /url: "#content"
+  - link "Northflank Cloud Platform logo, to the homepage":
+    - /url: /t/black-viper9275s-team
+    - img "Northflank Cloud Platform logo, to the homepage"
+  - 'link "Current team: Black-viper9275''s Team"':
+    - /url: /t/black-viper9275s-team
+    - generic: BT
+    - generic: "Current team:"
+    - generic: Black-viper9275's Team
+  - button "Select a team…":
+    - img "Select a team…"
+  - 'link "Current project: Orayan V2 Free"':
+    - /url: /t/black-viper9275s-team/project/orayan-v2
+    - generic: "Current project:"
+    - generic: Orayan V2
+    - generic: Free
+  - button "Select a project…":
+    - img "Select a project…"
+  - link "Upgrade":
+    - /url: /t/black-viper9275s-team/billing/plans
+    - generic: Upgrade
+  - button "Search Search":
+    - img "Search"
+    - generic: Search Ctrl+K
+  - button "Support Support":
+    - img "Support"
+    - generic: Support
+  - button "New navigation Try the new nav":
+    - img "New navigation"
+    - generic: Try the new nav
+  - button "Amila Prabath":
+    - generic: AP
+    - generic: Amila Prabath
+- navigation "Project navigation":
+  - heading "Project navigation" [level=1]
+  - list:
+    - link "Environments":
+      - /url: /t/black-viper9275s-team/project/orayan-v2
+      - generic: Environments
+    - link "Harnesses":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/harnesses
+      - generic: Harnesses
+    - link "Services":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/services
+      - generic: Services
+    - link "Jobs":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/jobs
+      - generic: Jobs
+    - link "Volumes":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/volumes
+      - generic: Volumes
+    - link "Addons":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/addons
+      - generic: Addons
+    - link "Secrets":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/secrets
+      - generic: Secrets
+    - link "Templates":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/templates
+      - generic: Templates
+  - list:
+    - generic: No template
+    - link "Project template":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/view-template
+      - generic: Project template
+    - link "Project settings":
+      - /url: /t/black-viper9275s-team/project/orayan-v2/settings
+      - generic: Project settings
+- main:
+  - generic: orayan-edge-observer-v1
+  - button "Not selected as favourite. Click to add.":
+    - img "Not selected as favourite. Click to add."
+  - generic: Free
+  - generic: "Job ID:"
+  - generic: orayan-edge-observer-v1
+  - button:
+  - paragraph: Add a description
+  - button "Add tags":
+    - generic: Add tags
+  - text: Europe - West
+  - generic: (London)
+  - generic: Northflank
+  - link "walanbilla93-spec/Orayan-V2":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2
+    - generic: walanbilla93-spec/Orayan-V2
+  - link "feature/orayan-edge-validation-observer-v1":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2/tree/feature/orayan-edge-validation-observer-v1
+    - generic: feature/orayan-edge-validation-observer-v1
+  - link:
+    - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/build-options
+  - link "26745b6 26745b6dfbf560d8023c8ed550d11bf9fc6e27c3":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2/commit/26745b6dfbf560d8023c8ed550d11bf9fc6e27c3
+    - generic: 26745b6
+    - generic: 26745b6dfbf560d8023c8ed550d11bf9fc6e27c3
+    - button:
+  - generic: Success
+  - generic: CI
+  - checkbox "CI"
+  - generic "Use latest build":
+    - generic: CD
+    - checkbox "CD" [checked]
+  - button:
+  - button:
+  - button "View more":
+    - img "View more"
+  - navigation "Job navigation":
+    - heading "Job navigation" [level=2]
+    - list:
+      - link "Overview":
+        - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1
+        - paragraph: Overview
+      - heading "Job" [level=3]
+      - list:
+        - link "Observe":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/observe
+          - paragraph: Observe
+        - link "Runs":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/runs
+          - paragraph: Runs
+        - link "Settings":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/settings
+          - paragraph: Settings
+      - heading "Run" [level=3]
+      - list:
+        - link "Volumes":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/volumes
+          - paragraph: Volumes
+        - link "Resources":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/resources
+          - paragraph: Resources
+        - link "Environment":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/environment
+          - paragraph: Environment
+        - link "Health checks":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/health-checks
+          - paragraph: Health checks
+        - link "CMD override":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/cmd-override
+          - paragraph: CMD override
+        - link "Workload identities":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/workload-identities
+          - paragraph: Workload identities
+      - heading "Code" [level=3]
+      - list:
+        - link "Builds":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/builds
+          - paragraph: Builds
+        - link "Build options":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/build-options
+          - paragraph: Build options
+        - link "Build arguments":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/parameters
+          - paragraph: Build arguments
+        - link "Commits":
+          - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/commits
+          - paragraph: Commits
+      - link "Billing":
+        - /url: /t/black-viper9275s-team/project/orayan-v2/jobs/orayan-edge-observer-v1/billing
+        - paragraph: Billing
+  - generic: "Selected :"
+  - heading "Observe" [level=2]
+  - generic: /
+  - 'button "Selected run: orayan-edge-observer-v1 -6ac2ebde6d10c4aea40cf593"':
+    - generic: "Selected run:"
+    - generic: orayan-edge-observer-v1
+    - generic: "-6ac2ebde6d10c4aea40cf593"
+  - generic: /
+  - 'button "Selected instance: 1 instance"':
+    - generic: "Selected instance:"
+    - generic: 1 instance
+  - button "Fullscreen":
+    - img "Fullscreen"
+  - generic: Run "orayan-edge-observer-v1-6ac2ebde6d10c4aea40cf593" metadata
+  - generic: Success
+  - img "Started"
+  - generic: a minute ago
+  - img "Finished"
+  - generic: a minute ago
+  - img "Duration"
+  - generic: 00m 09s / 10m 00s
+  - button "Hide additional detail":
+    - img "Hide additional detail"
+  - img "Run ID"
+  - generic: 33562d2e-f006-45e7-8e24-f103c21a56a2
+  - img "Trigger"
+  - generic: Manual
+  - img "Last update"
+  - generic: a minute ago
+  - generic: Active
+  - generic: 0 / 1
+  - generic: Failed
+  - generic: 0 / 0
+  - img "Deployment plan"
+  - generic: nf-compute-20
+  - img "CMD override"
+  - generic: python keyless_runtime.py --self-test
+  - button:
+  - generic: Instance "orayan-edge-observer-v1-6ac2ebde6d10c4aea40cf593-xwrb6" metadata
+  - generic: Finished
+  - img "Started"
+  - generic: a minute ago
+  - img "Finished"
+  - generic: a minute ago
+  - img "Duration"
+  - generic: 00m 08s
+  - img "Resources"
+  - generic: 0.2 vCPU / 512 MB
+  - img "Repository"
+  - link "walanbilla93-spec/Orayan-V2":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2
+  - img "Branch"
+  - generic: feature/orayan-edge-validation-observer-v1
+  - button:
+  - img "Commit hash"
+  - link "26745b6":
+    - /url: https://github.com/walanbilla93-spec/Orayan-V2/commit/26745b6dfbf560d8023c8ed550d11bf9fc6e27c3
+  - generic: 26745b6dfbf560d8023c8ed550d11bf9fc6e27c3
+  - button:
+  - img "Commit message"
+  - generic: Compress lossless observer WAL and stream immutable snapshot verification
+  - button "Hide additional detail" [active]:
+    - img "Hide additional detail"
+  - button "Terminate" [disabled]:
+    - generic: Terminate
+  - button "Metrics":
+    - generic: Metrics
+  - button "Logs":
+    - generic: Logs
+  - button "Health":
+    - generic: Health
+  - button "Events":
+    - generic: Events
+  - button "Shell" [disabled]:
+    - generic: Shell
+  - generic: Connection
+  - text: Custom range (UTC)
+  - textbox
+  - textbox:
+    - /placeholder: Select a date
+    - text: 2026-10-05T00:12
+  - textbox:
+    - /placeholder: Select a date
+    - text: 2026-10-05T00:16
+  - button "Range already focused around selected pod" [disabled]:
+  - generic: Search logs
+  - textbox "Search logs == != ABC (.*) Search":
+    - /placeholder: Search logs
+  - button "=="
+  - button "!="
+  - button "ABC"
+  - button "(.*)"
+  - button "Search":
+    - img "Search"
+  - generic: Returned 5 lines
+  - generic: Newest on top
+  - generic: Newest on bottom
+  - generic: 05 Oct 00:14:29.291
+  - generic: 2026-10-05T00:14:29.118594296Z stdout F [2026-10-05T00:14:29Z INFO ] Process terminated with exit code 0
+  - generic: 05 Oct 00:14:29.040
+  - generic: "2026-10-05T00:14:29.028535694Z stdout F {\"outcomeIsolation\": {\"status\": \"PASS\", \"observerImplementationHash\": \"48f8a796218073c1e0283e0997be1741007792ab4e7b8bf6177c70a0c9245bf3\", \"sealMode\": \"OS_ACCESS_SEPARATION_V1\", \"captureUid\": 10001, \"outcomeUid\": 10002, \"statusUid\": 10003, \"checks\": {\"captureCannotReadOutcomes\": true, \"statusCannotReadOutcomes\": true, \"statusCannotReadCapture\": true, \"outcomesCannotWriteCapture\": true, \"outcomesCanReadCapture\": true, \"outcomesCanReadOwnArchive\": true, \"statusCannotWriteReceiptWAL\": true, \"captureCannotWriteReceiptWAL\": true, \"outcomesReadLiveSQLiteWAL\": true}, \"hypothesisResearcherRole\": \"status/capture; private outcomes inaccessible\", \"noKeysOrPasswords\": true, \"cloudAdministratorCustody\": true, \"checkedAt\": 1791159269012}}"
+  - generic: 05 Oct 00:14:27.787
+  - generic: 2026-10-05T00:14:26.484135022Z stdout F [2026-10-05T00:14:26Z INFO ] Starting container entrypoint...
+  - generic: 05 Oct 00:14:27.787
+  - generic: 2026-10-05T00:14:26.483464479Z stdout F [2026-10-05T00:14:26Z INFO ] Successfully fetched environment variables
+  - generic: 05 Oct 00:14:27.768
+  - generic: 2026-10-05T00:14:26.435153269Z stdout F [2026-10-05T00:14:26Z INFO ] Securely fetching environment variables
+  - list:
+    - link "Home":
+      - /url: https://northflank.com
+    - text: "|"
+    - link "Docs":
+      - /url: https://northflank.com/docs
+    - text: "|"
+    - link "Changelog":
+      - /url: https://northflank.com/changelog
+    - text: "|"
+    - link "Blog":
+      - /url: https://northflank.com/blog
+    - text: "|"
+  - link "All services normal":
+    - /url: https://status.northflank.com
+    - generic: All services normal
+- region "Harness dock":
+  - button "Collapse harness bar":
+  - button "My Harnesses":
+    - generic: My Harnesses
+  - button "New harness":
+    - generic: New

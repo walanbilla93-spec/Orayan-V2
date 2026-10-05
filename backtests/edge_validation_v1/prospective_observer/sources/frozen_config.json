@@ -1,0 +1,3199 @@
+{
+  "version": "ORAYAN_HISTORICAL_BASELINE_V1",
+  "database": "C:\\Users\\walan\\OneDrive\\Desktop\\New folder (4)\\Trade Data\\Orayan Backtest Database",
+  "source_revision": "5eb0262e51747d76879d85eac877eec3ced0531a",
+  "spreads_bps": [
+    2,
+    5,
+    10,
+    20
+  ],
+  "no_tuning": true,
+  "decision_schedule": "Each complete UTC 15m bar close + 1ms; next full minute fill via literal ceil; fixed timing scenario.",
+  "price_scenario": "Last completed 1m mark close; fallback unavailable rejects. Not historical mark-at-scan or bid/ask.",
+  "spread_semantics": "DECISION_QUOTE_ONLY_GRID: synthetic decision bid/ask = causal reference*(1 +/- spread_bps/20000). Source simulator uses unmodified last-trade 1m bars for fills/exits and its literal 3bps modeled market entry/stop slippage. V2 resting-limit fill has no market entry slippage. No historical fill bid/ask is inferred and no extra spread cash fee is added. This preserves source semantics; grid is sensitivity to decision geometry, not total round-trip spread costs.",
+  "engineering_revision": "Pre-analysis correction: discard initial research partitions that incorrectly used entry-side spread for exits. Revised spread definition frozen before any broad performance aggregation. No strategy parameter changed.",
+  "cap_definition": "Prior analysis cost-inclusive 2R target applied AFTER original-objective decision/fill >=2 costRR screen; BUY floor((2*loss + E + E*entryFee)/(1-exitFee)); SELL ceil((E-E*entryFee-2*loss)/(1+exitFee)). Funding separate.",
+  "equal_risk": "Actual source downward lots/notional caps retained; arms limited to hypothetical control planned cash risk. Also report fixed .5*netR separately; never confuse capped cash with normalized cash.",
+  "v2_execution": "Import executor.createPendingOrder and stepPaperTrade directly, shim candle fetch to completed local executable scenario bars and virtual minute clock; preserve native unrounded TP, raw-risk sizing, maker/taker fees, stop-first and source gap/expiry behavior. Source V2 omits funding; V2_FUNDING_SENSITIVITY adds frozen V3 funding model separately.",
+  "source_tests": "v33/v34/v34b/captureHardening; source Git-history fingerprint test separately replaced by audit SHA checks on snapshot.",
+  "instruments": {
+    "1000BONKUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 100.0,
+      "minOrderQty": 100.0,
+      "maxOrderQty": 60000000.0
+    },
+    "1000PEPEUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 100.0,
+      "minOrderQty": 100.0,
+      "maxOrderQty": 110000000.0
+    },
+    "AAPLUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 8000.0
+    },
+    "AAVEUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 1200.0
+    },
+    "ADAUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 1500000.0
+    },
+    "AEROUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 300000.0
+    },
+    "AKEUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 100.0,
+      "minOrderQty": 100.0,
+      "maxOrderQty": 30000000.0
+    },
+    "ALGOUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 800000.0
+    },
+    "APTUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 800000.0
+    },
+    "ARBUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 21500000.0
+    },
+    "ARKUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 420000.0
+    },
+    "ARUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 26880.0
+    },
+    "ARXUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 116620.0
+    },
+    "ASTERUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 315000.0
+    },
+    "ATOMUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 139180.0
+    },
+    "AVAUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 50000.0
+    },
+    "AVAXUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 110000.0
+    },
+    "AZTECUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 7350000.0
+    },
+    "BCHUSDT": {
+      "tickSize": 0.1,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 6500.0
+    },
+    "BERAUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 240000.0
+    },
+    "BROCCOLIUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 6500000.0
+    },
+    "BRUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 450000.0
+    },
+    "BTCUSDT": {
+      "tickSize": 0.1,
+      "qtyStep": 0.001,
+      "minOrderQty": 0.001,
+      "maxOrderQty": 1500.0
+    },
+    "BTWUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 3005000.0
+    },
+    "BZUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 12000.0
+    },
+    "CAPUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 2054000.0
+    },
+    "CASHCATUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 568000.0
+    },
+    "CCUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 800000.0
+    },
+    "CHIPUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 4000000.0
+    },
+    "CLUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 40000.0
+    },
+    "COTIUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 2218600.0
+    },
+    "CRCLUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 16000.0
+    },
+    "CRVUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 1198590.0
+    },
+    "CTUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 238080.0
+    },
+    "DASHUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 8000.0
+    },
+    "DELLUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 800.0
+    },
+    "DOGEUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 43678900.0
+    },
+    "DOTUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 198890.0
+    },
+    "DRAMUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 27200.0
+    },
+    "ENAUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 3500000.0
+    },
+    "ETHFIUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 500000.0
+    },
+    "ETHUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 10000.0
+    },
+    "FARTCOINUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 3000000.0
+    },
+    "FFUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 2250000.0
+    },
+    "FILUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 295750.0
+    },
+    "FLOCKUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 1100000.0
+    },
+    "FUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 25000000.0
+    },
+    "GENIUSUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 198300.0
+    },
+    "GOOGLUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 4000.0
+    },
+    "GRASSUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 465000.0
+    },
+    "GRIFFAINUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 5000000.0
+    },
+    "HBARUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 7416400.0
+    },
+    "HOODUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 8000.0
+    },
+    "HYPEUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 73500.0
+    },
+    "ICPUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 100510.0
+    },
+    "INJUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 60140.0
+    },
+    "INTCUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 10400.0
+    },
+    "IOSTUSDT": {
+      "tickSize": 1e-07,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 61500000.0
+    },
+    "JTOUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 650000.0
+    },
+    "JUPUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 790000.0
+    },
+    "KASUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 23000000.0
+    },
+    "KORUUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 80000.0
+    },
+    "LDOUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 436640.0
+    },
+    "LINKUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 41000.0
+    },
+    "LITUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 200000.0
+    },
+    "LONGXIAUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 720960.0
+    },
+    "LSKUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 200000.0
+    },
+    "LTCUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 8800.0
+    },
+    "LUNA2USDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 453060.0
+    },
+    "MAGMAUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 275000.0
+    },
+    "MANAUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 650000.0
+    },
+    "MARSCOINUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 1348000.0
+    },
+    "MEGAUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 2600000.0
+    },
+    "METUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 1000000.0
+    },
+    "MINAUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 677640.0
+    },
+    "MNTUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 250000.0
+    },
+    "MONUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 20000000.0
+    },
+    "MOVRUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 60000.0
+    },
+    "MSTRUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 5000.0
+    },
+    "MUBARAKUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 2300000.0
+    },
+    "MUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 112000.0
+    },
+    "MUUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 4000.0
+    },
+    "MUUUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 8000.0
+    },
+    "NEARUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 469060.0
+    },
+    "NIGHTUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 1600000.0
+    },
+    "NILUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 1550000.0
+    },
+    "NIULAIUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 3265000.0
+    },
+    "NOMUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 15000000.0
+    },
+    "NVDAUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 8000.0
+    },
+    "ONDOUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 4500000.0
+    },
+    "OPUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 1080000.0
+    },
+    "PENDLEUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 130000.0
+    },
+    "PENGUUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 60000000.0
+    },
+    "PHAUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 500000.0
+    },
+    "POLUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 2500000.0
+    },
+    "PONSUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 305680.0
+    },
+    "PUMPFUNUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 100.0,
+      "minOrderQty": 100.0,
+      "maxOrderQty": 135000000.0
+    },
+    "QNTUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 2600.0
+    },
+    "QUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 700000.0
+    },
+    "RAYDIUMUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 24000.0
+    },
+    "RENDERUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 500000.0
+    },
+    "REZUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 9000000.0
+    },
+    "RUNEUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 183030.0
+    },
+    "SAGAUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 1250000.0
+    },
+    "SANDUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 2086500.0
+    },
+    "SEIUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 5000000.0
+    },
+    "SHIB1000USDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 134076000.0
+    },
+    "SKHYNIXUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.001,
+      "minOrderQty": 0.001,
+      "maxOrderQty": 2400.0
+    },
+    "SKHYUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 9200.0
+    },
+    "SNDKUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 1600.0
+    },
+    "SNXXUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 20000.0
+    },
+    "SOLUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 96000.0
+    },
+    "SOONUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 600000.0
+    },
+    "SOXLUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 20000.0
+    },
+    "SOXSUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 7700.0
+    },
+    "SPXUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 350000.0
+    },
+    "STEEMUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 1500000.0
+    },
+    "STRKUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 6000000.0
+    },
+    "STXUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 589260.0
+    },
+    "SUIUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 10.0,
+      "minOrderQty": 10.0,
+      "maxOrderQty": 330000.0
+    },
+    "TAOUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.001,
+      "minOrderQty": 0.001,
+      "maxOrderQty": 4900.0
+    },
+    "TIAUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 1000000.0
+    },
+    "TRUMPUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 40000.0
+    },
+    "TSLAUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 8000.0
+    },
+    "UAIUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 475000.0
+    },
+    "UNIUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 32000.0
+    },
+    "USELESSUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 2500000.0
+    },
+    "VIRTUALUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 1000000.0
+    },
+    "VVVUSDT": {
+      "tickSize": 0.001,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 50000.0
+    },
+    "WIFUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 1500000.0
+    },
+    "WLDUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 1850000.0
+    },
+    "WLFIUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 12000000.0
+    },
+    "XAGUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.001,
+      "minOrderQty": 0.001,
+      "maxOrderQty": 62000.0
+    },
+    "XAIUSDT": {
+      "tickSize": 1e-06,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 6500000.0
+    },
+    "XAUUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.001,
+      "minOrderQty": 0.001,
+      "maxOrderQty": 500.0
+    },
+    "XLMUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 730000.0
+    },
+    "XMRUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 1920.0
+    },
+    "XPLUSDT": {
+      "tickSize": 1e-05,
+      "qtyStep": 1.0,
+      "minOrderQty": 1.0,
+      "maxOrderQty": 3500000.0
+    },
+    "XRPUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 7500000.0
+    },
+    "ZECUSDT": {
+      "tickSize": 0.01,
+      "qtyStep": 0.01,
+      "minOrderQty": 0.01,
+      "maxOrderQty": 5500.0
+    },
+    "ZROUSDT": {
+      "tickSize": 0.0001,
+      "qtyStep": 0.1,
+      "minOrderQty": 0.1,
+      "maxOrderQty": 210000.0
+    }
+  },
+  "settings": {
+    "tradingEnabled": true,
+    "mode": "paper",
+    "testnet": false,
+    "scanIntervalSec": 15,
+    "dualEngines": false,
+    "maxPerEngine": 10,
+    "activeEngine": "TREND",
+    "timeframe": "15",
+    "logLevel": "info",
+    "universeSize": 100,
+    "symbolWhitelist": "",
+    "symbolBlacklist": "",
+    "universeRefreshMin": 30,
+    "gateScoreBandEnabled": true,
+    "scoreBandLo": 40,
+    "scoreBandHi": 80,
+    "gateTurnoverEnabled": true,
+    "minTurnover24h": 1000000,
+    "gateTurnoverCeilingEnabled": false,
+    "maxTurnover24h": 4000000,
+    "gateSymbolExpectancyEnabled": true,
+    "symbolStatsWindow": 6,
+    "symbolStatsMinTrades": 3,
+    "symbolBlockMin": 720,
+    "symbolMaxBlockMin": 4320,
+    "symbolParoleTrades": 2,
+    "gateRREnabled": true,
+    "minRR": 2,
+    "maxRR": 3,
+    "gateCostFloorEnabled": false,
+    "costFloorMultiple": 2.5,
+    "gateSlDistEnabled": true,
+    "minSlDistPct": 2.1,
+    "maxSlDistPct": 4.1,
+    "gateBtcRegimeEnabled": true,
+    "gateVolumeEnabled": false,
+    "minVolRatio": 1.25,
+    "gateFundingEnabled": false,
+    "fundingBuyMax": 5e-05,
+    "fundingSellMin": -2e-05,
+    "gateSpreadEnabled": true,
+    "maxSpreadPct": 0.06,
+    "minLevelTouches": 2,
+    "requireStrongBreak": false,
+    "rejectFailedBreak": false,
+    "minTrendStrength": 12,
+    "minAtrPct": 0.25,
+    "trendTargetR": 2,
+    "structureTargetR": 2,
+    "bosOnly": false,
+    "pivotWidth": 2,
+    "entryWindowMin": 60,
+    "chaseMissedMove": false,
+    "maxHoldMin": 480,
+    "entryBufferBps": 1,
+    "tpThroughBps": 1,
+    "slSlipBps": 3,
+    "riskUsdtPerTrade": 0.5,
+    "leverage": 10,
+    "maxOpenPositions": 10,
+    "maxPerDirection": 6,
+    "maxNotionalUsdt": 50,
+    "takerFeePct": 0.055,
+    "makerFeePct": 0.02,
+    "cbEnabled": true,
+    "cbMaxConsecLosses": 10,
+    "cbDailyLossUsdt": 5,
+    "cbCooldownMin": 120,
+    "cbSymbolLossLockoutMin": 120
+  },
+  "segments": [
+    {
+      "symbol": "1000BONKUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "1000BONKUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "1000PEPEUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "1000PEPEUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AAPLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1777367040000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777547700000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AAPLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1777364760000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777545000000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AAVEUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AAVEUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ADAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ADAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AEROUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AEROUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AKEUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AKEUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ALGOUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ALGOUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "APTUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "APTUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ARBUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ARBUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ARKUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ARKUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ARUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ARUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ARXUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1782187800000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1782368100000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ARXUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1782187560000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1782368100000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ASTERUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ASTERUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ATOMUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ATOMUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AVAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AVAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AZTECUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1770882300000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1771062300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "AZTECUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1770881940000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1771062300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BCHUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BCHUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BERAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BERAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BROCCOLIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BROCCOLIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BRUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BRUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BTCUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BTCUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BTWUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1780648020000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1780828200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BTWUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1780647360000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1780828200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BZUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1778662500000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1778842800000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "BZUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1778662500000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1778842800000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CAPUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1782704400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1782884700000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CAPUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1782704160000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1782884700000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CASHCATUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1785924780000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1786104900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CASHCATUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1785924300000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1786104900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CCUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CCUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CHIPUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1776333600000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1776513600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CHIPUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1776333600000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1776513600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1774340040000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1774520100000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1774338720000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1774519200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "COTIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "COTIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CRCLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1778057880000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1778238000000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CRCLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1778057040000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1778237100000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CRVUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CRVUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CTUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1790846760000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1791027000000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "CTUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1790846040000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1791026100000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DASHUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DASHUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DELLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1780390320000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1780570800000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DELLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1780389720000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1780569900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DOTUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DOTUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DRAMUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1779183600000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1779363900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "DRAMUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1779183600000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1779363900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ENAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ENAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ETHFIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ETHFIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ETHUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ETHUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FARTCOINUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FARTCOINUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FFUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FFUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FILUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FILUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FLOCKUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FLOCKUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "FUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "GENIUSUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1776327240000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1776507300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "GENIUSUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1776327000000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1776507300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "GOOGLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1777278000000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777458600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "GOOGLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1777276860000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777457700000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "GRASSUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "GRASSUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "GRIFFAINUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "GRIFFAINUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "HBARUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "HBARUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "HOODUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1776849360000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777030200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "HOODUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1776848520000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777029300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "HYPEUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "HYPEUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ICPUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ICPUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "INJUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "INJUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "INTCUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1776849360000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777030200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "INTCUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1776848460000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777029300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "IOSTUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "IOSTUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "JTOUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "JTOUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "JUPUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "JUPUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "KASUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "KASUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "KORUUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1784112240000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1784292300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "KORUUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1784111760000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1784292300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LDOUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LDOUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LINKUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LINKUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LITUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1767102480000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767283200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LITUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1767090360000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767270600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LONGXIAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1789376760000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1789557300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LONGXIAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1789376580000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1789557300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LSKUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LSKUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LTCUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LTCUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LUNA2USDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "LUNA2USDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MAGMAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MAGMAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MANAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MANAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MARSCOINUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1788260040000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1788440400000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MARSCOINUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1788259320000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1788439500000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MEGAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MEGAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "METUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "METUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MINAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MINAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MNTUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MNTUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MONUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MONUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MOVRUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MOVRUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MSTRUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1777452120000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777632300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MSTRUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1777451100000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777631400000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MUBARAKUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MUBARAKUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MUUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1778144340000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1778324400000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MUUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1778143380000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1778323500000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MUUUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1784196300000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1784376900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "MUUUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1784195520000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1784376000000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NEARUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NEARUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NIGHTUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NIGHTUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NILUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NILUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NIULAIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1787902740000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1788083100000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NIULAIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1787902080000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1788082200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NOMUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NOMUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NVDAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1778058300000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1778238900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "NVDAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1778056740000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1778237100000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ONDOUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ONDOUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "OPUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "OPUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PENDLEUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PENDLEUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PENGUUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PENGUUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PHAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PHAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "POLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "POLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PONSUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1788169200000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1788349500000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PONSUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1788168900000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1788349500000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PUMPFUNUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "PUMPFUNUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "QNTUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "QNTUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "QUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "QUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "RAYDIUMUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "RAYDIUMUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "RENDERUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "RENDERUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "REZUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "REZUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "RUNEUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "RUNEUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SAGAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SAGAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SANDUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SANDUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SEIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SEIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SHIB1000USDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SHIB1000USDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1780543620000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1780723800000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SKHYNIXUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1780541160000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1780722000000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SKHYUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1783738680000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1783918800000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SKHYUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1783738440000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1783918800000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SNDKUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1777365540000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777545900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SNDKUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1777364880000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1777545000000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SNXXUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1784017620000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1784197800000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SNXXUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1784016660000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1784196900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SOLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SOLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SOONUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SOONUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1779183300000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1779363900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SOXLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1779183300000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1779363900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SOXSUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1784196840000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1784376900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SOXSUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1784196360000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1784376900000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SPXUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SPXUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "STEEMUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "STEEMUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "STRKUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "STRKUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "STXUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "STXUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SUIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "SUIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "TAOUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "TAOUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "TIAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "TIAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "TRUMPUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "TRUMPUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "TSLAUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1776775080000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1776955500000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "TSLAUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1776774300000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1776954600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "UAIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "UAIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "UNIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "UNIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "USELESSUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "USELESSUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "VIRTUALUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "VIRTUALUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "VVVUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "VVVUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "WIFUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "WIFUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "WLDUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "WLDUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "WLFIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "WLFIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XAGUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1773025140000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1773205200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XAGUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1773024840000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1773205200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XAIUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XAIUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XAUUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1773025080000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1773205200000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XAUUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1773023460000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1773204300000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XLMUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XLMUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XMRUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XMRUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XPLUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XPLUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XRPUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "XRPUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ZECUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ZECUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ZROUSDT",
+      "stream": "klines_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    },
+    {
+      "symbol": "ZROUSDT",
+      "stream": "mark_1m",
+      "contiguous_raw_start_ms": 1766966400000,
+      "contiguous_raw_end_exclusive_ms": 1791072000000,
+      "earliest_eligible_entry_ms": 1767225600000,
+      "last_eligible_entry_exclusive_ms": 1791043200000
+    }
+  ],
+  "split_sha256": "f460962a0dc052b47be4ad333e7d466341a04b351a97addcdc63c2f9b4b9f5e8",
+  "authoritative_audit_sha256": "cc62b48d5f5db5317ced7d4aa2b42a4b9fc2cd3b5bb6c9892f953712473925cc"
+}
