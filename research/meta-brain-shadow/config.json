@@ -1,0 +1,28 @@
+{
+  "schema_version": "orayan-shadow-1.0",
+  "shadow_only": true,
+  "execution_enabled": false,
+  "model_fold": 3,
+  "model_choice": "latest chronological frozen fold; no metric-based selection or refit",
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT"
+  ],
+  "depth": 50,
+  "book_snapshot_seconds": 1,
+  "rollup_seconds": [
+    1,
+    5,
+    60
+  ],
+  "healthy_seconds_before_boundary": 180,
+  "bootstrap_minutes": 6000,
+  "disk_stop_fraction": 0.75,
+  "minimum_free_bytes": 536870912,
+  "public_ws": "wss://stream.bybit.com/v5/public/linear",
+  "public_rest": "https://api.bybit.com",
+  "retention": "no automatic deletion; pause with durable gap at storage threshold",
+  "flow_backfill": false,
+  "base_plus_flow_model": null
+}

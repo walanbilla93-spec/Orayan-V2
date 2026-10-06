@@ -1,0 +1,13 @@
+# Active PostgreSQL storage design
+
+Dedicated free PostgreSQL 17 addon meta-brain-research-db in the existing orayan-v2 free project: 0.2 vCPU, 512 MiB RAM, 6 GB NVMe, private TLS. Free service meta-brain-shadow-v1 has no volume. Existing orayan-data remains attached only to min-service at /app/backend/data. No production changes and no RWO conflict.
+
+capture_chunks: compressed lossless JSONL BYTEA partitions keyed by UTC receipt hour/stream/symbol/UUID. Each row records SHA256, row count and first/last receipt times. Original trades preserve every received decimal/ID/side/sequence field; no raw trade sampling or deletion. Depth 50 is sampled each second, retaining levels and band summaries; raw book deltas are not archived and cannot support tick-level cancellation reconstruction. Derived 1s/5s/60s windows are separately namespaced. Bootstrap OHLC is a separate stream, excluded from prospective outcomes.
+
+Approximately one-second compressed microbatches use PostgreSQL synchronous_commit=on and atomic transactions. Buffers flush at 1 MiB; all source buffers are committed before a prediction/boundary/label insert. An abrupt process termination can lose a bounded uncommitted tail (normally at most one second, subject to scheduler/database stalls). Restart reports last durable receipt and an explicit gap, resets CVD and requires a new book snapshot. No claim of exchange completeness. A failed durable write stops capture, with no successful drop acknowledgment.
+
+Immutable tables: predictions, labels (FK attachment), boundary (single row), capture_chunks and capture_status. PostgreSQL UPDATE/DELETE triggers reject mutation. Unique observation IDs reject replacement. Single writer enforced with advisory lock. Boundary/config/commit hashes verified at every restart. Local /tmp/shadow-cache is only a regenerated manifest cache, never the authoritative ledger. Actual live OHLC is restored from durable chunks before bootstrap warmup.
+
+No automatic purge or raw rolling cap. Stop capture at 3 GiB pg_database_size, leaving about half the 6 GB disk for WAL and system headroom. Verify addon disk metrics separately. No paid autoscaling. Export and hash-verify partitions before separately authorized archival/cleanup. Long-run target raw >=12 months in verified archive and decisions/labels >=24 months; no external archive has been configured. Small storage cannot guarantee months of continuous capture. Forecast compressed growth from live measurements with burst margin.
+
+Northflank UI confirmed Free addon and 6 GB NVMe after creation; active incremental resource cost is $0 within the included free allowance. Standalone paid-volume proposal was superseded and was never provisioned.

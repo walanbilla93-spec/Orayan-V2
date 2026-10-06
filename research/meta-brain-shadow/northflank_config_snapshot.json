@@ -1,0 +1,17 @@
+{
+  "EXECUTION_ENABLED": "false",
+  "SHADOW_ONLY": "true",
+  "DEPLOYMENT_ENV": "northflank",
+  "SHADOW_STORAGE": "postgres",
+  "DATA_ROOT": "/tmp/shadow-cache",
+  "PORT": "8080",
+  "SHADOW_DEPLOYMENT_ID": "SET_AFTER_COMMIT",
+  "PGSSLMODE": "require",
+  "database_secret_links": {
+    "HOST": "PGHOST",
+    "PORT": "PGPORT",
+    "DATABASE": "PGDATABASE",
+    "USERNAME": "PGUSER",
+    "PASSWORD": "PGPASSWORD"
+  }
+}

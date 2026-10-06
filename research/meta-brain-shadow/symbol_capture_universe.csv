@@ -1,0 +1,4 @@
+symbol,tier,trades,depth,base,reason
+BTCUSDT,1,true,50,true,core BTC context
+ETHUSDT,1,true,50,true,core liquid instrument
+SOLUSDT,1,true,50,true,core liquid instrument
