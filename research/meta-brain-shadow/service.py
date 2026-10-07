@@ -215,6 +215,7 @@ class Observer:
                       'first_valid_live_event_at':utc(self.first_live_event_ms),'symbols':self.config['symbols'],
                       'storage_root':str(self.store.root),'shadow_only':True,'execution_enabled':False}
                     self.store.set_boundary(boundary);self.boundary=boundary;self.store.status('prospective_start',boundary)
+                    print(packed({'kind':'prospective_start',**boundary}),flush=True)
             else:self.healthy_since=None
             for s in self.config['symbols']:
                 book=self.flow.books[s].summary(at);self.raw('depth_1s',s,book,at,book.get('exchange_ms',at))
