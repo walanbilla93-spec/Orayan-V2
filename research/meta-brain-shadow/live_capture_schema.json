@@ -1,0 +1,18 @@
+{
+  "schema_version": "orayan-shadow-1.0",
+  "raw_envelope": {
+    "required": ["schema_version", "source", "market", "stream", "symbol", "exchange_ms", "receipt_ms", "receipt_monotonic_ns", "connection_id", "cohort", "payload", "payload_hash", "exchange_completeness"],
+    "cohort_enum": ["historical_bootstrap", "qualification_only", "prospective"],
+    "exchange_ms": "original exchange timestamp, milliseconds; bootstrap OHLC envelope uses 0 and per-candle source timestamps remain in payload",
+    "receipt_ms": "original local UTC receipt milliseconds; never clock-corrected in place",
+    "payload": "exact received JSON object with original exchange decimal strings",
+    "clock_offset_ms": "estimated exchange clock minus local clock",
+    "clock_uncertainty_ms": "half request RTT"
+  },
+  "public_trade": {"T": "exchange fill ms", "s": "symbol", "p": "decimal string price", "v": "decimal string base size", "S": "taker Buy/Sell", "i": "trade ID", "seq": "cross sequence; may repeat and is not assumed contiguous"},
+  "depth": {"cadence_seconds": 1, "levels": 50, "fields": ["exchange_ms", "source_receipt_ms", "update_id", "sequence", "bid_levels", "ask_levels", "best_bid", "best_ask", "spread", "spread_bps", "bid_ask_imbalance", "bid_depth_5bps", "ask_depth_5bps", "bid_depth_10bps", "ask_depth_10bps", "bid_depth_25bps", "ask_depth_25bps", "depth_imbalance_5bps", "depth_imbalance_10bps", "depth_imbalance_25bps", "gap_or_stale", "depth_truncated"]},
+  "derived": {"namespace": "of_v1", "window_seconds": [1, 5, 60], "clock": "receipt", "fields": ["window_start_ms", "window_end_ms", "taker_buy_volume", "taker_sell_volume", "delta", "session_cvd", "rolling_cvd_delta", "cvd_anchor_id", "cvd_anchor_ms", "window_within_connection", "stream_fresh", "max_exchange_ms", "max_receipt_ms", "absorption_volume_per_bps", "cohort"]},
+  "prediction": {"primary_key": "observation_id", "required": ["symbol", "event_type", "event_clock_ms", "event_timestamp", "decision_timestamp", "knownAt", "receipt_timestamp", "feature_snapshot", "feature_snapshot_hash", "feature_max_receipt_ms", "head_A_prediction", "head_B_probability", "head_C_diagnostic", "head_D", "missing_feature_mask", "model_version", "model_hashes", "no_trade", "shadow_only", "execution_enabled", "cohort"], "mutation_policy": "INSERT only; no UPDATE/DELETE; labels in separate FK table"},
+  "label": {"primary_key": "observation_id", "status_enum": ["MATURED", "CENSORED_GAP_OR_BOOTSTRAP"], "fields": ["written_at", "horizon_minutes", "head_A_realized_rv_bps", "head_B_realized_two_sided_1atr", "max_source_receipt_ms"]},
+  "liquidation": {"topic": "allLiquidation", "side_semantics": "S is liquidated position side; Buy=liquidated long", "price_semantics": "bankruptcy price", "completeness": "unproven; no message is not zero"}
+}

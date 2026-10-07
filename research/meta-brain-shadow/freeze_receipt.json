@@ -1,0 +1,13 @@
+{
+  "frozen_at_utc": "2026-10-06T18:37:40.842362+00:00",
+  "fitting_started": false,
+  "outcomes_accessed_in_phase3a": false,
+  "hashes": {
+    "phase3a_locked_feature_set.csv": "10c0a215bfd87bc705c0cb85070ad44cf890c3a08457b4f5bb06c34c23dec186",
+    "phase3a_locked_head_specs.json": "6a96ce8db315fc43344c880c2bb7e88e734fb684ddd2bd13909431600eeba8a0",
+    "phase3a_fold_spec.csv": "d9dce332597244ab86e3a47935e98fe16bd44ec67e4d35379cf45f9bb4d4183f",
+    "locked_source_allowlist.csv": "6fd513eb08a00560a2aee74c1d06d140d59043dabefb672ae0fdf902cbd69bb2",
+    "scripts/phase3a.py": "1dbc7385db7dbbc457b8efa6f9a23b56da1860fc0681b53c0af6491dbb5fd064"
+  },
+  "upstream_evidence_already_exposed": true
+}
