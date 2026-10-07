@@ -94,6 +94,10 @@ async function withFloatingPnl(trades) {
 
 /** Route table: 'METHOD /path' -> async (ctx) => body */
 const routes = {
+  'GET /api/capture/status':async()=>require('../lib/minimalCapture').enabled()?await require('../lib/minimalCapture').current().flush():({enabled:false}),
+  'GET /api/capture/export':async()=>{const m=require('../lib/minimalCapture');if(!m.enabled())throw Object.assign(Error('MINIMAL_CAPTURE_DISABLED'),{statusCode:409});
+    const c=m.current(),e=await c.export(),manifest=require('path').join(c.dir,'export-'+require('crypto').randomUUID()+'.jsonl');require('fs').writeFileSync(manifest,JSON.stringify({stream:'capture_status',...e.status,watermark:e.watermark})+'\n');
+    return {__files:true,files:[{path:manifest,size:require('fs').statSync(manifest).size},...e.files],contentType:'application/x-ndjson',filename:'orayan-minimal-'+c.state.epochId+'.jsonl',cleanup:()=>{if(require('fs').existsSync(manifest))require('fs').unlinkSync(manifest);}};},
   'GET /api/health': async () => ({
     ok: true,
     now: Date.now(),

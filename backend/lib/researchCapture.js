@@ -1,4 +1,6 @@
 'use strict';
+const minimal=require('./minimalCapture');
+
 
 // Observational data only. No exports from this module feed builders, gates, ranking or orders.
 const fs = require('fs');
@@ -46,6 +48,7 @@ const r = v => v == null || !Number.isFinite(v) ? null : Math.round(v * 1e8) / 1
 const avg = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 const sd = xs => xs.length > 1 ? Math.sqrt(avg(xs.map(x => (x - avg(xs)) ** 2))) : null;
 function append(kind, row, at = Date.now()) {
+  if(minimal.enabled()){if(row.kind==='operational_event')minimal.safe(c=>c.health(row.type,{subsystem:'BYBIT',at}));return true;}
   try {
     fs.mkdirSync(dir, { recursive:true });
     const stamp = new Date(at).toISOString().slice(0, kind === 'compact' ? 13 : 10).replace('T','-');
@@ -312,6 +315,7 @@ function connect() {
   });
 }
 function watch(symbols, testnet) {
+  if(minimal.enabled())return;
   const next = new Set([...symbols, 'BTCUSDT'].filter(s => /^[A-Z0-9]+USDT$/.test(s)));
   if (testnetMode !== null && testnetMode !== !!testnet) stop();
   startForwardResolver();
@@ -700,8 +704,9 @@ function birth(signal, context) {
   // scalar current features and both clocks; omit only bulky arrays from trendMomentum.
   const update = continuing ? {...compact,trendMomentum:Object.fromEntries(
     Object.entries(compact.trendMomentum||{}).filter(([,v])=>!Array.isArray(v)))} : compact;
+  if(minimal.enabled())minimal.native(signal,compact,settings);
   append('compact',update,scanAt);
-  if (compact.kind === 'candidate_birth') {
+  if (compact.kind === 'candidate_birth'&&!minimal.enabled()) {
     pendingForward.set(episodeId,compact);
     capPendingForward();
     scheduleOrderFlowLabel(compact);
@@ -740,6 +745,7 @@ function outcome(candidateId, event, trade, detail={}) {
   row.eventId=digest([key,row.signature,at]);
   lastOutcome.set(key,{at,signature:row.signature});
   capMap(lastOutcome,MAX_OUTCOME_KEYS);
+  if(minimal.enabled())minimal.nativeOutcome(row,trade);
   append('compact',row,at);
 }
 function exportFiles(date = 'all', raw = false) {

@@ -159,7 +159,7 @@ let v3ExportGeneration=null,v3FrozenStatus=null;
 async function freezeV3Export(){const c=await api('/api/v3/cohort');v3ExportGeneration=c.generation;v3FrozenStatus=c.status;
   $('#v35Watermark').textContent=`Dashboard and downloads frozen at generation ${c.generation} · ${new Date(c.watermarkAt).toISOString()} · cursors ${JSON.stringify(c.cursors)} · retained logical rows ${JSON.stringify(Object.fromEntries(Object.entries(c.retained).map(([k,v])=>[k,v.logicalRows])))}`;
   await loadV3Status();return c;}
-async function downloadV3(channel){if(!v3ExportGeneration)await freezeV3Export();
+async function downloadV3(channel){const minimal=await api('/api/capture/status');if(minimal.schemaVersion==='ORAYAN_MINIMAL_CAPTURE_V1'){window.location.href='/api/capture/export';return;}if(!v3ExportGeneration)await freezeV3Export();
   window.location.href=channel==='summary'?`/api/v3/summary?generation=${v3ExportGeneration}`:`/api/v3/export?channel=${channel}&generation=${v3ExportGeneration}`;}
 async function loadV3Status() {
   try {
@@ -196,6 +196,13 @@ async function loadV3Status() {
     $('#v3TradeStatus').textContent=`Accepted ${c.admitted||0} · Filled ${c.filled||0} · Closed ${c.closed||0} · Cancelled ${c.cancelled||0} · Expired ${c.expired||0} · Incomplete paths ${c.incomplete||0}${info.lastTradeError?` · Data retry: ${info.lastTradeError.reason}`:''}. Independent simulations; no portfolio P&L. Funding uses settled rates with an entry-notional approximation; net stays unavailable until resolved.`;
     $('#btnExportV3Trades').disabled=!(info.counts.trades>0);
     $('#v3TradeRows').innerHTML=(info.shadowTrades||[]).slice().reverse().map(t=>`<tr><td>${esc(t.symbol)}</td><td>${esc(t.side)}</td><td>${esc(readable(t.status))}</td><td>${esc(readable(t.outcome))}</td><td>${esc(t.entryPrice===null?'—':fmt(t.entryPrice,6))}</td><td>${esc(t.exitPrice===null?'—':fmt(t.exitPrice,6))}</td><td>${esc(t.netPnl===null?'—':fmt(t.netPnl,4))}</td><td>${esc(t.realizedR===null?'—':fmt(t.realizedR,2))}</td><td>${esc(`${t.ambiguous?'Ambiguous · ':''}${readable(t.fundingStatus)}`)}</td></tr>`).join('')||'<tr><td colspan="9">No eligible V3.3 trades yet. Rejected candidates remain in the V3 data.</td></tr>';
+    if(a.captureSchema==='ORAYAN_MINIMAL_CAPTURE_V1'){
+      const cap=await api('/api/capture/status');v3FrozenStatus=null;
+      $('#v3Status').textContent='Minimal event capture · epoch '+cap.epochId+' · '+cap.acceptedRows+' accepted / '+cap.lostRows+' lost events · '+fmtBytes(cap.retainedBytes)+' retained · '+cap.retentionStatus+' · '+(cap.populationComplete?'no reported capture loss':'INCOMPLETE capture')+'. Simulation scan counts below are internal observations, not recorded population.';
+      $('#v35Capture').textContent='Candidate/trade events only. No all-day environment, minute paths, dormant arms or AI payload archive.';
+      $('#v35Watermark').textContent='Canonical exports: all modes separated, schema '+cap.schemaVersion+', lifetime '+cap.acceptedRows+' accepted, retained '+cap.retainedRows+' rows, pruned '+cap.prunedRows+'. Downloads return the minimal event dataset.';
+      $('#btnExportV3').disabled=false;
+    }
   }catch(e){$('#v3Status').textContent=`V3 data unavailable: ${e.message}`;}
 }
 

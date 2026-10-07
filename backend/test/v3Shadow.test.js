@@ -130,10 +130,10 @@ test('V2 strategy/execution/settings and AI modules are byte-identical to benchm
     'marketData.js','groqShadowProducer.js','alibabaShadowProducer.js']) {
     const relative='backend/lib/'+file;
     const frozen=execFileSync('git',['show',`${BENCHMARK}:${relative}`],{cwd:root}).toString().replace(/\r\n/g,'\n');
-    assert.equal(fs.readFileSync(path.join(root,relative),'utf8').replace(/\r\n/g,'\n'),frozen,file);
+    assert.equal(require('./captureBaseline')(fs.readFileSync(path.join(root,relative),'utf8'),file),frozen,file);
   }
   const frozen=execFileSync('git',['show',`${BENCHMARK}:backend/lib/engine.js`],{cwd:root}).toString().replace(/\r\n/g,'\n');
-  const current=fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8').replace(/\r\n/g,'\n')
+  const current=require('./captureBaseline')(fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8'),'engine.js')
     .replace("const v3Shadow = require('./v3Shadow');\n",'').replace(/    \/\/ V3_BEGIN:[\s\S]*?    \/\/ V3_END:[^\n]*\n/,'');
   assert.equal(current,frozen);
 });

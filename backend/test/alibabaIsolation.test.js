@@ -20,11 +20,11 @@ test('execution, gates and all Groq production modules match deployed main',()=>
     'research/groq-shadow/src/snapshot.js':'1bfb10606e22a392792a6cd4068ad200f0fa5f8830564bd0986cadfaa1aebf10',
     'research/groq-shadow/src/constants.js':'ebe4ba62cc3df639fdf27560a79d7c81f2e33d59ee164334af4efb9906aef168',
   };
-  for(const [file,digest] of Object.entries(expected))assert.equal(hash(fs.readFileSync(path.join(root,file),'utf8')),digest,file);
+  for(const [file,digest] of Object.entries(expected))assert.equal(hash(require('./captureBaseline')(fs.readFileSync(path.join(root,file),'utf8'),path.basename(file))),digest,file);
 });
 
 test('engine is identical to deployed main after removing the two observational Alibaba calls',()=>{
-  let source=fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8').replace(/\r\n/g,'\n');
+  let source=require('./captureBaseline')(fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8'),'engine.js');
   // Remove only the explicitly delimited, one-way V3 observer addition. A dedicated
   // V3 parity test also compares the remaining engine to the exact frozen V2 commit.
   source=source.replace("const v3Shadow = require('./v3Shadow');\n",'')

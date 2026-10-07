@@ -1,4 +1,6 @@
 'use strict';
+const minimal=require('./minimalCapture');
+
 
 const {Readable}=require('stream');
 const store = require('./store');
@@ -103,6 +105,7 @@ let flushTimer = null;
 let dirty = false;
 
 function scheduleFlush() {
+  if(minimal.enabled())return;
   dirty = true;
   if (flushTimer) return;
   flushTimer = setTimeout(() => {

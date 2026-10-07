@@ -1,5 +1,8 @@
 'use strict';
 
+// Operator-authorized capture reset runs before any writer or execution state is restored.
+require('./lib/startupCaptureReset').run();
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -195,11 +198,12 @@ process.on('uncaughtException', (e) => {
   try { engine.stop({ reason: `UNCAUGHT_EXCEPTION: ${e?.message || 'unknown'}`, preserveDesired: false }); } catch (_e) { /* best effort */ }
 });
 
-function shutdown(sig) {
+async function shutdown(sig) {
   logger.warn('server', `${sig} received — stopping the engine. Open positions are left as they are.`);
   try { engine.stop({ reason: `PROCESS_SIGNAL_${sig}`, preserveDesired: true }); } catch (_e) { /* best effort */ }
   // Journal writes are batched on a timer; force the buffer out before the process dies.
   try { journal.flush(); } catch (_e) { /* best effort */ }
+  try { if(require('./lib/minimalCapture').enabled())await require('./lib/minimalCapture').current().close(); } catch (_e) { /* the next boot explicitly marks a possible capture gap */ }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
 }

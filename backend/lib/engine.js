@@ -48,6 +48,8 @@ const state = {
 };
 
 let trades = store.read('trades', []);
+const captureSafety=store.read('captureSafetyClosed', {total:0,closed:[]});
+function closedForSafety(){return [...captureSafety.closed.map(x=>({closedAt:x.closedAt,netPnl:x.netPnl})),...closedTrades()];}
 let shadowTrades = store.read('marciShadowTrades', []);
 let lastStopRecoveryBackfillAt = 0;
 let timer = null;
@@ -77,6 +79,8 @@ function persistEngineControl() {
 
 function persistTrades() {
   store.write('trades', trades.slice(-5000));
+  if(captureSafety.total){const keep=Math.max(0,5000-trades.length),cutoff=Math.max(0,captureSafety.total-keep);
+    store.write('captureSafetyClosed',{total:Math.min(captureSafety.total,keep),closed:captureSafety.closed.filter(x=>x.index>=cutoff).map(x=>({...x,index:x.index-cutoff}))},false);}
 }
 
 function persistShadowTrades() {
@@ -393,7 +397,7 @@ async function scanOnce() {
     const journalSignals = [];
     const orderResolved = new Set();
 
-    const cb = risk.checkCircuitBreakers({ settings, state, closedTrades: closedTrades() });
+    const cb = risk.checkCircuitBreakers({ settings, state, closedTrades: closedForSafety() });
     if (cb.halted && !state.haltedUntil) {
       state.haltedUntil = Date.now() + (cb.cooldownMin || settings.cbCooldownMin) * 60000;
       state.haltReason = cb.reason;

@@ -6,6 +6,8 @@ let seq = 0;
 
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 };
 let minLevel = 'info';
+const compactBuckets=new Map();
+let compactMode;
 
 function setLevel(l) {
   if (LEVELS[l]) minLevel = l;
@@ -13,6 +15,15 @@ function setLevel(l) {
 
 function log(level, scope, msg, data) {
   if (LEVELS[level] < LEVELS[minLevel]) return;
+  // Runtime log transport has its own finite cap; capture disks are not the only
+  // place an error loop can accumulate data. Existing strategy state is untouched.
+  if(compactMode===undefined)compactMode=require('fs').existsSync(require('path').resolve(__dirname,'../data/capture-minimal-policy.json'));
+  if(compactMode){
+    const bucket=Math.floor(Date.now()/300000),key=bucket+'|'+level+'|'+scope;
+    const count=(compactBuckets.get(key)||0)+1;compactBuckets.set(key,count);
+    while(compactBuckets.size>64)compactBuckets.delete(compactBuckets.keys().next().value);
+    if(count>3)return;
+  }
   const entry = {
     seq: ++seq,
     ts: Date.now(),

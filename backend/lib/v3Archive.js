@@ -1,4 +1,6 @@
 'use strict';
+const minimal=require('./minimalCapture');
+
 const fs=require('fs'),path=require('path'),zlib=require('zlib'),crypto=require('crypto');
 const {encode:compact,SCHEMA}=require('./v34bCodec');
 const {CaptureLedger,priority,atomic,CHANNELS,POLICY,digest}=require('./v34bCapture');
@@ -11,6 +13,7 @@ class Archive {
   constructor(dir,options={}) {
     this.dir=dir;fs.mkdirSync(dir,{recursive:true});
     this.ledger=new CaptureLedger(dir);this.sessions=new Map();
+    if(minimal.enabled())for(const method of ['measurement','receiptPulse','error','recovered','beginCohort'])this.ledger[method]=()=>{};
     const txn=path.join(dir,'archive-transaction.json');
     if(fs.existsSync(txn)){
       const pending=JSON.parse(fs.readFileSync(txn,'utf8'));
@@ -54,6 +57,8 @@ class Archive {
     }
   }
   write(entries,replaying=false) {
+    if(minimal.enabled()){for(const e of entries)minimal.observe(e.channel,e.row);return;}
+
     if(!entries.length)return;
     if(!replaying&&fs.existsSync(this.pending)){
       const p=JSON.parse(fs.readFileSync(this.pending,'utf8')),txn=path.join(this.dir,'archive-transaction.json');
@@ -182,7 +187,7 @@ class Archive {
     return {files,cleanup:()=>{for(const p of links)if(fs.existsSync(p))fs.unlinkSync(p);for(const p of originals)this.release(p);}};
   }
   release(p){const n=(this.leases.get(p)||1)-1;if(n)this.leases.set(p,n);else this.leases.delete(p);}
-  status(){return {captureSchema:SCHEMA,capturePolicy:POLICY,budgetEnforcement:'ALERT_ONLY_REQUIRED_CHANNELS_NEVER_DROPPED',sizeBytes:this.total(),maxBytes:this.maxBytes,hourBudgetBytes:this.hourBytes,
+  status(){if(minimal.enabled())return {...minimal.current().status(),captureSchema:minimal.SCHEMA,capturePolicy:minimal.SCHEMA,sizeBytes:minimal.current().state.retainedBytes,maxBytes:minimal.LIMITS.totalBytes,hourBudgetBytes:0,telemetry:this.ledger.status(),budgetSkippedRecords:0,skipCounters:this.ledger.status().skipCounters,reconciliation:this.ledger.identity(0),minimumRetentionHours:0};return {captureSchema:SCHEMA,capturePolicy:POLICY,budgetEnforcement:'ALERT_ONLY_REQUIRED_CHANNELS_NEVER_DROPPED',sizeBytes:this.total(),maxBytes:this.maxBytes,hourBudgetBytes:this.hourBytes,
     priorityReserveFraction:0,priorityReserveScope:'SHARED_REQUIRED_CHANNELS_NO_REJECTION',priorityOverflowBytes:Math.max(0,this.total()-this.maxBytes),
     retentionHeadroomBytes:Math.max(0,this.maxBytes-this.total()),telemetry:this.ledger.status(),
     minimumRetentionHours:30,maximumBlockRawBytes:BLOCK_BYTES,maximumRowRawBytes:TRADE_ROW_BYTES,maximumCandidateRawBytes:ROW_BYTES,

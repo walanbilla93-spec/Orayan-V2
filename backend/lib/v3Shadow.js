@@ -1,4 +1,6 @@
 'use strict';
+const minimal=require('./minimalCapture');
+
 
 // One-way observer. This module cannot place orders and never returns a trade signal.
 const fs=require('fs'),path=require('path'),crypto=require('crypto');
@@ -22,7 +24,7 @@ const MAX_KEYS=512,MAX_RECENT=24,MAX_ROW_BYTES=65536;
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?
   Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
 const hash=value=>crypto.createHash('sha256').update(JSON.stringify(stable(value))).digest('hex').slice(0,24);
-const implementationHash=crypto.createHash('sha256').update(['v3Shadow.js','v3Contracts.js','v3Levels.js','v3Geometry.js','v3Trades.js','v3Compact.js','v3Archive.js','signals_trend_v30.js','v34Measurements.js','v34Trades.js','v34Cache.js','v34Control.js','v34bResearch.js','v34bCapture.js','v34bCodec.js','v34bHoldout.js']
+const implementationHash=crypto.createHash('sha256').update(['v3Shadow.js','v3Contracts.js','v3Levels.js','v3Geometry.js','v3Trades.js','v3Compact.js','v3Archive.js','signals_trend_v30.js','v34Measurements.js','v34Trades.js','v34Cache.js','v34Control.js','v34bResearch.js','v34bCapture.js','v34bCodec.js','v34bHoldout.js','minimalCapture.js','captureProxy.js','captureWorker.js','startupCaptureReset.js']
   .map(file=>fs.readFileSync(path.join(__dirname,file),'utf8').replace(/\r\n/g,'\n')).join('\n')).digest('hex');
 function plan(signal) {return signal?{candidateId:signal.id,side:signal.side,entry:signal.entry,sl:signal.sl,tp:signal.tp,
   score:signal.score,rr:signal.rr,passed:signal.gates?.passed??null,failed:signal.gates?.failed||[]}:null;}
@@ -129,6 +131,9 @@ class ShadowJournal {
         this.measurementTradeCounts=saved.measurementTradeCounts||this.measurementTradeCounts;
         this.filledEpisodes=new Map((saved.filledEpisodes||[]).slice(-512));
       }catch(_){this.counts.errors++;}
+    }
+    if(minimal.enabled()&&!this.holdout.state.startedAt){
+      const c=minimal.current();Object.assign(this.holdout.state,{startedAt:c.state.startedAt,cohortId:c.state.epochId,definitions:r35.DEFINITIONS,control:control34,awaitingLiveQualification:false,analyticalStatus:'MINIMAL_CANDIDATE_POPULATION'});this.holdout.save();this.startedAt=c.state.startedAt;this.captureCohort=c.state.epochId;
     }
     this.saveCheckpoint();
   }
@@ -305,8 +310,9 @@ class ShadowJournal {
   }
   checkpointAndPrune(now=Date.now()) {
     for(const [key,value] of this.index)if(now-value.lastSeenAt>3*3600000)this.index.delete(key);
-    this.saveCheckpoint();
-    this.archive.prune(now);
+    const text=JSON.stringify({index:[...this.index].map(([key,x])=>[key,{signature:x.signature,episodeId:x.episodeId,lastAdmittedSetup:x.lastAdmittedSetup,lastReplacementSetup:x.lastReplacementSetup}]),activeTrades:[...this.activeTrades],armWorkers:[...this.armWorkers],tradeCounts:this.tradeCounts});
+    if(!minimal.enabled()||minimal.digest(text)!==this.lastWorkingDigest){this.saveCheckpoint();this.lastWorkingDigest=minimal.digest(text);}
+    if(!minimal.enabled())this.archive.prune(now);
   }
   files(channel='v3') {
     if(!CHANNELS.includes(channel))throw Object.assign(Error('Invalid V3 export channel'),{statusCode:400});
@@ -497,6 +503,7 @@ class ShadowJournal {
     }finally{this.tradeWorkerBusy=false;}
   }
   observeAI(provider,file,now=Date.now()) {
+    if(minimal.enabled())return;
     if(!file || !fs.existsSync(file)){this.aiOffsets[provider]=0;return;}
     const size=fs.statSync(file).size;
     let offset=this.aiOffsets[provider]??size; // New experiment starts NOW, not at historical output.

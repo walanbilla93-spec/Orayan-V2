@@ -1,4 +1,6 @@
 'use strict';
+const minimal=require('./minimalCapture');
+
 
 // Dedicated, bounded append-only research stream. Nothing here is read by trading decisions.
 const fs=require('fs');
@@ -41,6 +43,7 @@ function prune(now=Date.now()) {
   for (const [k,at] of seen) if (at<cutoff) seen.delete(k);
 }
 function append(row,at=Date.now()) {
+  if(minimal.enabled())return false;
   if (seen.has(`${row.kind}|${row.eventId}`)) return false;
   try {
     fs.mkdirSync(DIR,{recursive:true});

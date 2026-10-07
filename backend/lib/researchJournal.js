@@ -1,4 +1,6 @@
 'use strict';
+const minimal=require('./minimalCapture');
+
 const fs=require('fs');
 const path=require('path');
 const {Readable}=require('stream');
@@ -72,6 +74,7 @@ try {
   while(lastEventSignature.size>MAX_SIGNATURES)lastEventSignature.delete(lastEventSignature.keys().next().value);
 }catch(e){logger.warn('research','Could not restore research event signatures',{error:e.message});}
 function flush() {
+  if(minimal.enabled()){if(timer)clearTimeout(timer);timer=null;dirty=false;return;}
   if (timer) { clearTimeout(timer); timer = null; }
   if (!dirty) return;
   dirty = false;
@@ -80,6 +83,7 @@ function flush() {
   store.write('researchEnvironmentV1', snapshots, false);
 }
 function schedule() {
+  if(minimal.enabled())return;
   dirty = true;
   if (!timer) {
     timer = setTimeout(flush, 3000);
@@ -215,6 +219,7 @@ function project(s) {
   };
 }
 function recordEvents(signals, meta = {}) {
+  if(minimal.enabled())return;
   const at = meta.scanAt || Date.now();
   const additions=[],signatures=[];
   for (const signal of Array.isArray(signals) ? signals : []) {

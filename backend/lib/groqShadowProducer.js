@@ -1,4 +1,6 @@
 'use strict';
+const minimal=require('./minimalCapture');
+
 
 // Research-only adapter between the canonical prospective candidate-birth journal and the
 // frozen Groq sidecar. Nothing returned by this module is consumed by gates or execution.
@@ -309,6 +311,7 @@ async function initialize(env = process.env) {
 }
 
 function observeBirth(signal, birth, context = {}) {
+  if(minimal.enabled())return null;
   if (!birth || birth.kind !== 'candidate_birth' || birth.engine !== 'NEW_ORAYAN') return false;
   const dedupeKey = `${birth.episodeId || ''}|${signal.id}`;
   if (seenBirths.has(dedupeKey)) return false;

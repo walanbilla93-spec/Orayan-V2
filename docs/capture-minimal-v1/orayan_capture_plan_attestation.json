@@ -1,0 +1,19 @@
+{
+  "frozenAt": "2026-10-07T21:59:36.526Z",
+  "sourceMutationsStarted": false,
+  "capturedDataMutationsStarted": false,
+  "planSha256": "fa7aeba67eff9d9a61f1a0978d4ac4bd090eac1745dc89eeaacb8a452ff5038e",
+  "schemaSha256": "f9d2d5073913fe1e2a6f261cc8c2e514563258c7d512b5387171dd4e9fdbe7e3",
+  "preResetAuditSha256": "6cd602a19c0e72c61af6fe1997b3d29d4f61432c46c559dd8846a653a53c0341",
+  "verifiedSourceCommit": "5eb0262e51747d76879d85eac877eec3ced0531a",
+  "review": {
+    "eligibilityAndRejection": true,
+    "frozenFeaturesAndGeometry": true,
+    "livePaperShadowSeparation": true,
+    "pairedArmsAndCensoring": true,
+    "netCashAndR": true,
+    "populationAndRetention": true,
+    "safetyGate": "REQUIRES_PROOF_BEFORE_RESET"
+  },
+  "planImmutable": true
+}

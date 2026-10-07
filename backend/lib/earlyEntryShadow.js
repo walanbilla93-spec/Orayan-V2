@@ -1,4 +1,6 @@
 'use strict';
+const minimal=require('./minimalCapture');
+
 
 // EARLY_ENTRY_SHADOW_V1 is a research-only sidecar. No value produced here is imported by
 // signal builders, gates, ranking, sizing, portfolio controls, Marci, or execution.
@@ -52,6 +54,7 @@ function prune(now=Date.now()) {
   }
 }
 function append(row,at=Date.now()) {
+  if(minimal.enabled())return false;
   const dedupe=`${row.kind}|${row.eventId}`;
   if (seen.has(dedupe)) return false;
   try {
