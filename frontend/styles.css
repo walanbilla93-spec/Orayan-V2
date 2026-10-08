@@ -165,6 +165,8 @@ body::before {
 /* ── Tabs ────────────────────────────────────────────────────────────────────────────── */
 
 .tabs { display: flex; gap: 2px; margin: 18px 0 20px; border-bottom: 1px solid var(--line); }
+.tabs { overflow-x: auto; max-width: 100%; }
+.tab { flex-shrink: 0; }
 
 .tab {
   font-family: var(--mono);
@@ -566,7 +568,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outl
 
 [hidden] { display: none !important; }
 #minimalCapturePanel { padding: 0 16px 16px; }
-.view[data-view="v3"] #minimalCapturePanel .panel-sub { padding: 0; }
+.view[data-view="v3"] #minimalCapturePanel .panel-sub { padding: 0; color: var(--text-dim); }
 .capture-heading,.capture-section-head,.capture-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
 .capture-heading { margin: 20px 0; }
 .capture-health { font-size: 13px; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--line); }
@@ -574,7 +576,7 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outl
 .capture-health.attention { color: #f7bb72; background: rgba(247,187,114,.08); }
 .capture-counters { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-bottom: 14px; }
 .capture-counter,.comparison-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
-.capture-counter span,.capture-counter small { display: block; color: var(--text-faint); font-size: 12px; }
+.capture-counter span,.capture-counter small { display: block; color: var(--text-dim); font-size: 12px; }
 .capture-counter strong { display: block; margin-top: 8px; font-size: 24px; font-weight: 600; }
 .capture-counter small { margin-top: 5px; font-size: 10px; }
 .capture-section-head { margin: 28px 0 14px; }
