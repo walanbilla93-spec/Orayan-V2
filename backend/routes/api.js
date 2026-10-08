@@ -94,6 +94,8 @@ async function withFloatingPnl(trades) {
 
 /** Route table: 'METHOD /path' -> async (ctx) => body */
 const routes = {
+  'GET /api/capture/receipt':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'),'utf8')):({complete:false}),
+  'GET /api/capture/reset-audit':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'),'utf8')):({available:false}),
   'GET /api/capture/status':async()=>require('../lib/minimalCapture').enabled()?await require('../lib/minimalCapture').current().flush():({enabled:false}),
   'GET /api/capture/export':async()=>{const m=require('../lib/minimalCapture');if(!m.enabled())throw Object.assign(Error('MINIMAL_CAPTURE_DISABLED'),{statusCode:409});
     const c=m.current(),e=await c.export(),manifest=require('path').join(c.dir,'export-'+require('crypto').randomUUID()+'.jsonl');require('fs').writeFileSync(manifest,JSON.stringify({stream:'capture_status',...e.status,watermark:e.watermark})+'\n');
