@@ -1,6 +1,6 @@
 # Meta Brain Research Data frontend plan
 
-Prepared 2026-10-08 before implementation; finalized after read-only inspection. Implementation is complete locally; live deployment awaits paid capacity approval.
+Prepared 2026-10-08 before implementation; finalized after read-only inspection. Implemented and deployed to the existing free service; final state is in META_BRAIN_FRONTEND_REPORT.md.
 
 ## Inspected system
 
@@ -18,16 +18,12 @@ No full-table scan at page open: catalog sizes and approximate row counts, index
 
 ## Protection and workload limits
 
-Passwordless secret link using URL fragment, exchanged by same-origin POST for an HttpOnly, Secure, SameSite=Strict HMAC session cookie. Fragment is removed from browser history immediately; no token in query strings, static assets, artifacts or access logs. Server startup refuses a missing/weak token. A localhost-only development mode supports preview; it cannot bind publicly. Additive access protects only the new research routes and cannot lock out existing health endpoints.
+Masked access-key form exchanged by same-origin HTTPS POST for an eight-hour HttpOnly/Secure/SameSite=Strict cookie. No tokens in URLs, static assets, artifacts or access logs; missing/weak token fails closed. Existing health access remains unchanged.
 
-Parameterized filters; fixed dataset/stream/symbol allowlists; schema-qualified relations; fixed UTC range, maximum 1 hour; one export/metadata request at a time; server-side cursor fetched one chunk at a time; bounded gzip line/chunk decoding; maximum 32 MiB compressed input, 128 MiB output, 100,000 rows, 120-second total deadline and per-query timeout. Range estimates are conservative and cheap; guard unknown estimates rather than assuming zero. Export duration can be extended only after live load testing. No research ZIP initially: it would add processing and storage to a memory-constrained observer.
+Parameterized filters; fixed dataset/stream/symbol allowlists; schema-qualified relations; fixed UTC range, maximum 1 hour; one export/metadata request at a time; server-side cursor fetched one chunk at a time; bounded gzip line/chunk decoding; maximum 8 MiB compressed input, 32 MiB output, 25,000 rows, 120-second total deadline and per-query timeout. Range estimates are conservative and cheap; guard unknown estimates rather than assuming zero. Export duration can be extended only after live load testing. No research ZIP initially: it would add processing and storage to a memory-constrained observer.
 
-## Deployment gate
+## Deployment outcome
 
-No additional service or addon is needed. Live observer memory measured 487.83 MB / 512 MB (95%); cgroup usage 491,417,600 / 512,000,000 bytes, including about 107 MB file cache. This does not establish safe headroom for continuous additional API work. Northflank disables 1,024 MB compute under this free project's limits. No resource, billing or deployment setting was changed.
+Completed within the existing free 0.2 CPU / 512 MB allocation following explicit user restart/deploy authorization. Aggregate memory included reclaimable file cache and audit-shell overhead; paid capacity was unnecessary for this rollout. Allocator trimming and >=64 MiB working-set export guards were added without shrinking scientific windows. Controlled single-writer restart, build, readiness, authenticated CSV.GZ download and unauthorized API rejection were verified. See META_BRAIN_FREE_DEPLOYMENT_REPORT.md and META_BRAIN_FRONTEND_REPORT.md for measurements and the cold-cache limitation.
 
-Proposed deployment after separate paid-capacity approval: upgrade the EXISTING observer to nf-compute-50 (0.5 shared CPU, 1,024 MB), use the additive research.Dockerfile/launcher, preserve port 8080 health and every original shadow setting, and add authenticated research port 8081. Published compute price is $12/month ($0.0167/hour); other project resources might also become billable after leaving the free project, so total cost must be checked before activating any upgrade. Pricing: https://northflank.com/pricing .
-
-An image replacement requires one planned observer restart and therefore a capture gap. Preserve the boundary, IDs and writer advisory lock; verify no duplicate writer/predictions and execution false afterward. Stage authenticated API and export smoke/load checks before sharing the private access link. Never hot-inject into the active observer.
-
-Current delivery: 19 tests pass; frozen source/model hashes match; live read-only audit is complete; local browser preview and sample CSV.GZ download verified. Production API-to-database integration and load testing remain pending deployment capacity. No live frontend URL exists yet. The preview is sample data and is labeled accordingly.
+Live frontend: https://p02--meta-brain-shadow-v1--2c624d5p4kgs.code.run/research/ . No extra resource or billing change; capture redesign remains plan only.

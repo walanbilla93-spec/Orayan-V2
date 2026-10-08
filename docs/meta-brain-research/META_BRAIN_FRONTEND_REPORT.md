@@ -1,70 +1,47 @@
-# Meta Brain frontend implementation report
+# Meta Brain frontend delivery report
 
-2026-10-08. **Implemented and verified locally; NOT deployed.** Read-only live storage audit is complete. Capture redesign is a plan only. No data was wiped, deleted or reset, no schema/capture behavior changed, and the observer was not restarted.
+Completed 2026-10-08. **Deployed to the existing free service; no spending.** The storage audit and capture redesign plan are complete. No captured data was deleted/reset, and no capture/schema/model/risk changes were made.
 
-## User access and deployment status
+## Access
 
-Local review: http://127.0.0.1:8766/research/ . The browser preview explicitly says “Local preview · sample downloads”; its download contains synthetic sample rows, not the live research population. Measured audit metadata is included for layout review. This address works only on this computer while the local preview is running.
+Live frontend: https://p02--meta-brain-shadow-v1--2c624d5p4kgs.code.run/research/
 
-Production route after deployment: `/research/` on new port 8081 of the EXISTING Meta Brain service. APIs: `/research/api/status`, `/research/api/estimate`, `/research/api/download`; private-link exchange `/research/session`. No production research URL or access token has been created. Existing port-8080 health is unchanged. No extra Northflank service/addon was created.
+Enter the private research access key stored in Northflank → existing meta-brain-shadow-v1 service → Environment → RESEARCH_ACCESS_TOKEN. Do not put it in a URL or share it. The masked form establishes an eight-hour Secure/HttpOnly/SameSite=Strict session. The earlier browser session has expired; the live page now correctly asks for the key. Existing health remains on port 8080; research uses port 8081/p02 on the same service. No new service/addon or resource upgrade was created.
 
-Live observer memory was 487.83 MB / 512 MB (~95%). A cgroup read found 491,417,600 / 512,000,000 bytes including 106,967,040 bytes file cache. Transient audit queries completed, but this does not prove adequate sustained headroom for an additional API. Northflank marks 1,024 MB compute unavailable under this free project's limits. Resource screenshot is included. Deployment therefore awaits a separate paid-capacity decision, as the user explicitly requires approval for paid resources.
+The UI has logical database size, approximate dataset counts, capture ranges, observer state, dataset/stream/symbol/UTC filters, an estimate and CSV/CSV.GZ downloads. Exposed actual datasets: capture streams, predictions, linked labels, boundary, capture status. No edit/delete/reset controls. Research bundle export was deferred to keep memory/CPU bounded; the delivery ZIP contains code, reports and evidence.
 
-Concrete proposal: upgrade existing meta-brain-shadow-v1 to nf-compute-50, 0.5 shared CPU / 1,024 MB. Published compute price $12/month ($0.0167/hour); leaving the free project can make other existing resources billable, and total project cost is not confirmed. Verify that total before applying billing changes. Reference: https://northflank.com/pricing . No purchase or resource change has been made.
+## Implementation and limits
 
-## Files added
+Code under research/meta-brain-shadow: research_api.py, research_launcher.py, research_memory.py, research.Dockerfile, research_overlay_lock.json, audit_research_storage.py, research_ui/* and test_research_api.py. CI: .github/workflows/meta-brain-research.yml. Reports: docs/meta-brain-research/.
 
-All code lives under `research/meta-brain-shadow/` on branch `feature/meta-brain-research-download-v1` based on frozen observer commit `6b99b620435717bc360d3d9b5ca4d42b88f6ffef`:
+Catalog/index metadata avoids a full capture scan at page open. Fixed allowlists and parameterized queries; separate read-only transactions, cursor streaming, rollback/close on completion. Existing writer role was not broadened; a dedicated SELECT-only role remains optional additional defense. No browser DB credentials, secret URLs, third-party assets or access logging. Unauthorized status/download requests returned HTTP 401; public login page returned 200.
 
-- research_api.py: guarded async read-only API, estimates, streaming CSV and CSV.GZ, authentication.
-- research_launcher.py: starts one original observer plus optional research app.
-- research.Dockerfile: additive image recipe; original Dockerfile unchanged.
-- research_overlay_lock.json: original source/config/model hash manifest; startup fails on mismatch.
-- research_ui/index.html, style.css, app.js: compact responsive interface.
-- audit_research_storage.py: read-only catalog, rate and bounded sample audit utility.
-- test_research_api.py: 19 regression/security/export tests.
-- docs/meta-brain-research/: plans, measured audit and this report.
-- .github/workflows/meta-brain-research.yml: export checks on pull requests; no deployment automation.
+Maximum range one hour, one query/export at a time, query timeout two seconds and overall deadline 120 seconds. Limits: 8 MiB compressed input, 32 MiB CSV output, 25,000 rows; each compressed chunk <=2 MiB, decoded chunk <=8 MiB, line <=1 MiB. Estimated working-set headroom must be >=64 MiB before estimates/downloads and every 256 export rows. Pressure refuses/aborts the download while observer processing continues. Interrupted gzip lacks a valid completion footer. Long/old ranges can time out because current index layout is unchanged; shorten range/select a stream. No indexes were added.
 
-Original observer code, writer, config, dependencies, models and capture contract remain byte-identical. Overlay revision is recorded separately as RESEARCH_REVISION/image label; original observer GIT_COMMIT and immutable boundary remain the frozen original revision.
+## Deployment and observer safety
 
-## Datasets and download behavior
+Deployed additive commit 5c509d771affd1caa186a6657481a0cf0b141f07; build mammoth-fork-5755 completed successfully in 39 seconds. Existing service remains 0.2 CPU / 512 MB, one instance, CI/CD disabled. User explicitly authorized restart/deploy without spending. A controlled pause → image replacement → resume prevented overlapping writers; resume recorded at 09:15:14 UTC. There was a brief capture interruption during rollout/warmup, approximately 09:12–09:18 UTC; exact gap endpoints were not independently enumerated.
 
-Actual datasets: capture streams (13 observed), predictions, linked outcomes/labels, prospective boundary, capture status. Filters: UTC start/end, BTCUSDT/ETHUSDT/SOLUSDT, dataset and capture stream. Start included, end excluded. Labels use prediction event time. Boundary always exports its one immutable manifest. Nested JSON and decimal strings remain in record_json with ID/hash/time provenance.
+Read-only post-rollout checks found all original 21 predictions, 21 labels and one boundary intact, with one writer advisory lock. Original source/config/model files are byte-identical to frozen observer commit 6b99b620435717bc360d3d9b5ca4d42b88f6ffef; GIT_COMMIT remains that provenance, with additive RESEARCH_REVISION recorded separately. Original boundary remains 2026-10-07T01:50:01.328Z.
 
-Maximum selection one hour; longer periods downloaded in parts. Stream/symbol filtering reduces work. Catalog sizes and approximate counts appear on page open; no full population scan. Missing/unexpected schema or range index fails closed. Exact chunk metadata estimate must complete within its query timeout before HTTP success. Old ranges may time out due to current index shape; shorten the range or use the supplied audit/export code after index design is separately reviewed. No index is created here.
+Final health at 17:48:14 UTC: HTTP 200, healthy=true, execution_enabled=false, shadow_only=true, write_errors=0, no task errors, uptime 30,766 seconds (about 8.5 hours since rollout). Logical DB 1,894,823,603 bytes. Current-session counters show 12 new predictions and 10 new labels; these are not full historical population counts. Capture still stops at its unchanged 3 GiB logical ceiling without deleting data.
 
-Server-side cursor fetches one chunk at a time. Limits: 32 MiB compressed input, 2 MiB per compressed chunk, 8 MiB decoded chunk, 1 MiB decoded line, 128 MiB uncompressed CSV, 100,000 rows, 120 seconds, one query/export globally. Incomplete exports abort the connection; CSV.GZ lacks a valid completion footer on failure. Downloads must complete successfully and gzip must verify before analysis. Research ZIP bundle is deferred to avoid extra memory/CPU on the constrained observer; the delivered review ZIP is code/docs/evidence, not a research-data export.
+## Memory
 
-## Security
+Pre-rollout cgroup usage 480,096,256 bytes; main process anonymous memory 360.59 MB. It included 14 audit/console shells plus wrappers (~20 MB anonymous combined), reclaimable file cache, live deduplication/history and Python scientific runtime. Original aggregate 95% alone did not establish a need for paid capacity; the earlier paid recommendation is superseded.
 
-No credentials in browser code, query URLs, logs or delivered artifacts. Server reads existing private PG environment only; optional dedicated research-role environment is supported. Existing database role was not broadened or altered. Connections default to read-only and explicitly set a read-only transaction; rollback/close on completion. A dedicated SELECT-only role is additional defense if separately configured; application read-only mode alone is not a database-level permission separation from the writer role.
-
-New research routes require a cryptographically random access token (at least 32 random bytes). A URL fragment is removed immediately, exchanged by same-origin HTTPS POST for an eight-hour signed HttpOnly/Secure/SameSite=Strict cookie. No access logging. Existing health access does not change. Parameterized values, fixed identifiers and dataset/symbol/stream allowlists; small login body and throttled failures; self-only content policy and no third-party assets. Local preview can bind only loopback and refuses non-local clients.
+Allocator settings MALLOC_ARENA_MAX=2 / MALLOC_TRIM_THRESHOLD_=131072 and minute malloc_trim release unused allocator pages only. Scientific windows, models and deduplication were retained. Post-warmup cgroup probes measured 311,681,024–325,017,600 bytes; main anonymous memory about 162 MB, no OOM/kill events. Probe shell was exited after measurement. These are early measurements: restart also makes deduplication caches cold, so the entire decrease cannot be attributed to allocator changes and is not a guaranteed steady-state limit. No long-duration memory/load profile was captured. Export memory guards remain active.
 
 ## Verification
 
-Draft review: https://github.com/walanbilla93-spec/Orayan-V2/pull/12 . Implementation commit: `4c27d134a0a173ab020a04d449fda53549821205`. GitHub Actions completed successfully for both Meta Brain research export safety (run 37748386424) and the existing Meta Brain shadow safety (run 37748386332). No merge or deployment occurred. Final source/config/model bytes also match the original Git blobs, independently of Windows checkout line endings.
+21 local tests passed in 4.304 seconds; JavaScript syntax passed. GitHub research CI run 37753337237 and shadow safety run 37753337078 succeeded for the deployed code. Tests cover auth/cookies, SQL/read-only lifecycle, schema and range checks, exact nested records/decimal strings, gzip/checksum/line limits, interrupted exports, concurrency, memory accounting/pressure refusal and frozen observer hashes. Container build and production readiness passed.
 
-19 tests passed in 1.703 seconds, covering authentication/unauthorized no-query behavior, cookie flags/tampering/expiry/rotation, SQL/time limits, repeated filters, schema rejection, checksum/gzip bomb bounds, clock semantics, long overlapping chunks, exact nested decimals, export caps, interrupted gzip, global gate, read-only connection lifecycle, static asset secrecy and all frozen source/model hashes.
+A real authenticated raw_trades CSV.GZ download for 09:17:35–09:22:35 UTC completed in Chrome. The saved file was fully read through gzip (CRC/footer verified), parsed as CSV and every record_json decoded; live_export_verification.json records row count, bytes, symbols and checksum. The raw research file is retained in the user's Downloads and excluded from Git/review ZIP. A separate historical predictions CSV browser smoke test was not completed; CSV output is covered by local regression tests. Desktop/mobile local preview was checked (mobile width 390, no horizontal overflow); frontend_live.jpg shows the deployed protected page.
 
-The streaming test consumed 10,000 approximately 1 KiB rows while measuring Python allocation peak below 16 MiB; this is not production process RSS or proof of live memory safety. JavaScript syntax and Python compilation passed. Desktop and 390×844 mobile preview checked; mobile page width was 390 with no horizontal overflow. Browser sample CSV.GZ downloaded and decoded successfully. Sample is clearly labeled. Live schema/table/rate/sample queries ran in read-only transactions and completed without writer errors.
+## Storage and capture plan
 
-Not performed: container build, authenticated production URL test, live API export integration, sustained observer-plus-export load test. These require approved deployment capacity. No claim of live frontend availability or capture-volume reduction yet.
+Audit measured logical DB 1.263 GB at 06:10:59 UTC; capture_chunks occupied 97.44%. Recent payload growth 0.745 GB/day and logical database growth 1.067 GB/day are separately measured projections. Depth, trades and derived one-second capture account for 91.95% of payload. The supplied 1.73 GB addon screenshot is physical volume usage at another time; WAL could not be measured with existing permissions.
 
-## Deployment sequence after capacity approval
+META_BRAIN_CAPTURE_REDESIGN_PLAN.md defines durable episodes/features/outcomes, sparse status and bounded forensic capture. Illustrative target <=15 MiB/day is conditional on a future declared experiment contract and is not an achieved reduction. Dense acquisition supports future Base+Flow research even though current frozen base predictions already retain their used features. No capture redesign, TTL, reset or deletion was executed.
 
-1. Confirm total project billing and provision existing-service memory only.
-2. Build additive research.Dockerfile from reviewed branch and verified commit, with original build context; set RESEARCH_ACCESS_TOKEN securely in Northflank, never embed it in source/logs. Preserve all existing observer PG and safety settings. Original observer SHA remains locked.
-3. Keep the existing health port 8080. Route HTTPS research port 8081; research API remains authenticated. Stage the private route before distributing any access link.
-4. Replace image in one controlled rollout; record the inevitable capture gap. Do not run a second writer concurrently; original PostgreSQL advisory lock/boundary remain authoritative.
-5. Validate original boundary/commit, execution=false, shadow_only=true, no duplicate IDs/write errors, health, actual memory/CPU under bounded downloads, unauthorized API rejection and authenticated CSV/GZ integrity. Observe beyond startup; pause overlay rollout if inadequate capacity.
-6. Give the user the verified private frontend address. Any future sparse capture epoch, retention TTL or deletion requires separate authorization.
-
-## Live safety evidence
-
-Northflank still shows original build healthy-brass-7024 / commit 6b99b62, CI/CD disabled, zero restarts. Health at 2026-10-08T07:21:06.063Z: healthy=true, execution_enabled=false, shadow_only=true, model_lock_verified=true, write_errors=0; original prospective boundary 2026-10-07T01:50:01.328Z and increasing uptime retained. Logical DB 1,314,944,691 bytes; existing 3 GiB ceiling still active. No observer restart, risk/model changes or capture deletion occurred.
-
-## Deliverables
-
-META_BRAIN_FRONTEND_PLAN.md; META_BRAIN_STORAGE_AUDIT.md; META_BRAIN_CAPTURE_REDESIGN_PLAN.md; META_BRAIN_FRONTEND_REPORT.md; source code and test output; exact machine-readable measurements/rates; screenshots; synthetic sample download. All are included in meta_brain_research_frontend_review.zip.
+Draft code review: https://github.com/walanbilla93-spec/Orayan-V2/pull/12 . It remains unmerged; deployment used the reviewed feature branch. The delivery package includes all plans, measured audit/rates, code, tests, patch, screenshots and safety/export receipts; no access keys, DB credentials or raw research population.

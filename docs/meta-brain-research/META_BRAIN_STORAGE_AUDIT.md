@@ -105,3 +105,7 @@ Machine-readable evidence: storage_measurements.json and storage_stream_rates.cs
 ## Query references
 
 PostgreSQL 17 database/object size functions: https://www.postgresql.org/docs/17/functions-admin.html . Streaming cursor documentation: https://www.psycopg.org/psycopg3/docs/advanced/cursors.html .
+
+## Post-rollout context
+
+At 17:48:14 UTC, health reported logical DB 1,894,823,603 bytes, capture allowed, zero writer errors, healthy shadow-only operation. Earlier table/rate measurements remain timestamped audit snapshots; no tables/data were cleared by the frontend rollout. The 3 GiB logical ceiling still stops capture without deletion. See rollout_health_final.json.
