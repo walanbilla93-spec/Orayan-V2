@@ -81,7 +81,8 @@
         "quality.quoteStatus",
         "quality.quoteReceivedAt",
         "quality.quoteAgeMs",
-        "pairedNativeCandidateIds"
+        "pairedNativeCandidateIds",
+        "pairedNativeEpisodes"
       ]
     },
     "trade_lifecycle": {
