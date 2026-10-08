@@ -10,6 +10,7 @@ parentPort.on('message',message=>{
   let value;
   if(message.kind==='emit')value=c.emit(message.stream,message.record,message.options);
   else if(message.kind==='health')value=c.health({code:message.code},message.context);
+  else if(message.kind==='nativeState'){c.state.nativeEpisodeIndex??={};c.state.nativeEpisodeIndex[message.key]=message.value;while(Object.keys(c.state.nativeEpisodeIndex).length>4096)delete c.state.nativeEpisodeIndex[Object.keys(c.state.nativeEpisodeIndex)[0]];}
   else if(message.kind==='loss'){for(let i=0;i<message.rows;i++)c.failure('ASYNC_QUEUE_CAP',i?0:message.bytes);}
   else if(message.kind==='export')value=c.export();
   else if(message.kind==='flush')c.flush();

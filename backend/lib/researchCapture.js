@@ -152,6 +152,7 @@ function compactFiles(date = 'all') {
 }
 // Restore the small semantic index after restart, so a restart does not re-emit every setup.
 try {
+  if(minimal.enabled())for(const [key,value]of Object.entries(minimal.current().state.nativeEpisodeIndex||{}))if(value.at>=Date.now()-3*3600000)lastCandidate.set(key,value);
   prune(Date.now());
   // Only recent compact rows are needed to rebuild the live semantic index. Candidate
   // continuity is 30m and forward labels mature after ~62m. Re-reading the entire 48h
@@ -691,7 +692,7 @@ function birth(signal, context) {
     engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',configHash,
     retraceStateShadow:compact.retraceStateShadow||null});
   capMap(candidateKeysById,MAX_CANDIDATE_LINKS);
-  if (continuing && previous.signature === signature) { if(minimal.enabled())minimal.rememberNative(signal,{...compact,episodeId,kind:'candidate_update'},settings);previous.at=scanAt; return null; }
+  if (continuing && previous.signature === signature) { if(minimal.enabled())minimal.native(signal,{...compact,episodeId,signature,episodeOriginAt:originAt,originBtcRegime,kind:'candidate_update'},settings);previous.at=scanAt; return null; }
   compact.kind = continuing ? 'candidate_update' : 'candidate_birth';
   compact.episodeId = episodeId;
   compact.episodeOriginAt = originAt;

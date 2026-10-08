@@ -23,6 +23,7 @@ class CaptureProxy {
   this.send('emit',{stream,record,options}).then(value=>{if(!value&&options.key)delete this.localDedupe[options.key];}).catch(()=>{if(options.key)delete this.localDedupe[options.key];});return true;
  }
  health(error,context={}){if(this.pending.size>=64||this.dead){this.lossRows++;return false;}this.send('health',{code:error.code||error.reasonCode||error.errorCode||error.message||String(error),context}).catch(()=>{});return true;}
+ nativeState(key,value){if(this.pending.size>=64||this.dead){this.lossRows++;this.cached.populationComplete=false;this.cached.nativeContinuityGap=true;return false;}this.state.nativeEpisodeIndex??={};this.state.nativeEpisodeIndex[key]=value;this.send('nativeState',{key,value}).catch(()=>{this.cached.populationComplete=false;this.cached.nativeContinuityGap=true;});return true;}
  status(){return {...this.cached,pendingRows:this.pending.size,volatileLostRows:this.lossRows,populationComplete:this.cached.populationComplete&&!this.lossRows};}
  async flush(){try{await this.send('flush');}catch(e){this.cached={...this.cached,populationComplete:false,lastError:{code:e.message}};}return this.status();}
  async export(){return this.send('export');}

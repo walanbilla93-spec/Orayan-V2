@@ -2,6 +2,9 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os');
 const {Capture}=require('../lib/minimalCapture'),reset=require('../lib/startupCaptureReset'),risk=require('../lib/risk');
 function tmp(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-minimal-test-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));return d;}
+test('native episode continuity survives graceful restart without adding telemetry rows',async t=>{
+ const {CaptureProxy}=require('../lib/captureProxy'),dir=tmp(t),c=new CaptureProxy(dir,{epochId:'CONTINUITY'});await c.flush();c.nativeState('NEW_ORAYAN|X|BUY|TREND',{at:Date.now(),signature:'S',episodeId:'PERSIST',originAt:1});await c.flush();await c.close();const next=new CaptureProxy(dir);await next.flush();assert.equal(next.state.nativeEpisodeIndex['NEW_ORAYAN|X|BUY|TREND'].episodeId,'PERSIST');assert.equal(next.status().acceptedRows,0);assert.equal(next.status().populationComplete,true);await next.close();
+});
 test('entry attempt freezes latest used features even when same-bar candidate refresh was suppressed',async t=>{
  const root=tmp(t),store=require('../lib/store'),old=store.DATA_DIR;store.DATA_DIR=root;t.after(()=>{store.DATA_DIR=old;});fs.writeFileSync(path.join(root,'capture-minimal-policy.json'),JSON.stringify({epochId:'ENTRY'}));
  const m=require('../lib/minimalCapture'),settings={mode:'paper',timeframe:'15'},base={decisionAt:Date.now(),episodeId:'E',candidateKey:'K',configHash:'C',passed:true,failedGates:[],engine:'NEW_ORAYAN',kind:'candidate_birth'},signal={id:'A',symbol:'X',side:'BUY',entry:100,sl:90,tp:120,score:50};
