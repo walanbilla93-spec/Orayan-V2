@@ -27,7 +27,7 @@
   ],
   "streams": {
     "decision_episode": {
-      "trigger": "First candidate in an episode, first observation of a new strategy bar, admission or enabled-gate/rejection state change, V3 selected structural geometry boundary, and exact snapshot at actual ORDER_INTENT. Rejected quote noise and repeated same-reason NO_ORDER are suppressed.",
+      "trigger": "First candidate in an episode, first observation of a new strategy bar, change in admission or stable primary rejection code (first sorted failed-gate code), V3 selected structural geometry boundary, and exact snapshot at ORDER_INTENT. Secondary gate flips while the same primary blocker still rejects the candidate are no-op scans. Full enabled-gate outcomes and frozen operands are kept at every captured boundary.",
       "fields": [
         "boundary",
         "decisionAt",
@@ -325,7 +325,8 @@
     "Native execution currently has no MAE/MFE aggregates, explicitly UNAVAILABLE_IN_EXISTING_EXECUTOR. Existing V3 simulator final aggregates are preserved.",
     "Hypothetical BE/structural milestones are not executable stop changes. Dormant trailing remains dormant.",
     "Space cap rotates complete old segments and durably records pruned rows; population counters exclude inherited trades. Actual stop/BE rule logic is unchanged.",
-    "Bounded native candidate continuity index (maximum 4096 identity/timestamp/signature entries) is operational metadata, persisted at event/status flush and graceful shutdown. Restore retains the existing 30-minute episode-gap rule. No raw candidate payload is stored in that index."
+    "Bounded native candidate continuity index (maximum 4096 identity/timestamp/signature entries) is operational metadata, persisted at event/status flush and graceful shutdown. Restore retains the existing 30-minute episode-gap rule. No raw candidate payload is stored in that index.",
+    "Primary blocker selection is a capture-only convention: first sorted failed-gate code. This never changes gate ordering, entry eligibility or rejected reasons in the trading engine. Exact admission-time snapshots remain complete."
   ],
   "frozenProposalSha256": "f9d2d5073913fe1e2a6f261cc8c2e514563258c7d512b5387171dd4e9fdbe7e3"
 }

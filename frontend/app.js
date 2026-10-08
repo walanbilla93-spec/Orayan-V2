@@ -202,6 +202,9 @@ async function loadV3Status() {
       $('#v35Capture').textContent='Candidate/trade events only. No all-day environment, minute paths, dormant arms or AI payload archive.';
       $('#v35Watermark').textContent='Canonical exports: all modes separated, schema '+cap.schemaVersion+', lifetime '+cap.acceptedRows+' accepted, retained '+cap.retainedRows+' rows, pruned '+cap.prunedRows+'. Downloads return the minimal event dataset.';
       $('#btnExportV3').disabled=false;
+      $('#btnExportV3').textContent='Download minimal episodes & outcomes';
+      for(const id of ['btnExportV3Summary','btnExportV3V2','btnExportV3AI','btnExportV3Trades','btnExportV3Errors','btnExportV3Paths','btnExportV3Arms','btnExportV3Ledger','btnExportV3Tombstones','btnV3Freeze','v35Daily','btnV3Daily'])$('#'+id).hidden=true;
+      $('#v3ExportNote').textContent='One dataset contains decision episodes, trade outcomes, active comparison arms, sparse management events and compact health records. The export includes a fixed watermark and lifetime/retained/pruned counts. Old snapshot and minute-path downloads are retired. Forensic recording is off.';
     }
   }catch(e){$('#v3Status').textContent=`V3 data unavailable: ${e.message}`;}
 }

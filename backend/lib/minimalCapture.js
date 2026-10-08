@@ -100,11 +100,12 @@ function config(settings,hash){return safe(c=>{const allowed=require('./settings
   const def=pick(settings,allowed);return c.emit('configuration',{at:Date.now(),configHash:hash,config:def,mode:'RESEARCH',definitionVersion:SCHEMA,activeExperiments:['FIRST_ADMISSION_ONLY','FIRST_FILLED_ONLY','ATR1M_BUFFER','ATR1M_1P5_REPLACEMENT']},{key:'config:'+hash,signature:hash});});}
 function nativeSignature(signal,row,settings){
   // A rejected episode has no executable geometry to refresh on every quote.
-  // Freeze it again on the next strategy bar or a real admission/gate-state change.
+  // Freeze it again on the next strategy bar or admission/primary-blocker change.
+  // All failed gates are retained at that boundary; secondary flips while still
+  // rejected by the same stable first reason are routine no-op observations.
   return digest([row.episodeId,row.configHash,
-    Math.floor(row.decisionAt/(Number(settings.timeframe)*60000)),row.passed,row.failedGates,
-    signal.btcRegime,signal.entryPath,signal.structureEvent,
-    (signal.gates?.checks||[]).filter(x=>x.enabled).map(x=>[x.name,x.pass])]);
+    Math.floor(row.decisionAt/(Number(settings.timeframe)*60000)),row.passed,row.failedGates?.[0]??null,
+    signal.btcRegime,signal.entryPath,signal.structureEvent]);
 }
 const nativeSnapshots=new Map();
 function nativeRecord(signal,row,settings){return {at:row.decisionAt,sourceEpisodeId:row.episodeId,candidateId:signal.id,symbol:signal.symbol,side:signal.side,strategy:row.engine,strategyVersion:row.engineVariant,mode:row.engine==='MARCI'?'SHADOW':settings.mode.toUpperCase(),configHash:row.configHash,boundary:row.kind,admission:row.passed?'ELIGIBLE':'REJECTED',rejectReason:row.failedGates,score:signal.score,regime:signal.btcRegime,gateChecks:(signal.gates?.checks||[]).filter(x=>x.enabled).map(x=>pick(x,['name','enabled','pass','detail'])),failedGates:row.failedGates,

@@ -20,7 +20,7 @@ test('population excludes inherited trades and counts new admission/fill/termina
 test('rejected quote noise is suppressed; new bar, gate change and eligible geometry still capture',()=>{
  const {nativeSignature}=require('../lib/minimalCapture'),signal={btcRegime:'BEAR_RANGE',gates:{checks:[{name:'BTC',enabled:true,pass:false}]}},row={episodeId:'E',configHash:'C',decisionAt:60000,passed:false,failedGates:['BTC'],signature:'old'},settings={timeframe:'15'};
  const first=nativeSignature(signal,row,settings);assert.equal(nativeSignature({...signal,entry:99,score:48},{...row,decisionAt:120000,signature:'quote-change'},settings),first);
- assert.notEqual(nativeSignature(signal,{...row,decisionAt:900000},settings),first);assert.notEqual(nativeSignature(signal,{...row,failedGates:['BTC','RR']},settings),first);
+ assert.notEqual(nativeSignature(signal,{...row,decisionAt:900000},settings),first);assert.equal(nativeSignature(signal,{...row,failedGates:['BTC','RR']},settings),first);assert.notEqual(nativeSignature(signal,{...row,failedGates:['RR']},settings),first);
  assert.equal(nativeSignature(signal,{...row,passed:true,signature:'A'},settings),nativeSignature(signal,{...row,passed:true,signature:'B'},settings));assert.notEqual(nativeSignature(signal,{...row,passed:true},settings),first);
 });
 test('space retention rotates old segments while durable full-population counts remain exact',t=>{
