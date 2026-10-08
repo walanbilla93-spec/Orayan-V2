@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from aiohttp import web
 from research_api import create_app
+from research_memory import maintenance, trim_unused
 
 ROOT = Path(__file__).resolve().parent
 
@@ -26,14 +27,20 @@ async def main():
     config = json.loads((ROOT / 'config.json').read_text())
     observer = Observer(config, os.environ.get('DATA_ROOT', '/capture'))
     runner = web.AppRunner(app, access_log=None)
+    memory_task = None
     try:
         await runner.setup()
         port = int(os.environ.get('RESEARCH_PORT', '8081'))
         if port == int(os.environ.get('PORT', '8080')):
             raise RuntimeError('Research and observer ports must differ.')
         await web.TCPSite(runner, '0.0.0.0', port).start()
+        trim_unused()
+        memory_task = asyncio.create_task(maintenance())
         await observer.run()
     finally:
+        if memory_task:
+            memory_task.cancel()
+            await asyncio.gather(memory_task, return_exceptions=True)
         await runner.cleanup()
 
 

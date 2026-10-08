@@ -7,8 +7,10 @@ import io
 import json
 import os
 import unittest
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
+import research_memory
 
 from aiohttp.test_utils import TestClient, TestServer
 from multidict import MultiDict
@@ -42,6 +44,18 @@ class FakeDB:
 
 
 class PureTests(unittest.TestCase):
+    def test_memory_headroom_separates_reclaimable_cache(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            (root/'memory.max').write_text('512000000')
+            (root/'memory.current').write_text('480096256')
+            (root/'memory.stat').write_text('anon 386310144\ninactive_file 52482048\nfile 84111360\n')
+            usage=research_memory.snapshot(root)
+            self.assertEqual(usage['working_set_bytes'],427614208)
+            self.assertEqual(usage['headroom_bytes'],84385792)
+            (root/'memory.max').write_text('max')
+            self.assertIsNone(research_memory.snapshot(root))
+
     def test_parameterized_allowlists_and_time_bounds(self):
         for field,value in [('dataset','predictions; DROP TABLE labels'),('symbol',"BTCUSDT' OR 1=1 --"),
                             ('stream','unknown'),('start','2026-10-07T10:00:00'),('end','2026-10-08T10:00:00Z'),('format','zip')]:
@@ -116,6 +130,13 @@ class PureTests(unittest.TestCase):
 
 
 class HTTPTests(unittest.IsolatedAsyncioTestCase):
+    async def test_export_memory_pressure_refuses_database_work(self):
+        with patch.object(api,'memory_snapshot',return_value={'headroom_bytes':1}), patch.object(api,'trim_unused') as trim:
+            response=await self.client.get('/research/api/download',params=QUERY,headers=self.cookie())
+            self.assertEqual(response.status,400)
+            self.assertEqual(self.db.calls,0)
+            trim.assert_called_once()
+
     async def asyncSetUp(self):
         self.db=FakeDB()
         self.client=TestClient(TestServer(api.create_app(db=self.db,token=TOKEN)))

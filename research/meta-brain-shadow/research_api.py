@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from aiohttp import web
+from research_memory import RESERVE, snapshot as memory_snapshot, trim_unused
 
 ROOT = Path(__file__).resolve().parent / 'research_ui'
 SYMBOLS = ('BTCUSDT', 'ETHUSDT', 'SOLUSDT')
@@ -30,12 +31,13 @@ SCHEMA = {
                        'last_ms': 'bigint', 'rows': 'integer', 'sha256': 'text', 'payload': 'bytea'},
     'capture_status': {'id': 'bigint', 'at': 'bigint', 'record': 'text'},
 }
-MAX_INPUT = 32 * 1024**2
-MAX_OUTPUT = 128 * 1024**2
+MAX_INPUT = 8 * 1024**2
+MAX_TABLE_SCAN = 32 * 1024**2
+MAX_OUTPUT = 32 * 1024**2
 MAX_CHUNK = 2 * 1024**2
 MAX_DECODED_CHUNK = 8 * 1024**2
 MAX_LINE = 1024**2
-MAX_ROWS = 100000
+MAX_ROWS = 25000
 MAX_SECONDS = 120
 TABLES_SQL = """SELECT c.relname, pg_total_relation_size(c.oid), pg_table_size(c.oid),
  pg_indexes_size(c.oid), c.reltuples::bigint FROM pg_class c JOIN pg_namespace n
@@ -253,7 +255,7 @@ class ResearchDB:
                 checked = ['predictions', 'labels']
             else:
                 checked = [selection.dataset]
-            if any(sizes.get(t, MAX_INPUT + 1) > MAX_INPUT for t in checked):
+            if any(sizes.get(t, MAX_TABLE_SCAN + 1) > MAX_TABLE_SCAN for t in checked):
                 raise GuardError('Dataset needs a time index before safe online export; no index will be created here.')
             return {'estimated_rows': plan['Plan Rows'], 'row_count_is_estimate': True,
                     'output_bytes': None, 'output_size_is_unknown': True}
@@ -317,12 +319,20 @@ def create_app(db=None, token=None, development=False, health=None):
     db = db or ResearchDB()
     gate = asyncio.Lock()
 
+    def check_memory():
+        usage = memory_snapshot()
+        if usage and usage['headroom_bytes'] < RESERVE:
+            trim_unused()
+            usage = memory_snapshot()
+            if usage and usage['headroom_bytes'] < RESERVE:
+                raise GuardError('Observer memory is busy. Try the download again later.')
+
     @web.middleware
     async def protect(request, handler):
         if development and request.remote not in ('127.0.0.1', '::1'):
             raise web.HTTPForbidden(text='Development preview is localhost only.')
         if request.path.startswith('/research/api/') and not development and not access.valid(request.cookies.get('research_session')):
-            raise web.HTTPUnauthorized(text='Open your private access link.')
+            raise web.HTTPUnauthorized(text='Enter your research access key.')
         try:
             response = await handler(request)
         except GuardError as error:
@@ -368,6 +378,7 @@ def create_app(db=None, token=None, development=False, health=None):
             raise web.HTTPTooManyRequests(text='A research query is already running.')
         async with gate, asyncio.timeout(15):
             result = dict(await db.metadata())
+            result['memory'] = memory_snapshot()
             if health:
                 h = health()
                 result['observer'] = {k: h.get(k) for k in ('healthy', 'execution_enabled', 'shadow_only', 'at', 'write_errors')}
@@ -378,6 +389,7 @@ def create_app(db=None, token=None, development=False, health=None):
         if gate.locked():
             raise web.HTTPTooManyRequests(text='A research query is already running.')
         async with gate, asyncio.timeout(15):
+            check_memory()
             return web.json_response(await db.estimate(selection))
 
     async def download(request):
@@ -385,6 +397,7 @@ def create_app(db=None, token=None, development=False, health=None):
         if gate.locked():
             raise web.HTTPTooManyRequests(text='An export is already running.')
         async with gate, asyncio.timeout(MAX_SECONDS):
+            check_memory()
             await db.estimate(selection)  # fail before sending HTTP success headers
             name = selection.dataset + ('_' + selection.stream if selection.dataset == 'capture' else '')
             response = web.StreamResponse(headers={**security_headers(),
@@ -412,6 +425,8 @@ def create_app(db=None, token=None, development=False, health=None):
             try:
                 await send(csv_row(columns[selection.dataset]))
                 async for row in db.records(selection):
+                    if row_count % 256 == 0:
+                        check_memory()
                     row_count += 1
                     if row_count > MAX_ROWS:
                         raise GuardError('Row limit exceeded.')
