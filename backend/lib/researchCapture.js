@@ -691,7 +691,7 @@ function birth(signal, context) {
     engine:engine === 'Marci' ? 'MARCI' : 'NEW_ORAYAN',configHash,
     retraceStateShadow:compact.retraceStateShadow||null});
   capMap(candidateKeysById,MAX_CANDIDATE_LINKS);
-  if (continuing && previous.signature === signature) { previous.at=scanAt; return null; }
+  if (continuing && previous.signature === signature) { if(minimal.enabled())minimal.rememberNative(signal,{...compact,episodeId,kind:'candidate_update'},settings);previous.at=scanAt; return null; }
   compact.kind = continuing ? 'candidate_update' : 'candidate_birth';
   compact.episodeId = episodeId;
   compact.episodeOriginAt = originAt;

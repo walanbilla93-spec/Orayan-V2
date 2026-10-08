@@ -2,6 +2,31 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os');
 const {Capture}=require('../lib/minimalCapture'),reset=require('../lib/startupCaptureReset'),risk=require('../lib/risk');
 function tmp(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-minimal-test-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));return d;}
+test('entry attempt freezes latest used features even when same-bar candidate refresh was suppressed',async t=>{
+ const root=tmp(t),store=require('../lib/store'),old=store.DATA_DIR;store.DATA_DIR=root;t.after(()=>{store.DATA_DIR=old;});fs.writeFileSync(path.join(root,'capture-minimal-policy.json'),JSON.stringify({epochId:'ENTRY'}));
+ const m=require('../lib/minimalCapture'),settings={mode:'paper',timeframe:'15'},base={decisionAt:Date.now(),episodeId:'E',candidateKey:'K',configHash:'C',passed:true,failedGates:[],engine:'NEW_ORAYAN',kind:'candidate_birth'},signal={id:'A',symbol:'X',side:'BUY',entry:100,sl:90,tp:120,score:50};
+ m.native(signal,{...base,signature:'A'},settings);m.native({...signal,id:'B',entry:101,score:51},{...base,kind:'candidate_update',signature:'B'},settings);
+ m.nativeOutcome({at:Date.now(),episodeId:'E',candidateId:'B',engine:'NEW_ORAYAN',event:'ORDER_INTENT',signature:'INTENT',mode:'paper'},null);
+ m.nativeOutcome({at:Date.now(),episodeId:'E',candidateId:'C',engine:'NEW_ORAYAN',event:'NO_ORDER',signature:'C',reason:'PORTFOLIO_OR_SLOT_LIMIT'},null);m.nativeOutcome({at:Date.now(),episodeId:'E',candidateId:'D',engine:'NEW_ORAYAN',event:'NO_ORDER',signature:'D',reason:'PORTFOLIO_OR_SLOT_LIMIT'},null);
+ const c=m.current();await c.flush();const e=await c.export();const rows=e.files.flatMap(f=>fs.readFileSync(f.path,'utf8').trim().split('\n').map(JSON.parse));const entry=rows.find(r=>r.boundary==='ADMISSION_ATTEMPT');assert.equal(entry.geometry.entryPrice,101);assert.equal(entry.score,51);assert.equal(rows.filter(r=>r.stream==='decision_episode').length,2);assert.equal(rows.filter(r=>r.reasonCode==='PORTFOLIO_OR_SLOT_LIMIT').length,1);await c.close();
+});
+test('population excludes inherited trades and counts new admission/fill/terminal once across funding and restart',t=>{
+ const c=new Capture(tmp(t));c.emit('trade_lifecycle',{tradeId:'OLD',status:'CLOSED',filledAt:1,inheritedWorkingState:true});c.emit('trade_lifecycle',{tradeId:'NEW',status:'PENDING',transitions:['ORDER_ACK']});c.emit('trade_lifecycle',{tradeId:'NEW',status:'CLOSED',filledAt:2});c.emit('trade_lifecycle',{tradeId:'NEW',status:'CLOSED',filledAt:2,fundingStatus:'FINAL'});
+ assert.equal(c.state.admitted,1);assert.equal(c.state.filled,1);assert.equal(c.state.closed,1);assert.equal(c.state.inheritedClosed,1);const restored=new Capture(c.dir);restored.emit('trade_lifecycle',{tradeId:'NEW',status:'CLOSED',filledAt:2});assert.equal(restored.state.closed,1);
+});
+test('rejected quote noise is suppressed; new bar, gate change and eligible geometry still capture',()=>{
+ const {nativeSignature}=require('../lib/minimalCapture'),signal={btcRegime:'BEAR_RANGE',gates:{checks:[{name:'BTC',enabled:true,pass:false}]}},row={episodeId:'E',configHash:'C',decisionAt:60000,passed:false,failedGates:['BTC'],signature:'old'},settings={timeframe:'15'};
+ const first=nativeSignature(signal,row,settings);assert.equal(nativeSignature({...signal,entry:99,score:48},{...row,decisionAt:120000,signature:'quote-change'},settings),first);
+ assert.notEqual(nativeSignature(signal,{...row,decisionAt:900000},settings),first);assert.notEqual(nativeSignature(signal,{...row,failedGates:['BTC','RR']},settings),first);
+ assert.equal(nativeSignature(signal,{...row,passed:true,signature:'A'},settings),nativeSignature(signal,{...row,passed:true,signature:'B'},settings));assert.notEqual(nativeSignature(signal,{...row,passed:true},settings),first);
+});
+test('space retention rotates old segments while durable full-population counts remain exact',t=>{
+ const c=new Capture(tmp(t),{limits:{segmentBytes:500,totalBytes:1200,dailyBytes:50000,reserveBytes:0}});for(let i=0;i<10;i++)c.emit('decision_episode',{sourceEpisodeId:String(i),mode:'PAPER'});
+ assert.equal(c.state.acceptedRows,10);assert.equal(c.state.lostRows,0);assert.ok(c.state.retainedBytes<=1200);assert.ok(c.state.prunedRows>0);assert.equal(c.state.acceptedRows,c.state.retainedRows+c.state.prunedRows);assert.equal(c.status().retentionStatus,'SUBSET_RETAINED');
+});
+test('interrupted rotation or missing segment cannot masquerade as a complete retained population',t=>{
+ const c=new Capture(tmp(t));c.emit('decision_episode',{mode:'PAPER'});fs.unlinkSync(path.join(c.dir,c.state.segments[0].name));const restart=new Capture(c.dir);assert.equal(restart.state.acceptedRows,1);assert.equal(restart.state.missingRows,1);assert.equal(restart.state.retainedRows,0);assert.equal(restart.state.populationComplete,false);
+});
 test('management captures first prespecified milestones once without raw minute paths',t=>{
  const c=new Capture(tmp(t),{epochId:'M'}),trade={tradeId:'T',episodeId:'E',research34:{managementPolicy:'FROZEN',breakEven:{price:101,firstClosedBarReach:{knownAt:100,precision:'BAR_CLOSE'}},structuralProgress:{knownAt:200,levelId:'L',price:102}}};
  for(let i=0;i<100;i++)require('../lib/minimalCapture').management(c,trade,300+i);
