@@ -554,6 +554,7 @@ function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,b
     try {
       const row=evaluate({symbol,candles,ticker:tickerBySymbol.get(symbol),instrument:instruments?.get(symbol),btcRegime,settings,decisionAt:Date.now(),
         v2Signals:signals.filter(s=>s.symbol===symbol && !s.signalSource?.startsWith('MARCI'))});
+      if(minimal.enabled())row.v2Decision=row.v2Decision.map(p=>({...p,...require('./researchCapture').previewCandidateLink(signals.find(s=>s.id===p.candidateId),scanAt,settings)}));
       row.btcContext={regime:btcRegime?.regime??null,strength:btcRegime?.strength??null,
         return1:marketSnapshot?.btcReturn1??null,return3:marketSnapshot?.btcReturn3??null};
       row.breadth={value:marketSnapshot?.directionalBreadth??null,momentum:marketSnapshot?.breadthMomentum??null,

@@ -124,7 +124,7 @@ function management(c,t,at){
   ])if(stamp)c.emit('management_path',{...common,transition,effectiveAt:stamp.knownAt,timestamp:stamp,hypothetical:true,...details},{key:'management:'+t.tradeId+':'+transition,signature:digest(stamp),priority:true});
 }
 function meaningfulV3(row){return !!(row.v2Decision?.length||(row.side&&row.directionPermission&&row.geometry?.reactionLevel));}
-function nativePair(x,epochId){const s=nativeSnapshots.get(x.candidateId);return {candidateId:x.candidateId,episodeId:s?epochId+':'+s.sourceEpisodeId:null,sourceEpisodeId:s?.sourceEpisodeId,configHash:s?.configHash,side:x.side,admission:x.passed?'ELIGIBLE':'REJECTED',missingReason:s?null:'NATIVE_EPISODE_UNAVAILABLE'};}
+function nativePair(x,epochId){const s=nativeSnapshots.get(x.candidateId),sourceEpisodeId=s?.sourceEpisodeId??x.nativeEpisodeId;return {candidateId:x.candidateId,episodeId:sourceEpisodeId?epochId+':'+sourceEpisodeId:null,sourceEpisodeId,configHash:s?.configHash??x.nativeConfigHash,side:x.side,admission:x.passed?'ELIGIBLE':'REJECTED',missingReason:sourceEpisodeId?null:'NATIVE_EPISODE_UNAVAILABLE'};}
 function v3Signature(row,pairs){return digest([row.episodeId,row.configHash,row.closedBarOpenAt,row.v3Decision,row.rejectReason,row.regime,row.directionPermission,row.geometry?.reactionLevel?.id,row.geometry?.stopLevel?.id,row.geometry?.objectiveLevel?.id,pairs.map(x=>[x.episodeId,x.side,x.admission]).sort()]);}
 function v3Entry(c,candidateId,tradeId,at,boundary,episodeId){const snapshot=v3Snapshots.get(candidateId)||v3EpisodeSnapshots.get(episodeId);if(snapshot)c.emit('decision_episode',{...snapshot,at,tradeId,boundary},{key:'v3entry:'+tradeId,signature:tradeId,priority:true});return Boolean(snapshot);}
 function observe(channel,row){return safe(c=>{

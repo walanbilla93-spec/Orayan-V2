@@ -99,6 +99,12 @@ function keyFor(signal) {
   const identity = signal.marciIndependent?.patternKey || [signal.engine || signal.entryPath || '',signal.structureEvent || ''].join(':');
   return [engine,signal.symbol,signal.side,identity].join('|');
 }
+// Read-only identity preview for the earlier V3 observer in the same scan.
+// Uses the exact existing native episode rule without recording or consuming a birth.
+function previewCandidateLink(signal,scanAt,settings){
+  if(!signal)return {};const key=keyFor(signal),previous=lastCandidate.get(key);
+  return {nativeCandidateKey:key,nativeEpisodeId:previous&&scanAt-previous.at<=30*60000?previous.episodeId:digest([key,scanAt]),nativeConfigHash:settingsHash(settings)};
+}
 function capMap(map,max) {while (map.size>max) map.delete(map.keys().next().value);}
 function digest(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,16); }
 function stable(value) {
@@ -762,7 +768,7 @@ function exportFiles(date = 'all', raw = false) {
     .sort((a,b) => a.slice(-16).localeCompare(b.slice(-16)) || a.localeCompare(b))
     .map(name => path.join(dir, name));
 }
-module.exports={VERSION,COMPACT_VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,
+module.exports={VERSION,COMPACT_VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,previewCandidateLink,
   settingsHash,computeForwardLabel,resolveDueForwardLabels,exportFiles,prune,
   liquidationWindows,liquidationWindowTotals,candidateLink,researchGet,
   _test:{orderFlowFailureReason,appendOrderFlowTerminal,scheduleOrderFlowLabel,pumpOrderFlow,
