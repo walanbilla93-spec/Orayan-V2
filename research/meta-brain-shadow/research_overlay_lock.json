@@ -1,0 +1,26 @@
+{
+  "observer_commit": "6b99b620435717bc360d3d9b5ca4d42b88f6ffef",
+  "observer_files": {
+    "Dockerfile": "cfdd289361b4114ddb069f195e8ebedf5c5be6e055e981cb3492dff9f1f6434e",
+    "base.py": "12f5d26ff89c1f67a92f4ff07ff5ba17d2c27c633520b81aee1a7df22530b8d1",
+    "config.json": "fa51ed20a90727e3fc2de80045c72e25ce8cb2364f5fa2e7bb2e87221bd9e6df",
+    "flow.py": "0cb9f081138871f680a59ba558f3ca9862db2563f1f59a0b2648d76b2386c0c7",
+    "frozen_detector.py": "16f7006fda353f2f96b55b8d3c830e82423c817abaf110b06b6b209361336c4f",
+    "frozen_features.py": "82f881614d4bac7cf9a05eb4bacc2d4054804248af47288176289f1ce397af58",
+    "frozen_indicators.py": "0a5159b685a01b876380cbc655e12db1f45b52a77c0b1d992a07d7893ca49f1d",
+    "model_lock.json": "822b0628a60255134dd01e015f7aad93a80cb7ac94c5e3558cc297f627adeb73",
+    "models/fold3_A_locked.joblib": "3e323e03f5ec62713eb9d32b4cdd2a121311d3d4dcd7930b68e3240bc14f0bcc",
+    "models/fold3_A_locked.json": "ee62cedc441717f1e8a1260960d2b9f80f428c3818cce58c9d1906cff77d1aa1",
+    "models/fold3_A_locked_residual_cells.csv": "02d9896b97e34f27753d97015240d1195518e2ea332e17ce1c1d05f6a8190f96",
+    "models/fold3_A_locked_uncertainty.joblib": "31e3539d35a76f46b518d206ea043426d8e786c109300acac24190d684130d3b",
+    "models/fold3_B_locked.joblib": "5c965a864ec402c922e1a3b6f8989b35102daab5817b957283161ae32e3aa756",
+    "models/fold3_B_locked.json": "61adc01c1057c71ebfcf0a6ca5e32c3ac4fa50a0423f45f983e4028a72009cc7",
+    "models/fold3_C_locked.joblib": "b4fc8cbd2cc672770c136877fcec30deb0914d9db56b7371748b01ad9b6c3bec",
+    "models/fold3_C_locked.json": "1ec272059b883e92524b6eb829f003615e5520eb4340781a695d9dfbddd44e0c",
+    "models/fold3_D_references.json": "322488ef4bc4e2ae3daacdf024d19eb5f712623c194299560ecc17a956d5050b",
+    "pg_storage.py": "6647c112fb5e251a2fd601ab62a6fc573a6e786c44e3c19cfbd44055cf6cf9bd",
+    "requirements.txt": "c31ea5e3cc2cec49a3732b1b535f0cb690bfe39220d899aa278d36d98a8821e4",
+    "service.py": "b61ffe0501a253121398175515b83a72f3e5e7876e8c4833f2ac9b90e82ad947",
+    "storage.py": "17ec6b8e1ad70aac376c1b23d3449285f5a1dbf819b1863a1d32351ce8abf60e"
+  }
+}

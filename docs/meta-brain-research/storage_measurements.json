@@ -1,0 +1,377 @@
+{
+  "table_measured_at": "2026-10-08T06:10:59.652395+00:00",
+  "logical_database_bytes": 1263105715,
+  "tables": [
+    {
+      "table": "capture_chunks",
+      "heap_bytes": 894181376,
+      "table_toast_bytes": 1097195520,
+      "index_bytes": 133586944,
+      "total_bytes": 1230782464,
+      "estimated_rows": 846561
+    },
+    {
+      "table": "capture_status",
+      "heap_bytes": 11255808,
+      "table_toast_bytes": 23560192,
+      "index_bytes": 237568,
+      "total_bytes": 23797760,
+      "estimated_rows": 9637
+    },
+    {
+      "table": "predictions",
+      "heap_bytes": 8192,
+      "table_toast_bytes": 139264,
+      "index_bytes": 16384,
+      "total_bytes": 155648,
+      "estimated_rows": -1
+    },
+    {
+      "table": "labels",
+      "heap_bytes": 16384,
+      "table_toast_bytes": 49152,
+      "index_bytes": 16384,
+      "total_bytes": 65536,
+      "estimated_rows": -1
+    },
+    {
+      "table": "boundary",
+      "heap_bytes": 8192,
+      "table_toast_bytes": 16384,
+      "index_bytes": 16384,
+      "total_bytes": 32768,
+      "estimated_rows": -1
+    }
+  ],
+  "indexes": [
+    {
+      "index": "capture_chunks_pkey",
+      "bytes": 97288192
+    },
+    {
+      "index": "capture_lookup",
+      "bytes": 36298752
+    },
+    {
+      "index": "capture_status_pkey",
+      "bytes": 237568
+    },
+    {
+      "index": "predictions_pkey",
+      "bytes": 16384
+    },
+    {
+      "index": "labels_pkey",
+      "bytes": 16384
+    },
+    {
+      "index": "boundary_pkey",
+      "bytes": 16384
+    }
+  ],
+  "exact_counts_at_table_audit": {
+    "predictions": 21,
+    "labels": 21,
+    "boundary": 1,
+    "capture_status": 9872
+  },
+  "stream_measured_at": "2026-10-08T07:13:26.764360+00:00",
+  "stream_totals": [
+    {
+      "stream": "depth_1s",
+      "chunks": 276708,
+      "source_rows": 276708,
+      "gzip_bytes": 322141765,
+      "first_ms": 1791337611187,
+      "last_ms": 1791443597503
+    },
+    {
+      "stream": "raw_trades",
+      "chunks": 203515,
+      "source_rows": 1600046,
+      "gzip_bytes": 313553372,
+      "first_ms": 1791337614579,
+      "last_ms": 1791443597851
+    },
+    {
+      "stream": "derived_1s",
+      "chunks": 276708,
+      "source_rows": 276708,
+      "gzip_bytes": 190974938,
+      "first_ms": 1791337611187,
+      "last_ms": 1791443597503
+    },
+    {
+      "stream": "derived_5s",
+      "chunks": 63588,
+      "source_rows": 63588,
+      "gzip_bytes": 44696920,
+      "first_ms": 1791337611187,
+      "last_ms": 1791443595475
+    },
+    {
+      "stream": "feature_pipeline_status",
+      "chunks": 30684,
+      "source_rows": 30684,
+      "gzip_bytes": 12980535,
+      "first_ms": 1791337611187,
+      "last_ms": 1791443587511
+    },
+    {
+      "stream": "derived_60s",
+      "chunks": 5304,
+      "source_rows": 5304,
+      "gzip_bytes": 3787535,
+      "first_ms": 1791337611187,
+      "last_ms": 1791443580404
+    },
+    {
+      "stream": "aux_oi_5m",
+      "chunks": 6384,
+      "source_rows": 6384,
+      "gzip_bytes": 2396543,
+      "first_ms": 1791337612496,
+      "last_ms": 1791443586479
+    },
+    {
+      "stream": "aux_long_short_5m",
+      "chunks": 6384,
+      "source_rows": 6384,
+      "gzip_bytes": 2369564,
+      "first_ms": 1791337612907,
+      "last_ms": 1791443586808
+    },
+    {
+      "stream": "aux_funding",
+      "chunks": 6384,
+      "source_rows": 6384,
+      "gzip_bytes": 2326840,
+      "first_ms": 1791337613564,
+      "last_ms": 1791443587465
+    },
+    {
+      "stream": "live_ohlc",
+      "chunks": 5301,
+      "source_rows": 5301,
+      "gzip_bytes": 2283176,
+      "first_ms": 1791337620215,
+      "last_ms": 1791443581096
+    },
+    {
+      "stream": "aux_premium_1m",
+      "chunks": 6384,
+      "source_rows": 6384,
+      "gzip_bytes": 2277440,
+      "first_ms": 1791337613234,
+      "last_ms": 1791443587135
+    },
+    {
+      "stream": "raw_liquidations",
+      "chunks": 1425,
+      "source_rows": 1797,
+      "gzip_bytes": 648200,
+      "first_ms": 1791337961180,
+      "last_ms": 1791443300601
+    },
+    {
+      "stream": "bootstrap_ohlc",
+      "chunks": 9,
+      "source_rows": 18,
+      "gzip_bytes": 393354,
+      "first_ms": 1791337534982,
+      "last_ms": 1791337588177
+    }
+  ],
+  "exact_chunk_count_at_stream_audit": 888778,
+  "recent_interval": {
+    "start": "2026-10-08T01:00:00Z",
+    "end": "2026-10-08T07:00:00Z",
+    "hours": 6
+  },
+  "recent_streams": [
+    {
+      "stream": "depth_1s",
+      "chunks": 56781,
+      "source_rows": 56781,
+      "gzip_bytes": 66245652,
+      "max_chunk_bytes": 1330,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 9463.5,
+      "bytes_per_hour": 11040942.0,
+      "projected_bytes_per_day": 264982608,
+      "share_pct": 35.54789943361316
+    },
+    {
+      "stream": "raw_trades",
+      "chunks": 43440,
+      "source_rows": 341341,
+      "gzip_bytes": 65856219,
+      "max_chunk_bytes": 135177,
+      "max_chunk_span_ms": 1137,
+      "rows_per_hour": 56890.166666666664,
+      "bytes_per_hour": 10976036.5,
+      "projected_bytes_per_day": 263424876,
+      "share_pct": 35.33892684896518
+    },
+    {
+      "stream": "derived_1s",
+      "chunks": 56781,
+      "source_rows": 56781,
+      "gzip_bytes": 39250252,
+      "max_chunk_bytes": 750,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 9463.5,
+      "bytes_per_hour": 6541708.666666667,
+      "projected_bytes_per_day": 157001008,
+      "share_pct": 21.061971144007664
+    },
+    {
+      "stream": "derived_5s",
+      "chunks": 12957,
+      "source_rows": 12957,
+      "gzip_bytes": 9129768,
+      "max_chunk_bytes": 750,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 2159.5,
+      "bytes_per_hour": 1521628.0,
+      "projected_bytes_per_day": 36519072,
+      "share_pct": 4.899100015140911
+    },
+    {
+      "stream": "feature_pipeline_status",
+      "chunks": 6276,
+      "source_rows": 6276,
+      "gzip_bytes": 2598389,
+      "max_chunk_bytes": 449,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 1046.0,
+      "bytes_per_hour": 433064.8333333333,
+      "projected_bytes_per_day": 10393556,
+      "share_pct": 1.3943144655200415
+    },
+    {
+      "stream": "derived_60s",
+      "chunks": 1080,
+      "source_rows": 1080,
+      "gzip_bytes": 772125,
+      "max_chunk_bytes": 754,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 180.0,
+      "bytes_per_hour": 128687.5,
+      "projected_bytes_per_day": 3088500,
+      "share_pct": 0.4143278995907318
+    },
+    {
+      "stream": "aux_oi_5m",
+      "chunks": 1305,
+      "source_rows": 1305,
+      "gzip_bytes": 490078,
+      "max_chunk_bytes": 381,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 217.5,
+      "bytes_per_hour": 81679.66666666667,
+      "projected_bytes_per_day": 1960312,
+      "share_pct": 0.26297942480249525
+    },
+    {
+      "stream": "aux_long_short_5m",
+      "chunks": 1305,
+      "source_rows": 1305,
+      "gzip_bytes": 484387,
+      "max_chunk_bytes": 377,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 217.5,
+      "bytes_per_hour": 80731.16666666667,
+      "projected_bytes_per_day": 1937548,
+      "share_pct": 0.25992559274606547
+    },
+    {
+      "stream": "aux_funding",
+      "chunks": 1305,
+      "source_rows": 1305,
+      "gzip_bytes": 474323,
+      "max_chunk_bytes": 370,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 217.5,
+      "bytes_per_hour": 79053.83333333333,
+      "projected_bytes_per_day": 1897292,
+      "share_pct": 0.2545251770342557
+    },
+    {
+      "stream": "aux_premium_1m",
+      "chunks": 1305,
+      "source_rows": 1305,
+      "gzip_bytes": 465503,
+      "max_chunk_bytes": 363,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 217.5,
+      "bytes_per_hour": 77583.83333333333,
+      "projected_bytes_per_day": 1862012,
+      "share_pct": 0.2497923007844383
+    },
+    {
+      "stream": "live_ohlc",
+      "chunks": 1080,
+      "source_rows": 1080,
+      "gzip_bytes": 465458,
+      "max_chunk_bytes": 441,
+      "max_chunk_span_ms": 0,
+      "rows_per_hour": 180.0,
+      "bytes_per_hour": 77576.33333333333,
+      "projected_bytes_per_day": 1861832,
+      "share_pct": 0.24976815345663309
+    },
+    {
+      "stream": "raw_liquidations",
+      "chunks": 276,
+      "source_rows": 335,
+      "gzip_bytes": 123870,
+      "max_chunk_bytes": 1812,
+      "max_chunk_span_ms": 973,
+      "rows_per_hour": 55.833333333333336,
+      "bytes_per_hour": 20645.0,
+      "projected_bytes_per_day": 495480,
+      "share_pct": 0.06646954433842181
+    }
+  ],
+  "total_gzip_payload_bytes": 900830182,
+  "recent_gzip_payload_bytes": 186356024,
+  "recent_gzip_bytes_per_hour": 31059337.333333332,
+  "projected_gzip_bytes_per_day": 745424096,
+  "wal_directory_bytes": null,
+  "wal_limitation": "pg_ls_waldir denied SQLSTATE 42501; no grants/admin access changes",
+  "postgresql_version": "17.10 (Ubuntu 17.10-1.pgdg22.04+1)",
+  "consistency": "Sequential read-only queries while capture continues; timestamps differ; not one transactional snapshot.",
+  "small_dataset_ranges": {
+    "measured_at": "2026-10-08T07:25:22.591167+00:00",
+    "predictions": [
+      21,
+      1791346500000,
+      1791430200000,
+      164755
+    ],
+    "labels": [
+      21,
+      1791346500000,
+      1791430200000,
+      8453
+    ],
+    "capture_status": [
+      10308,
+      1791337396169,
+      1791444321588,
+      32664397
+    ]
+  },
+  "logical_growth": {
+    "before_at": "2026-10-08T05:42:28.186000+00:00",
+    "before_bytes": 1241847475,
+    "after_at": "2026-10-08T07:21:06.063000+00:00",
+    "after_bytes": 1314944691,
+    "elapsed_seconds": 5917.877000000008,
+    "bytes_hour": 44466956.24123307,
+    "projected_bytes_day": 1067206949.7895937,
+    "ceiling_bytes": 3221225472,
+    "projected_hours_to_ceiling": 42.86960345696777
+  }
+}

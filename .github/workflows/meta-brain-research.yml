@@ -1,0 +1,18 @@
+name: Meta Brain research export safety
+on:
+  pull_request:
+    paths: ['research/meta-brain-shadow/research*', 'research/meta-brain-shadow/research_ui/**', 'research/meta-brain-shadow/test_research_api.py', '.github/workflows/meta-brain-research.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r research/meta-brain-shadow/requirements.txt
+      - run: python -m unittest -v test_research_api
+        working-directory: research/meta-brain-shadow
+      - run: node --check research/meta-brain-shadow/research_ui/app.js
