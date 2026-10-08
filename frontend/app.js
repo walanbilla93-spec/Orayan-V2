@@ -167,7 +167,8 @@ function renderCaptureSummary(info,cap){
   hideDormantResearch();
   $('#minimalCapturePanel').hidden=false;$('#legacyResearchPanel').hidden=true;
   const clean=cap.populationComplete&&!(cap.lostRows||cap.volatileLostRows),health=$('#captureHealth');
-  health.textContent=clean?'Capture healthy':'Capture needs attention';health.className='capture-health '+(clean?'healthy':'attention');
+  const historicalOnly=cap.captureRevision?.lostRowsBaseline>0&&cap.lostRows===cap.captureRevision.lostRowsBaseline&&!cap.volatileLostRows&&!cap.writerFailed&&!cap.possibleCrashGap;
+  health.textContent=clean?'Capture healthy':historicalOnly?'Recording · earlier capture gaps':'Capture needs attention';health.className='capture-health '+(clean?'healthy':'attention');
   $('#captureSince').textContent='Fresh epoch since '+fmtDate(cap.startedAt);
   const count=n=>Number(n||0).toLocaleString(),metric=(label,value,note='')=>`<div class="capture-counter"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note?`<small>${esc(note)}</small>`:''}</div>`;
   $('#captureCounters').innerHTML=[
@@ -177,7 +178,7 @@ function renderCaptureSummary(info,cap){
     metric('Errors observed',count((cap.healthBuckets||[]).reduce((n,b)=>n+b.count,0)),'Recent aggregated buckets')
   ].join('');
   const inherited=(cap.inheritedClosed||0)+(cap.inheritedCancelled||0)+(cap.inheritedExpired||0);
-  $('#capturePopulationNote').textContent='Admissions, fills and closes count new-epoch trades across separately labeled paper and shadow modes.'+(inherited?` ${count(inherited)} inherited trade outcomes are excluded.`:'');
+  $('#capturePopulationNote').textContent='Admissions, fills and closes count new-epoch trades across separately labeled paper and shadow modes.'+(inherited?` ${count(inherited)} inherited trade outcomes are excluded.`:'')+(!clean?' Early records contain capture gaps; use complete observation windows for research.':'');
   const arms=info.holdout?.pairedArms||{},names={FIRST_ADMISSION_ONLY:['First admission','One admission per episode'],FIRST_FILLED_ONLY:['First filled trade','One filled trade per episode'],ATR1M_BUFFER:['1 ATR buffer','Wider stop; original structural target'],ATR1M_1P5_REPLACEMENT:['1.5 ATR replacement','Separate full-geometry opportunity population']};
   $('#comparisonCards').innerHTML=Object.entries(names).map(([key,[title,note]])=>{
     const arm=arms[key]||{},cash=x=>x===null||x===undefined?'—':fmt(x,2)+' USDT';

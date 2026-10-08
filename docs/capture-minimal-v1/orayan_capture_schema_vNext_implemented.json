@@ -27,7 +27,7 @@
   ],
   "streams": {
     "decision_episode": {
-      "trigger": "First candidate in an episode, first observation of a new strategy bar, change in admission or stable primary rejection code (first sorted failed-gate code), V3 selected structural geometry boundary, and exact snapshot at ORDER_INTENT. Secondary gate flips while the same primary blocker still rejects the candidate are no-op scans. Full enabled-gate outcomes and frozen operands are kept at every captured boundary.",
+      "trigger": "First observation of a distinct episode/config/strategy-bar/admission-or-primary-blocker/regime/structural boundary. Repeated returns to that boundary within the same strategy bar are suppressed. Exact latest snapshots remain frozen at native and V3 admission attempts and active replacement eligibility.",
       "fields": [
         "boundary",
         "decisionAt",
@@ -287,7 +287,9 @@
         "nativeContinuityEntries",
         "nativeContinuityGap",
         "pendingBytes",
-        "queueLimits"
+        "queueLimits",
+        "captureRevision",
+        "captureRevisions"
       ]
     }
   },
@@ -335,7 +337,9 @@
     "Bounded native candidate continuity index (maximum 4096 identity/timestamp/signature entries) is operational metadata, persisted at event/status flush and graceful shutdown. Restore retains the existing 30-minute episode-gap rule. No raw candidate payload is stored in that index.",
     "Primary blocker selection is a capture-only convention: first sorted failed-gate code. This never changes gate ordering, entry eligibility or rejected reasons in the trading engine. Exact admission-time snapshots remain complete.",
     "V3 eligibility rejections are retained for meaningful native candidates even when V3 has no permitted side. Empty scans remain absent. Each distinct native/V3 configHash has its allowlisted nonsecret configuration definition.",
-    "Worker queue: maximum 1024 messages and 8 MiB projected record bytes; 128 message slots reserved for priority endpoints. Native continuity updates are coalesced by identity, maximum 4096, without telemetry rows. Whole worker state is copied only on startup, explicit flush/export or close."
+    "Worker queue: maximum 1024 messages and 8 MiB projected record bytes; 128 message slots reserved for priority endpoints. Native continuity updates are coalesced by identity, maximum 4096, without telemetry rows. Whole worker state is copied only on startup, explicit flush/export or close.",
+    "Initial runtime overflow losses and legacy comparison-counter restarts make the early new-epoch sample exploratory; export completeness remains false. Future working comparison counters survive restarts within the same minimal epoch.",
+    "Export manifests carry the capture-policy source hash, revision start time, first event sequence and loss baseline so analysts can separate the corrected observation window from earlier exploratory records."
   ],
   "frozenProposalSha256": "f9d2d5073913fe1e2a6f261cc8c2e514563258c7d512b5387171dd4e9fdbe7e3"
 }

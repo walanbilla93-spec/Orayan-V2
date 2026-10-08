@@ -2,6 +2,12 @@
 const {parentPort,workerData}=require('worker_threads');
 const {Capture}=require('./minimalCapture');
 const c=new Capture(workerData.dir,workerData.options);
+const fs=require('fs'),path=require('path'),crypto=require('crypto');
+const revisionHash=crypto.createHash('sha256').update(['minimalCapture.js','captureProxy.js','captureWorker.js','v34bHoldout.js'].map(f=>fs.readFileSync(path.join(__dirname,f),'utf8').replace(/\r\n/g,'\n')).join('\n')).digest('hex');
+if(c.state.captureRevision?.hash!==revisionHash){
+ c.state.captureRevisions=[...(c.state.captureRevisions||[]),...(c.state.captureRevision?[c.state.captureRevision]:[])].slice(-20);
+ c.state.captureRevision={hash:revisionHash,startedAt:Date.now(),firstEventSequence:c.state.sequence+1,lostRowsBaseline:c.state.lostRows,policy:'DISTINCT_DECISION_BOUNDARIES_WITH_EXACT_ADMISSION_SNAPSHOTS'};
+}
 if(c.state.sessionOpen){c.state.populationComplete=false;c.state.possibleCrashGap=true;}
 c.state.sessionOpen=true;c.flush();
 parentPort.postMessage({ready:true,state:c.state,status:c.status()});

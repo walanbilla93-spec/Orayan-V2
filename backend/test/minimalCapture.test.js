@@ -2,6 +2,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os');
 const {Capture}=require('../lib/minimalCapture'),reset=require('../lib/startupCaptureReset'),risk=require('../lib/risk');
 function tmp(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-minimal-test-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));return d;}
+test('minimal comparison population survives restart without legacy hourly-cohort reset',t=>{
+ const root=tmp(t),dir=path.join(root,'v3-shadow-compact-v1');fs.mkdirSync(dir);fs.writeFileSync(path.join(root,'capture-minimal-policy.json'),JSON.stringify({epochId:'E'}));
+ const state={startedAt:1,cohortId:'E',validation:{captureRevision:'legacy'},episodes:{A:{admissions:2,firstFillAt:123}},admissions:{T:{episodeId:'A'}},armStats:{}};
+ fs.writeFileSync(path.join(dir,'holdout-v34b.json'),JSON.stringify(state));const {Holdout}=require('../lib/v34bHoldout'),h=new Holdout(dir);assert.deepEqual(h.state,state);assert.equal(fs.readdirSync(dir).length,1);
+});
 test('paired native candidates retain V3 eligibility rejections without recording empty scans',()=>{
  const {meaningfulV3}=require('../lib/minimalCapture');assert.equal(meaningfulV3({side:null,directionPermission:false,v2Decision:[{candidateId:'N'}]}),true);
  assert.equal(meaningfulV3({side:'BUY',directionPermission:true,geometry:{reactionLevel:{id:'L'}}}),true);
@@ -26,8 +31,13 @@ test('entry attempt freezes latest used features even when same-bar candidate re
  m.native(signal,{...base,signature:'A'},settings);m.native({...signal,id:'B',entry:101,score:51},{...base,kind:'candidate_update',signature:'B'},settings);
  m.nativeOutcome({at:Date.now(),episodeId:'E',candidateId:'B',engine:'NEW_ORAYAN',event:'ORDER_INTENT',signature:'INTENT',mode:'paper'},null);
  m.observe('v3',{decisionAt:Date.now(),episodeId:'V3',candidateId:'V3C',symbol:'X',side:null,configHash:'C',v3Decision:'REJECT',rejectReason:'REGIME_BLOCKED',v2Decision:[{candidateId:'B',side:'BUY',passed:true}]});
+ for(let i=0;i<100;i++){
+   m.native(signal,{...base,passed:false,failedGates:['BTC'],kind:'candidate_update'},settings);m.native(signal,{...base,kind:'candidate_update'},settings);
+   m.observe('v3',{decisionAt:Date.now(),episodeId:'V3',candidateId:'V3D',symbol:'X',side:null,configHash:'C',v3Decision:'REJECT',rejectReason:'REGIME_BLOCKED',geometry:{entryPrice:101+i},v2Decision:[{candidateId:'B',side:'BUY',passed:true}]});
+ }
+ m.observe('trades',{capturedAt:Date.now(),transitions:['ADMITTED'],trade:{candidateId:'V3D',episodeId:'V3',tradeId:'VT',symbol:'X',status:'PENDING',geometry:{entryPrice:200}}});
  m.nativeOutcome({at:Date.now(),episodeId:'E',candidateId:'C',engine:'NEW_ORAYAN',event:'NO_ORDER',signature:'C',reason:'PORTFOLIO_OR_SLOT_LIMIT'},null);m.nativeOutcome({at:Date.now(),episodeId:'E',candidateId:'D',engine:'NEW_ORAYAN',event:'NO_ORDER',signature:'D',reason:'PORTFOLIO_OR_SLOT_LIMIT'},null);
- const c=m.current();await c.flush();const e=await c.export();const rows=e.files.flatMap(f=>fs.readFileSync(f.path,'utf8').trim().split('\n').map(JSON.parse));const entry=rows.find(r=>r.boundary==='ADMISSION_ATTEMPT');assert.equal(entry.geometry.entryPrice,101);assert.equal(entry.score,51);assert.equal(rows.filter(r=>r.stream==='decision_episode').length,3);assert.equal(rows.find(r=>r.strategy==='ORAYAN_V3').pairedNativeEpisodes[0].episodeId,entry.episodeId);assert.equal(rows.filter(r=>r.reasonCode==='PORTFOLIO_OR_SLOT_LIMIT').length,1);await c.close();
+ const c=m.current();await c.flush();const e=await c.export();const rows=e.files.flatMap(f=>fs.readFileSync(f.path,'utf8').trim().split('\n').map(JSON.parse));const entry=rows.find(r=>r.boundary==='ADMISSION_ATTEMPT');assert.equal(entry.geometry.entryPrice,101);assert.equal(entry.score,51);assert.equal(rows.filter(r=>r.stream==='decision_episode').length,5);assert.equal(rows.find(r=>r.strategy==='ORAYAN_V3').pairedNativeEpisodes[0].episodeId,entry.episodeId);assert.equal(rows.find(r=>r.stream==='decision_episode'&&r.tradeId==='VT').geometry.entryPrice,200);assert.equal(rows.filter(r=>r.reasonCode==='PORTFOLIO_OR_SLOT_LIMIT').length,1);await c.close();
 });
 test('population excludes inherited trades and counts new admission/fill/terminal once across funding and restart',t=>{
  const c=new Capture(tmp(t));c.emit('trade_lifecycle',{tradeId:'OLD',status:'CLOSED',filledAt:1,inheritedWorkingState:true});c.emit('trade_lifecycle',{tradeId:'NEW',status:'PENDING',transitions:['ORDER_ACK']});c.emit('trade_lifecycle',{tradeId:'NEW',status:'CLOSED',filledAt:2});c.emit('trade_lifecycle',{tradeId:'NEW',status:'CLOSED',filledAt:2,fundingStatus:'FINAL'});

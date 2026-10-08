@@ -4,7 +4,9 @@ class Holdout {
   constructor(dir){this.file=path.join(dir,'holdout-v34b.json');this.state=fs.existsSync(this.file)?JSON.parse(fs.readFileSync(this.file,'utf8')):
     {version:DEFINITIONS.version,startedAt:null,episodes:{},admissions:{},armStats:{},researchOnly:true,executionAllowed:false};
     const revision=require('../validation/v34b-capture-validation.json').captureRevision;
-    if(this.state.startedAt&&revision&&this.state.validation?.captureRevision!==revision){
+    const minimalFile=path.join(dir,'..','capture-minimal-policy.json');
+    const sameMinimalEpoch=fs.existsSync(minimalFile)&&JSON.parse(fs.readFileSync(minimalFile,'utf8')).epochId===this.state.cohortId;
+    if(this.state.startedAt&&revision&&!sameMinimalEpoch&&this.state.validation?.captureRevision!==revision){
       const preserved='holdout-v34b-validation-'+this.state.startedAt+'.json';
       atomic(path.join(dir,preserved),this.state);
       const previousCohorts=[...(this.state.previousCohorts||[]),{cohortId:this.state.cohortId,startedAt:this.state.startedAt,
