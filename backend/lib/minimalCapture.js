@@ -78,6 +78,14 @@ function native(signal,row,settings){config(settings,row.configHash);return safe
     {key:'v2:'+row.candidateKey,signature:digest([row.episodeId,row.signature])}));}
 function nativeOutcome(row,t){return safe(c=>c.emit('trade_lifecycle',{at:row.at,sourceEpisodeId:row.episodeId,candidateId:row.candidateId,tradeId:row.tradeId,symbol:row.symbol??c.state.episodeMetadata?.[row.episodeId]?.symbol,side:row.side??c.state.episodeMetadata?.[row.episodeId]?.side,strategy:row.engine,mode:t?.engine==='MARCI_SHADOW'||row.engine==='MARCI'?'SHADOW':String(row.mode||t?.mode||'WOULD_BE').toUpperCase(),originEpoch:t?.originEpoch,inheritedWorkingState:t?.inheritedWorkingState??false,configHash:row.configHash,transitions:[row.event],...pick(t,lifecycleKeys),realizedR:t?.realisedRR,plannedRiskUsdt:t?.plannedRisk,quantity:t?.qty,excursionPrecision:t?.excursionPrecision??'UNAVAILABLE_IN_EXISTING_EXECUTOR',plannedEntry:t?.plannedEntry,initialStop:t?.initialSl??t?.sl,initialTarget:t?.tp,holdMs:t?.holdMs??(t?.closedAt&&t?.filledAt?t.closedAt-t.filledAt:null),managementPolicy:t?.managementPolicy,outcomeComplete:t?['CLOSED','CANCELLED','EXPIRED'].includes(t.status):false},
   {key:'native:'+row.candidateId+':'+row.event+':'+row.tradeId,signature:row.signature,priority:true}));}
+function management(c,t,at){
+  const common={at,sourceEpisodeId:t.episodeId,tradeId:t.tradeId,symbol:t.symbol,side:t.side,strategy:'ORAYAN_V3',mode:'SHADOW',configHash:t.configHash,managementPolicy:t.research34?.managementPolicy};
+  // These are the existing prespecified hypothetical observations, not executable stop changes.
+  for(const [transition,stamp,details]of [
+    ['COST_BE_FIRST_CLOSED_BAR_REACH',t.research34?.breakEven?.firstClosedBarReach,{breakEven:pick(t.research34?.breakEven,['price','definition','fundingExcluded'])}],
+    ['STRUCTURAL_PROGRESS_FIRST_CLOSED_BAR',t.research34?.structuralProgress,{structuralProgress:pick(t.research34?.structuralProgress,['levelId','price','definition'])}]
+  ])if(stamp)c.emit('management_path',{...common,transition,effectiveAt:stamp.knownAt,timestamp:stamp,hypothetical:true,...details},{key:'management:'+t.tradeId+':'+transition,signature:digest(stamp),priority:true});
+}
 function observe(channel,row){return safe(c=>{
   if(channel==='v3'){
     if(!row.side||!row.directionPermission||(!row.geometry?.reactionLevel&&!row.v2Decision?.length))return false;
@@ -86,12 +94,13 @@ function observe(channel,row){return safe(c=>{
       {key:'v3:'+row.symbol+':'+row.side+':'+row.configHash,signature:digest([row.closedBarOpenAt,row.v3Decision,row.rejectReason,row.geometry?.reactionLevel?.id,row.geometry?.entryPrice,row.geometry?.invalidationPrice,row.geometry?.objectivePrice])});
   }
   if(channel==='trades'){
-    if(row.transitions?.every(x=>x==='MARK'))return false;const t=row.trade;
+    const t=row.trade;management(c,t,row.capturedAt);if(row.transitions?.every(x=>x==='MARK'))return false;
     return c.emit('trade_lifecycle',{at:row.capturedAt,sourceEpisodeId:t.episodeId,candidateId:t.candidateId,tradeId:t.tradeId,symbol:t.symbol,side:t.side,strategy:'ORAYAN_V3',mode:'SHADOW',configHash:t.configHash,transitions:row.transitions,initialStop:t.geometry?.invalidationPrice,initialTarget:t.geometry?.objectivePrice,geometry:geometry(t.geometry),...pick(t,lifecycleKeys),managementPolicy:t.research34?.managementPolicy},
       {key:'trade:'+t.tradeId,signature:digest([row.transitions,t.status,t.fundingStatus,t.closedAt,t.filledAt,t.netPnl,t.outcomeComplete]),priority:true});
   }
   if(channel==='arms'){let emitted=false;for(const [policy,a]of Object.entries(row.arm?.arms||{})){
     if(a.status==='DORMANT')continue;const t=a.trade;
+    for(const move of a.moves||[])c.emit('management_path',{at:row.capturedAt,sourceEpisodeId:row.episodeId,tradeId:row.tradeId,mode:'SHADOW',strategy:'ORAYAN_V3',managementPolicy:policy,transition:'STOP_MOVED',effectiveAt:move.appliedAt,...pick(move,['levelId','knownAt','receivedAt','oldStop','newStop'])},{key:'move:'+row.tradeId+':'+policy+':'+move.appliedAt+':'+move.levelId,signature:digest(move),priority:true});
     const rec={at:row.capturedAt,sourceEpisodeId:row.episodeId,tradeId:row.tradeId,controlTradeId:a.controlTradeId||row.tradeId,mode:'SHADOW',strategy:'ORAYAN_V3',...pick(a,armKeys),geometry:geometry(t?.geometry),endpoint:t?pick(t,lifecycleKeys):null,equalRiskUsdt:t?.plannedRiskUsdt,symbol:t?.symbol??c.state.episodeMetadata?.[row.episodeId]?.symbol,side:t?.side??c.state.episodeMetadata?.[row.episodeId]?.side,configHash:c.state.episodeMetadata?.[row.episodeId]?.configHash};
     const sig=digest([a.status,a.fillStatus,a.outcome,a.complete,a.opportunityNetCash,a.reason,t?.status,t?.filledAt,t?.closedAt,t?.netPnl,t?.geometry?.invalidationPrice,a.moves]);
     emitted=c.emit('experiment_arm',rec,{key:'arm:'+row.tradeId+':'+policy,signature:sig,priority:true})||emitted;
@@ -99,4 +108,4 @@ function observe(channel,row){return safe(c=>{
   if(channel==='errors')return c.health(row,{subsystem:row.subsystem,at:row.capturedAt});
   return false; // Paired no-candidate rows, minute candles and unused AI contexts are intentionally absent.
 });}
-module.exports={SCHEMA,LIMITS,Capture,enabled,current,safe,config,native,nativeOutcome,observe,geometry,pick,digest,atomic};
+module.exports={SCHEMA,LIMITS,Capture,enabled,current,safe,config,native,nativeOutcome,observe,geometry,pick,digest,atomic,management};

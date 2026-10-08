@@ -2,6 +2,11 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os');
 const {Capture}=require('../lib/minimalCapture'),reset=require('../lib/startupCaptureReset'),risk=require('../lib/risk');
 function tmp(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-minimal-test-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));return d;}
+test('management captures first prespecified milestones once without raw minute paths',t=>{
+ const c=new Capture(tmp(t),{epochId:'M'}),trade={tradeId:'T',episodeId:'E',research34:{managementPolicy:'FROZEN',breakEven:{price:101,firstClosedBarReach:{knownAt:100,precision:'BAR_CLOSE'}},structuralProgress:{knownAt:200,levelId:'L',price:102}}};
+ for(let i=0;i<100;i++)require('../lib/minimalCapture').management(c,trade,300+i);
+ assert.equal(c.state.acceptedRows,2);const rows=fs.readFileSync(path.join(c.dir,c.state.segments[0].name),'utf8').trim().split('\n').map(JSON.parse);assert.ok(rows.every(r=>r.stream==='management_path'&&r.hypothetical&&!r.bars));
+});
 test('10,000 unchanged candidate/no-event observations append once and restart keeps IDs/dedupe',t=>{
  const d=tmp(t),c=new Capture(d,{epochId:'E'});for(let i=0;i<10000;i++)c.emit('decision_episode',{at:Date.now(),sourceEpisodeId:'S',symbol:'BTCUSDT',mode:'SHADOW'},{key:'S',signature:'same'});
  assert.equal(c.state.acceptedRows,1);const before=fs.readFileSync(c.file);const again=new Capture(d);assert.equal(again.state.epochId,'E');assert.equal(again.emit('decision_episode',{sourceEpisodeId:'S'},{key:'S',signature:'same'}),false);assert.deepEqual(fs.readFileSync(c.file),before);
