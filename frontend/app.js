@@ -161,10 +161,38 @@ async function freezeV3Export(){const c=await api('/api/v3/cohort');v3ExportGene
   await loadV3Status();return c;}
 async function downloadV3(channel){const minimal=await api('/api/capture/status');if(minimal.schemaVersion==='ORAYAN_MINIMAL_CAPTURE_V1'){window.location.href='/api/capture/export';return;}if(!v3ExportGeneration)await freezeV3Export();
   window.location.href=channel==='summary'?`/api/v3/summary?generation=${v3ExportGeneration}`:`/api/v3/export?channel=${channel}&generation=${v3ExportGeneration}`;}
+function hideDormantResearch(){for(const id of ['groqShadowPanel','alibabaShadowPanel','btnExportSignalsCsv','btnExportSignalsJson','btnExportProspectiveResearch','btnExportProspectiveAll','btnResetProspectiveCompact','btnExportSupplementResearch','btnExportEarlyEntryResearch','btnExportLegacyResearch','btnExportResearchEvents','btnResetResearch'])$('#'+id).hidden=true;}
+async function initializeCaptureView(){try{const cap=await api('/api/capture/status');if(cap.schemaVersion==='ORAYAN_MINIMAL_CAPTURE_V1')hideDormantResearch();}catch{/* Existing status banner handles connection failures. */}}
+function renderCaptureSummary(info,cap){
+  hideDormantResearch();
+  $('#minimalCapturePanel').hidden=false;$('#legacyResearchPanel').hidden=true;
+  const clean=cap.populationComplete&&!(cap.lostRows||cap.volatileLostRows),health=$('#captureHealth');
+  health.textContent=clean?'Capture healthy':'Capture needs attention';health.className='capture-health '+(clean?'healthy':'attention');
+  $('#captureSince').textContent='Fresh epoch since '+fmtDate(cap.startedAt);
+  const count=n=>Number(n||0).toLocaleString(),metric=(label,value,note='')=>`<div class="capture-counter"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note?`<small>${esc(note)}</small>`:''}</div>`;
+  $('#captureCounters').innerHTML=[
+    metric('Recorded events',count(cap.acceptedRows)),metric('Decision boundaries',count(cap.countsByStream?.decision_episode)),
+    metric('New admissions',count(cap.admitted)),metric('New fills',count(cap.filled)),metric('New closes',count(cap.closed)),
+    metric('Stored data',fmtBytes(cap.retainedBytes)),metric('Capture losses',count((cap.lostRows||0)+(cap.volatileLostRows||0))),
+    metric('Errors observed',count((cap.healthBuckets||[]).reduce((n,b)=>n+b.count,0)),'Recent aggregated buckets')
+  ].join('');
+  const inherited=(cap.inheritedClosed||0)+(cap.inheritedCancelled||0)+(cap.inheritedExpired||0);
+  $('#capturePopulationNote').textContent='Admissions, fills and closes count new-epoch trades across separately labeled paper and shadow modes.'+(inherited?` ${count(inherited)} inherited trade outcomes are excluded.`:'');
+  const arms=info.holdout?.pairedArms||{},names={FIRST_ADMISSION_ONLY:['First admission','One admission per episode'],FIRST_FILLED_ONLY:['First filled trade','One filled trade per episode'],ATR1M_BUFFER:['1 ATR buffer','Wider stop; original structural target'],ATR1M_1P5_REPLACEMENT:['1.5 ATR replacement','Separate full-geometry opportunity population']};
+  $('#comparisonCards').innerHTML=Object.entries(names).map(([key,[title,note]])=>{
+    const arm=arms[key]||{},cash=x=>x===null||x===undefined?'—':fmt(x,2)+' USDT';
+    const values=[['Eligible',count(arm.eligibleAdmissions)],['Filled',count(arm.filled)],['Resolved',count(arm.resolved)],['Censored',count(arm.censored)],['Net cash',cash(arm.netCash)],['Vs control',cash(arm.pairedNetCash)]];
+    return `<article class="comparison-card"><h4>${esc(title)}</h4><p>${esc(note)}</p><dl>${values.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${!arm.eligibleAdmissions?'<small>Awaiting eligible episodes</small>':''}</article>`;
+  }).join('');
+  $('#captureStorageNote').textContent=`${count(cap.retainedRows)} retained events · ${count(cap.prunedRows)} rotated out · ${fmtBytes(cap.limits?.dailyBytes||0)}/day cap. Detailed records are in the download.`;
+  $('#btnExportV3').disabled=false;v3FrozenStatus=null;
+}
 async function loadV3Status() {
   try {
     const info=v3FrozenStatus||await api('/api/v3/status');
     const a=info.archive||{};
+    if(a.captureSchema==='ORAYAN_MINIMAL_CAPTURE_V1'){renderCaptureSummary(info,await api('/api/capture/status'));return;}
+    $('#legacyResearchPanel').hidden=false;$('#minimalCapturePanel').hidden=true;
     const h=info.holdout||{},telemetry=a.telemetry||{};
     $('#v35Holdout').textContent=`Holdout start ${h.startedAt?new Date(h.startedAt).toISOString():h.notBeforeAt?'awaiting full UTC hour '+new Date(h.notBeforeAt).toISOString():'awaiting capture validation'} · unique filled episodes ${h.uniqueFilledEpisodes||0}/100 · symbols ${h.distinctSymbols||0}/30 · long/short ${h.longEpisodes||0}/${h.shortEpisodes||0} · regimes ${JSON.stringify(h.regimeCounts||{})} · largest symbol ${(100*(h.maxSymbolShare||0)).toFixed(1)}% · repeat eligible episodes ${h.repeatEligibleEpisodes||0}/30 · <1ATR evaluable filled episodes ${h.atrBufferEligibleFilledEpisodes||0}/20 · unresolved/censored ${h.unresolvedAdmissions||0}/${h.explicitlyCensoredAdmissions||0}`;
     const complete=telemetry.completedHours||{},skips=telemetry.skipCounters||{};
@@ -206,7 +234,7 @@ async function loadV3Status() {
       for(const id of ['btnExportV3Summary','btnExportV3V2','btnExportV3AI','btnExportV3Trades','btnExportV3Errors','btnExportV3Paths','btnExportV3Arms','btnExportV3Ledger','btnExportV3Tombstones','btnV3Freeze','v35Daily','btnV3Daily'])$('#'+id).hidden=true;
       $('#v3ExportNote').textContent='One dataset contains decision episodes, trade outcomes, active comparison arms, sparse management events and compact health records. The export includes a fixed watermark and lifetime/retained/pruned counts. Old snapshot and minute-path downloads are retired. Forensic recording is off.';
     }
-  }catch(e){$('#v3Status').textContent=`V3 data unavailable: ${e.message}`;}
+  }catch(e){const health=$('#captureHealth');$('#minimalCapturePanel').hidden=false;$('#legacyResearchPanel').hidden=true;health.textContent='Capture status unavailable';health.className='capture-health attention';$('#btnExportV3').disabled=true;}
 }
 
 function toast(msg, kind = '') {
@@ -1012,6 +1040,7 @@ function init() {
   });
 
   refresh();
+  initializeCaptureView();
   loadGroqShadowStatus();
   loadAlibabaShadowStatus();
   renderAccount();

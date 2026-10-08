@@ -2,6 +2,21 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os');
 const {Capture}=require('../lib/minimalCapture'),reset=require('../lib/startupCaptureReset'),risk=require('../lib/risk');
 function tmp(t){const d=fs.mkdtempSync(path.join(os.tmpdir(),'orayan-minimal-test-'));t.after(()=>fs.rmSync(d,{recursive:true,force:true}));return d;}
+test('paired native candidates retain V3 eligibility rejections without recording empty scans',()=>{
+ const {meaningfulV3}=require('../lib/minimalCapture');assert.equal(meaningfulV3({side:null,directionPermission:false,v2Decision:[{candidateId:'N'}]}),true);
+ assert.equal(meaningfulV3({side:'BUY',directionPermission:true,geometry:{reactionLevel:{id:'L'}}}),true);
+ assert.equal(meaningfulV3({side:'BUY',directionPermission:false,v2Decision:[]}),false);assert.equal(meaningfulV3({}),false);
+});
+test('busy scan bursts preserve candidate and priority endpoints with bounded worker memory',async t=>{
+ const {CaptureProxy}=require('../lib/captureProxy'),c=new CaptureProxy(tmp(t));await c.flush();
+ for(let i=0;i<400;i++){c.nativeState('N'+i,{episodeId:'E'+i,at:Date.now()});assert.equal(c.emit('decision_episode',{sourceEpisodeId:'E'+i,symbol:'X'+i,mode:'PAPER'}),true);}
+ assert.equal(c.emit('trade_lifecycle',{sourceEpisodeId:'E1',tradeId:'T',status:'CLOSED',mode:'PAPER'},{priority:true}),true);assert.ok(c.status().pendingBytes<=c.status().queueLimits.bytes);
+ await c.flush();assert.equal(c.status().lostRows,0);assert.equal(c.status().acceptedRows,401);assert.equal(c.status().nativeContinuityEntries,400);await c.close();
+});
+test('health keeps compact data-loss flags while excluding raw exceptions',t=>{
+ const c=new Capture(tmp(t));c.health({errorCode:'MISSING_PATH'},{subsystem:'TRADE_WORKER',permanentLoss:true,downstreamDecisionSkipped:true,rawPayload:'UNUSED'});
+ const row=c.status().healthBuckets[0];assert.equal(row.permanentLoss,true);assert.equal(row.downstreamDecisionSkipped,true);assert.equal(row.rawPayload,undefined);
+});
 test('native episode continuity survives graceful restart without adding telemetry rows',async t=>{
  const {CaptureProxy}=require('../lib/captureProxy'),dir=tmp(t),c=new CaptureProxy(dir,{epochId:'CONTINUITY'});await c.flush();c.nativeState('NEW_ORAYAN|X|BUY|TREND',{at:Date.now(),signature:'S',episodeId:'PERSIST',originAt:1});await c.flush();await c.close();const next=new CaptureProxy(dir);await next.flush();assert.equal(next.state.nativeEpisodeIndex['NEW_ORAYAN|X|BUY|TREND'].episodeId,'PERSIST');assert.equal(next.status().acceptedRows,0);assert.equal(next.status().populationComplete,true);await next.close();
 });

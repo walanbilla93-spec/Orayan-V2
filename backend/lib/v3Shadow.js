@@ -545,6 +545,7 @@ function journal(){if(!instance){const root=require('./store').DATA_DIR;
     minuteCache.advance(undefined,(e,c)=>instance.captureError(e,c));},15000);timer.unref();}return instance;}
 function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,btcRegime,settings,signals,marketSnapshot}) {
   if(process.env.ORAYAN_V3_SHADOW_ENABLED==='false')return;
+  if(minimal.enabled())minimal.config(settings,hash(settings));
   const j=journal();
   const errorsBefore=j.counts.errors;
   j.receiptCoverageFailed=false;

@@ -11,3 +11,9 @@ The emergency daily cap is 20 MiB (4 MiB reserved for lifecycle/arms/health), in
 Same clean epoch continues through this code-only restart; no second telemetry wipe is planned. The first reset receipt remains authoritative. Revised daily volume must be measured after rollout, not inferred from the original 2.8 MiB/day planning scenario.
 
 Final steady scan verification found secondary gate flips (including floating-point RR boundary flips) while the same main blocker still rejected the candidate. Final capture triggers use admission or the first sorted failed-gate code plus strategy-bar/entry boundaries; complete gate snapshots remain retained at those boundaries. No trading threshold was rounded or changed. Legacy download labels are replaced by a single minimal-dataset export.
+
+Frontend and busy-scan amendment, 2026-10-08T05:53:10.772Z: replaced displayed raw research JSON, verbose skip/control diagnostics and forensic tables with eight counters and four active paired-comparison cards. One canonical download remains. Dormant AI panels and legacy research exports are hidden.
+
+A longer live observation exposed ASYNC_QUEUE_CAP losses in the original 64-message writer queue (873 at the first frontend audit; final count will be reported). Source trading calculations remained isolated. The queue is now bounded at 1024 messages/8 MiB with 128 priority slots; native continuity updates are coalesced and full worker state cloning is limited to control boundaries. A 400-candidate burst plus priority terminal event is verified without loss. Earlier losses remain recorded; the same epoch is not falsely relabeled complete or wiped a second time.
+
+V3 blocked-side rejections are now captured whenever they have a meaningful native candidate, to preserve current-vs-shadow eligibility comparisons. V3 configuration definitions are emitted once per hash. Both changes are observation only.

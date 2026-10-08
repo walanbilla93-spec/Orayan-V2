@@ -84,7 +84,8 @@ class Capture {
     if(previous){previous.count++;previous.lastAt=at;return false;}
     // At most 128 first-occurrence error classes/buckets; repeated errors never append raw payloads.
     const keys=Object.keys(this.state.healthBuckets);if(keys.length>=128){const old=this.state.healthBuckets[keys[0]];this.emit('errors_health',{...old,mode:'RESEARCH',at,event:'BUCKET_FINAL'},{priority:true});delete this.state.healthBuckets[keys[0]];}
-    const record={code:c,subsystem,severity:severe?'SEVERE':'ROUTINE',bucket,firstAt:at,lastAt:at,count:1,mode:'RESEARCH',at};this.state.healthBuckets[key]=record;
+    const flags=pick(context,['permanentLoss','downstreamDecisionSkipped','archiveWriteSkipped','completenessImpacted']);
+    const record={code:c,subsystem,severity:severe?'SEVERE':'ROUTINE',bucket,firstAt:at,lastAt:at,count:1,mode:'RESEARCH',at,...flags};this.state.healthBuckets[key]=record;
     return this.emit('errors_health',record,{priority:true});
   }
   status(){const {dedupe,days,segments,healthBuckets,episodeMetadata,populationKeys,nativeEpisodeIndex,...s}=this.state;return {...s,limits:this.limits,nativeContinuityEntries:Object.keys(nativeEpisodeIndex||{}).length,populationCounterMeaning:'NEW_EPOCH_TRADES_ONLY; inherited outcomes counted separately',segments:segments.map(x=>({...x})),healthBuckets:Object.values(healthBuckets),lastFailure:this.lastFailure,forensicBufferEnabled:false,
@@ -122,12 +123,13 @@ function management(c,t,at){
     ['STRUCTURAL_PROGRESS_FIRST_CLOSED_BAR',t.research34?.structuralProgress,{structuralProgress:pick(t.research34?.structuralProgress,['levelId','price','definition'])}]
   ])if(stamp)c.emit('management_path',{...common,transition,effectiveAt:stamp.knownAt,timestamp:stamp,hypothetical:true,...details},{key:'management:'+t.tradeId+':'+transition,signature:digest(stamp),priority:true});
 }
+function meaningfulV3(row){return !!(row.v2Decision?.length||(row.side&&row.directionPermission&&row.geometry?.reactionLevel));}
 function observe(channel,row){return safe(c=>{
   if(channel==='v3'){
-    if(!row.side||!row.directionPermission||(!row.geometry?.reactionLevel&&!row.v2Decision?.length))return false;
+    if(!meaningfulV3(row))return false;
     const n=row.measurement34?.noise,q=row.measurement34?.quote;
     return c.emit('decision_episode',{at:row.decisionAt,sourceEpisodeId:row.episodeId,candidateId:row.candidateId,symbol:row.symbol,side:row.side,strategy:'ORAYAN_V3',strategyVersion:row.version,mode:'SHADOW',configHash:row.configHash,controlFingerprint:row.control?.fingerprint,boundary:row.kind,admission:row.v3Decision,rejectReason:row.rejectReason,regime:row.regime,directionPermission:row.directionPermission,closedBarOpenAt:row.closedBarOpenAt,geometry:geometry(row.geometry),atr:pick(n,['atr1m','definition','cutoff','sourceAt','receivedAt','positiveAtr','usableAtDecision','status','availabilityReason']),context:pick(row.btcContext,['regime','strength']),quality:{quoteStatus:q?.status,quoteReceivedAt:q?.receivedAt,quoteAgeMs:q?.ageMs},pairedNativeCandidateIds:(row.v2Decision||[]).map(x=>x.candidateId)},
-      {key:'v3:'+row.symbol+':'+row.side+':'+row.configHash,signature:digest([row.closedBarOpenAt,row.v3Decision,row.rejectReason,row.geometry?.reactionLevel?.id,row.geometry?.entryPrice,row.geometry?.invalidationPrice,row.geometry?.objectivePrice])});
+      {key:'v3:'+row.symbol+':'+row.side+':'+row.configHash,signature:digest([row.closedBarOpenAt,row.v3Decision,row.rejectReason,row.geometry?.reactionLevel?.id,row.geometry?.entryPrice,row.geometry?.invalidationPrice,row.geometry?.objectivePrice,(row.v2Decision||[]).map(x=>[x.side,x.passed]).sort()])});
   }
   if(channel==='trades'){
     const t=row.trade;management(c,t,row.capturedAt);if(row.transitions?.every(x=>x==='MARK'))return false;
@@ -141,7 +143,7 @@ function observe(channel,row){return safe(c=>{
     const sig=digest([a.status,a.fillStatus,a.outcome,a.complete,a.opportunityNetCash,a.reason,t?.status,t?.filledAt,t?.closedAt,t?.netPnl,t?.geometry?.invalidationPrice,a.moves]);
     emitted=c.emit('experiment_arm',rec,{key:'arm:'+row.tradeId+':'+policy,signature:sig,priority:true})||emitted;
   }return emitted;}
-  if(channel==='errors')return c.health(row,{subsystem:row.subsystem,at:row.capturedAt});
+  if(channel==='errors')return c.health(row,{subsystem:row.subsystem,at:row.capturedAt,...pick(row,['permanentLoss','downstreamDecisionSkipped','archiveWriteSkipped','completenessImpacted'])});
   return false; // Paired no-candidate rows, minute candles and unused AI contexts are intentionally absent.
 });}
-module.exports={SCHEMA,LIMITS,Capture,enabled,current,safe,config,native,nativeOutcome,observe,geometry,pick,digest,atomic,management,nativeSignature,nativeRecord,rememberNative};
+module.exports={SCHEMA,LIMITS,Capture,enabled,current,safe,config,native,nativeOutcome,observe,geometry,pick,digest,atomic,management,nativeSignature,nativeRecord,rememberNative,meaningfulV3};

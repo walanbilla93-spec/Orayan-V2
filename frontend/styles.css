@@ -563,3 +563,33 @@ input:focus-visible, select:focus-visible { outline: 2px solid var(--cyan); outl
 .funnel-rejects { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; }
 .funnel-rejects-title { opacity: 0.6; margin-bottom: 6px; }
 .funnel-reject { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; opacity: 0.85; }
+
+[hidden] { display: none !important; }
+#minimalCapturePanel { padding: 0 16px 16px; }
+.view[data-view="v3"] #minimalCapturePanel .panel-sub { padding: 0; }
+.capture-heading,.capture-section-head,.capture-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.capture-heading { margin: 20px 0; }
+.capture-health { font-size: 13px; padding: 6px 12px; border-radius: 20px; border: 1px solid var(--line); }
+.capture-health.healthy { color: #7ddbb4; background: rgba(125,219,180,.08); }
+.capture-health.attention { color: #f7bb72; background: rgba(247,187,114,.08); }
+.capture-counters { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; margin-bottom: 14px; }
+.capture-counter,.comparison-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.capture-counter span,.capture-counter small { display: block; color: var(--text-faint); font-size: 12px; }
+.capture-counter strong { display: block; margin-top: 8px; font-size: 24px; font-weight: 600; }
+.capture-counter small { margin-top: 5px; font-size: 10px; }
+.capture-section-head { margin: 28px 0 14px; }
+.capture-section-head h3 { margin: 0; }
+.comparison-cards { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.comparison-card h4 { margin: 0; font-size: 15px; }
+.comparison-card p { margin: 7px 0 18px; font-size: 12px; color: var(--text-faint); }
+.comparison-card dl { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px 10px; margin: 0; }
+.comparison-card dt { color: var(--text-faint); font-size: 11px; }
+.comparison-card dd { margin: 5px 0 0; font-size: 15px; }
+.comparison-card small { display: block; margin-top: 14px; color: var(--text-faint); font-size: 11px; }
+.capture-footer { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 16px; }
+@media (max-width: 640px) {
+  .capture-counters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .comparison-cards { grid-template-columns: 1fr; }
+  .capture-counter { padding: 13px; }
+  .capture-footer .btn { flex: auto; width: 100%; }
+}

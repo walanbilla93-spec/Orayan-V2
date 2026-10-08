@@ -66,7 +66,7 @@
     <button class="tab" data-view="signals" role="tab">Signals</button>
     <button class="tab" data-view="trades" role="tab">Orayan Trades</button>
     <button class="tab" data-view="shadow" role="tab">Marci Independent</button>
-    <button class="tab" data-view="v3" role="tab">V3 Analysis</button>
+    <button class="tab" data-view="v3" role="tab">Research</button>
     <button class="tab" data-view="settings" role="tab">Settings</button>
     <button class="tab" data-view="logs" role="tab">Logs</button>
   </nav>
@@ -75,8 +75,18 @@
 
     <section class="view" data-view="v3">
       <div class="panel">
-        <div class="panel-head"><h2>V3 shadow research</h2><span class="badge">No V3 orders</span></div>
-        <p class="panel-sub">Separate V3 structural decisions and simulated trades alongside frozen V2. Shadow fills use the next full one-minute candle, including fees, slippage, expiry, stops, targets and timeouts. Ambiguous paths and missing data stay visible. These are research simulations.</p>
+        <div class="panel-head"><h2>Capture &amp; comparisons</h2><span class="badge">Shadow research</span></div>
+        <p class="panel-sub">Decision events and trade outcomes from the fresh capture epoch. Comparisons remain independent simulations.</p>
+        <div id="minimalCapturePanel" hidden>
+          <div class="capture-heading"><span id="captureHealth" class="capture-health" role="status">Checking capture</span><span id="captureSince" class="panel-sub"></span></div>
+          <div id="captureCounters" class="capture-counters"></div>
+          <p id="capturePopulationNote" class="panel-sub"></p>
+          <div class="capture-section-head"><h3>Active comparisons</h3><span class="panel-sub">No strategy promotion</span></div>
+          <div id="comparisonCards" class="comparison-cards"></div>
+          <p class="panel-sub">Net cash and paired difference use each comparison's eligible admissions. Missing or censored outcomes remain separate; these are not portfolio returns.</p>
+          <div class="capture-footer"><p id="captureStorageNote" class="panel-sub"></p><button class="btn primary" id="btnExportV3">Download research data</button></div>
+        </div>
+        <div id="legacyResearchPanel" hidden>
         <p id="v3Status" aria-live="polite">Checking V3 capture…</p>
         <p id="v34Control" aria-live="polite"></p>
         <p id="v34Measurements" aria-live="polite"></p>
@@ -90,7 +100,6 @@
         <p id="v35Watermark"></p>
         <div class="research-download">
           <button class="btn primary" id="btnExportV3Summary">Download analysis summary</button>
-          <button class="btn" id="btnExportV3">Download compressed V3 data</button>
           <button class="btn" id="btnExportV3V2">Download matched V2 observations</button>
           <button class="btn" id="btnExportV3AI">Download AI research context</button>
           <button class="btn" id="btnExportV3Trades">Download shadow trades &amp; outcomes</button>
@@ -111,6 +120,7 @@
         <h3>V3.4A measurements · research only</h3>
         <p class="panel-sub">Noise uses completed bars before the reaction. First-touch times are minute bounds; terminal-minute ordering remains ambiguous. Missing quotes are unavailable. The nearest-objective arm can match the existing control.</p>
         <div class="v3-table-wrap"><table class="v3-table"><thead><tr><th>Symbol / episode</th><th>Stop % / ATR1m / ATR15m / spreads</th><th>Intended / fill raw RR</th><th>Control objective</th><th>Nearest arm</th><th>Raw R first touches (UTC)</th><th>Location</th><th>Level / reaction</th></tr></thead><tbody id="v34Rows"></tbody></table></div>
+        </div>
       </div>
     </section>
 

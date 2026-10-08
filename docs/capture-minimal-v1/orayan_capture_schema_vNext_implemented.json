@@ -222,7 +222,11 @@
         "recoveredAt",
         "permanentLoss",
         "downstreamDecisionSkipped",
-        "captureWriteFailed"
+        "captureWriteFailed",
+        "permanentLoss",
+        "downstreamDecisionSkipped",
+        "archiveWriteSkipped",
+        "completenessImpacted"
       ]
     },
     "configuration": {
@@ -280,7 +284,9 @@
         "pendingRows",
         "volatileLostRows",
         "nativeContinuityEntries",
-        "nativeContinuityGap"
+        "nativeContinuityGap",
+        "pendingBytes",
+        "queueLimits"
       ]
     }
   },
@@ -326,7 +332,9 @@
     "Hypothetical BE/structural milestones are not executable stop changes. Dormant trailing remains dormant.",
     "Space cap rotates complete old segments and durably records pruned rows; population counters exclude inherited trades. Actual stop/BE rule logic is unchanged.",
     "Bounded native candidate continuity index (maximum 4096 identity/timestamp/signature entries) is operational metadata, persisted at event/status flush and graceful shutdown. Restore retains the existing 30-minute episode-gap rule. No raw candidate payload is stored in that index.",
-    "Primary blocker selection is a capture-only convention: first sorted failed-gate code. This never changes gate ordering, entry eligibility or rejected reasons in the trading engine. Exact admission-time snapshots remain complete."
+    "Primary blocker selection is a capture-only convention: first sorted failed-gate code. This never changes gate ordering, entry eligibility or rejected reasons in the trading engine. Exact admission-time snapshots remain complete.",
+    "V3 eligibility rejections are retained for meaningful native candidates even when V3 has no permitted side. Empty scans remain absent. Each distinct native/V3 configHash has its allowlisted nonsecret configuration definition.",
+    "Worker queue: maximum 1024 messages and 8 MiB projected record bytes; 128 message slots reserved for priority endpoints. Native continuity updates are coalesced by identity, maximum 4096, without telemetry rows. Whole worker state is copied only on startup, explicit flush/export or close."
   ],
   "frozenProposalSha256": "f9d2d5073913fe1e2a6f261cc8c2e514563258c7d512b5387171dd4e9fdbe7e3"
 }
