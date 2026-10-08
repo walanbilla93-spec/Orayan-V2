@@ -44,6 +44,8 @@ New research routes require a cryptographically random access token (at least 32
 
 ## Verification
 
+Draft review: https://github.com/walanbilla93-spec/Orayan-V2/pull/12 . Implementation commit: `4c27d134a0a173ab020a04d449fda53549821205`. GitHub Actions completed successfully for both Meta Brain research export safety (run 37748386424) and the existing Meta Brain shadow safety (run 37748386332). No merge or deployment occurred. Final source/config/model bytes also match the original Git blobs, independently of Windows checkout line endings.
+
 19 tests passed in 1.703 seconds, covering authentication/unauthorized no-query behavior, cookie flags/tampering/expiry/rotation, SQL/time limits, repeated filters, schema rejection, checksum/gzip bomb bounds, clock semantics, long overlapping chunks, exact nested decimals, export caps, interrupted gzip, global gate, read-only connection lifecycle, static asset secrecy and all frozen source/model hashes.
 
 The streaming test consumed 10,000 approximately 1 KiB rows while measuring Python allocation peak below 16 MiB; this is not production process RSS or proof of live memory safety. JavaScript syntax and Python compilation passed. Desktop and 390×844 mobile preview checked; mobile page width was 390 with no horizontal overflow. Browser sample CSV.GZ downloaded and decoded successfully. Sample is clearly labeled. Live schema/table/rate/sample queries ran in read-only transactions and completed without writer errors.
