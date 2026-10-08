@@ -8,6 +8,8 @@ import json
 import os
 import unittest
 import tempfile
+import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import patch
 import research_memory
@@ -41,6 +43,21 @@ class FakeDB:
         for row in self.rows:
             yield row
             await asyncio.sleep(0)
+
+    @asynccontextmanager
+    async def essentials(self):
+        self.calls += 1
+        if self.error:
+            raise api.GuardError('Essential history exceeds the safe download limit.')
+        data = {'predictions': self.rows, 'labels': self.rows,
+                'boundary': [(1, json.dumps({'schema_version':'test-only','execution_enabled':False}))]}
+        info = {'counts': {name:len(rows) for name,rows in data.items()},
+                'scope':'All available essential history; all symbols; no time filter'}
+        async def rows(name):
+            for row in data[name]:
+                yield row
+                await asyncio.sleep(0)
+        yield info, rows
 
 
 class PureTests(unittest.TestCase):
@@ -157,6 +174,134 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status,200)
         self.assertEqual(r.headers['Cache-Control'],'no-store')
         self.assertIn("script-src 'self'",r.headers['Content-Security-Policy'])
+        r=await self.client.get('/research/api/essentials')
+        self.assertEqual(r.status,401)
+        self.assertEqual(self.db.calls,0)
+
+    async def test_public_access_needs_explicit_opt_in_and_no_key(self):
+        with patch.dict(os.environ, {'RESEARCH_PUBLIC_ACCESS':'typo'}), self.assertRaises(RuntimeError):
+            api.create_app(db=self.db, token=TOKEN)
+        with patch.dict(os.environ, {'RESEARCH_PUBLIC_ACCESS':'true', 'RESEARCH_ACCESS_TOKEN':''}):
+            app=api.create_app(db=self.db)
+        async with TestClient(TestServer(app)) as client:
+            response=await client.get('/research/api/status')
+            self.assertEqual(response.status,200)
+            self.assertEqual((await response.json())['access_mode'],'public')
+            response=await client.get('/research/api/essentials')
+            self.assertEqual(response.status,200)
+            with zipfile.ZipFile(io.BytesIO(await response.read())) as archive:
+                self.assertIsNone(archive.testzip())
+                self.assertEqual(set(archive.namelist()),{'predictions.csv','labels.csv','boundary.csv','manifest.json'})
+            response=await client.delete('/research/api/essentials')
+            self.assertEqual(response.status,405)
+
+    async def test_essentials_all_history_manifest_and_checksums(self):
+        # More than the old one-hour UI range, with all three symbols retained.
+        self.db.rows=[(str(i),f'2026-10-0{i+1}T10:01:00+00:00',symbol,
+                      json.dumps({'feature_snapshot':{'exact':'0.0000100'}}))
+                      for i,symbol in enumerate(api.SYMBOLS)]
+        response=await self.client.get('/research/api/essentials',headers=self.cookie())
+        self.assertEqual(response.status,200)
+        self.assertEqual(response.headers['Content-Type'],'application/zip')
+        with zipfile.ZipFile(io.BytesIO(await response.read())) as archive:
+            self.assertIsNone(archive.testzip())
+            manifest=json.loads(archive.read('manifest.json'))
+            self.assertTrue(manifest['complete'])
+            self.assertEqual(manifest['counts'],{'predictions':3,'labels':3,'boundary':1})
+            for name in api.ESSENTIALS:
+                data=archive.read(name+'.csv')
+                self.assertEqual(hashlib.sha256(data).hexdigest(),manifest['files'][name+'.csv']['sha256'])
+                rows=list(csv.DictReader(io.StringIO(data.decode())))
+                self.assertEqual(len(rows),manifest['counts'][name])
+            rows=list(csv.DictReader(io.StringIO(archive.read('predictions.csv').decode())))
+            self.assertEqual({r['symbol'] for r in rows},set(api.SYMBOLS))
+            self.assertEqual(json.loads(rows[0]['record_json'])['feature_snapshot']['exact'],'0.0000100')
+
+    async def test_essentials_bounds_fail_before_headers_and_queries(self):
+        self.db.error=True
+        response=await self.client.get('/research/api/essentials',headers=self.cookie())
+        self.assertEqual(response.status,400)
+        self.assertNotIn('Content-Disposition',response.headers)
+        self.db.calls=0
+        response=await self.client.get('/research/api/essentials',headers=self.cookie(),params={'start':'bad'})
+        self.assertEqual(response.status,400)
+        self.assertEqual(self.db.calls,0)
+        with patch.object(api,'memory_snapshot',return_value={'headroom_bytes':1}),patch.object(api,'trim_unused'):
+            response=await self.client.get('/research/api/essentials',headers=self.cookie())
+            self.assertEqual(response.status,400)
+            self.assertEqual(self.db.calls,0)
+
+    async def test_essentials_abort_does_not_complete_archive(self):
+        import aiohttp
+        with patch.object(api,'MAX_ROWS',1):
+            response=await self.client.get('/research/api/essentials',headers=self.cookie())
+            try:
+                data=await response.read()
+            except aiohttp.ClientError:
+                return
+            with self.assertRaises(zipfile.BadZipFile):
+                zipfile.ZipFile(io.BytesIO(data))
+
+    async def test_essentials_database_uses_one_readonly_snapshot(self):
+        from datetime import datetime,timezone
+        class Cursor:
+            def __init__(self,data):self.data=list(data)
+            async def fetchall(self):return self.data
+            async def fetchone(self):return self.data.pop(0) if self.data else None
+        class Conn:
+            def __init__(self):self.commands=[]
+            async def execute(self,q,args=None):
+                self.commands.append(q)
+                if q==api.TABLES_SQL:return Cursor([(name,1024,512,512,1) for name in api.ESSENTIALS])
+                if 'sum(octet_length(record))' in q:return Cursor([(1,128,128)])
+                if 'p.id IS NULL' in q:return Cursor([(0,)])
+                if 'SELECT record FROM public.boundary' in q:return Cursor([('{}',)])
+                if 'CURRENT_TIMESTAMP' in q:return Cursor([(datetime.now(timezone.utc),1,2)])
+                return Cursor([])
+        conn=Conn();opens=0
+        @asynccontextmanager
+        async def factory():
+            nonlocal opens
+            opens+=1
+            yield conn
+        db=api.ResearchDB(factory)
+        with patch.object(db,'validate'):
+            async with db.essentials() as (info,rows):
+                self.assertEqual(info['counts'],{'predictions':1,'labels':1,'boundary':1})
+        self.assertEqual(opens,1)
+        self.assertEqual(conn.commands[0],'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+        self.assertFalse(any('capture_chunks' in q or 'capture_status' in q for q in conn.commands))
+
+    async def test_bundle_streams_before_population_finishes_and_closes_on_failure(self):
+        sent=asyncio.Event();finish=asyncio.Event();closed=[]
+        class SlowDB(FakeDB):
+            @asynccontextmanager
+            async def essentials(self):
+                async def rows(name):
+                    try:
+                        if name=='predictions':
+                            yield ('id','2026-10-07T10:00:00Z','BTCUSDT',json.dumps({'data':os.urandom(40000).hex()}))
+                            sent.set()
+                            await finish.wait()
+                        elif name=='boundary':
+                            yield (1,'{}')
+                    finally:
+                        closed.append(name)
+                yield {'counts':{'predictions':1,'labels':0,'boundary':1}}, rows
+        await self.client.close()
+        self.client=TestClient(TestServer(api.create_app(db=SlowDB(),token=TOKEN)))
+        await self.client.start_server()
+        response=await self.client.get('/research/api/essentials',headers=self.cookie())
+        await sent.wait()
+        data=await response.content.read(1024)
+        self.assertGreater(len(data),0)
+        self.assertFalse(finish.is_set())
+        other=await self.client.get('/research/api/status',headers=self.cookie())
+        self.assertEqual(other.status,429)
+        finish.set()
+        data+=await response.read()
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:self.assertIsNone(archive.testzip())
+        self.assertEqual(closed,list(api.ESSENTIALS))
 
     async def test_same_origin_login_and_cookie_security(self):
         r=await self.client.post('/research/session',json={'token':TOKEN})

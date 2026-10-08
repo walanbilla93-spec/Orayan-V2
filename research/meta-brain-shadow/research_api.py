@@ -10,7 +10,8 @@ import json
 import os
 import time
 import zlib
-from contextlib import asynccontextmanager
+import zipfile
+from contextlib import asynccontextmanager, aclosing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +40,11 @@ MAX_DECODED_CHUNK = 8 * 1024**2
 MAX_LINE = 1024**2
 MAX_ROWS = 25000
 MAX_SECONDS = 120
+ESSENTIALS = ('predictions', 'labels', 'boundary')
+CSV_COLUMNS = {'capture': ['chunk_id', 'chunk_sha256', 'receipt_at_utc', 'symbol', 'record_json'],
+               'predictions': ['id', 'event_at_utc', 'symbol', 'record_json'],
+               'labels': ['id', 'prediction_event_at_utc', 'symbol', 'record_json'],
+               'capture_status': ['id', 'at_utc', 'record_json'], 'boundary': ['id', 'record_json']}
 TABLES_SQL = """SELECT c.relname, pg_total_relation_size(c.oid), pg_table_size(c.oid),
  pg_indexes_size(c.oid), c.reltuples::bigint FROM pg_class c JOIN pg_namespace n
  ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND c.relname=ANY(%s)"""
@@ -46,6 +52,33 @@ TABLES_SQL = """SELECT c.relname, pg_total_relation_size(c.oid), pg_table_size(c
 
 class GuardError(ValueError):
     pass
+
+
+class ZipSink(io.RawIOBase):
+    """Non-seekable output; drain after each row instead of retaining the archive."""
+    def __init__(self):
+        super().__init__()
+        self.pending = bytearray()
+        self.position = 0
+
+    def writable(self):
+        return True
+
+    def seekable(self):
+        return False
+
+    def tell(self):
+        return self.position
+
+    def write(self, data):
+        self.pending.extend(data)
+        self.position += len(data)
+        return len(data)
+
+    def drain(self):
+        data = bytes(self.pending)
+        self.pending.clear()
+        return data
 
 
 def iso(ms):
@@ -229,7 +262,7 @@ class ResearchDB:
                        'shadow_only': status.get('shadow_only'),
                        'session_counters': status.get('counters', {}),
                        'datasets': ['capture', 'predictions', 'labels', 'boundary', 'capture_status'],
-                       'symbols': list(SYMBOLS), 'max_range_minutes': 60, 'bundle_available': False}
+                       'symbols': list(SYMBOLS), 'max_range_minutes': 60, 'bundle_available': True}
         self.cached_at = time.monotonic()
         return self.cached
 
@@ -292,6 +325,66 @@ class ResearchDB:
                     else:
                         yield row
 
+    @asynccontextmanager
+    async def essentials(self):
+        """Full small durable population from one read-only repeatable-read snapshot."""
+        async with self.factory() as conn:
+            await conn.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ')
+            await self.validate(conn)
+            cur = await conn.execute(TABLES_SQL, (list(ESSENTIALS),))
+            sizes = {row[0]: row[1] for row in await cur.fetchall()}
+            if any(sizes.get(name, MAX_TABLE_SCAN + 1) > MAX_TABLE_SCAN for name in ESSENTIALS):
+                raise GuardError('Essential history exceeds the safe online scan limit.')
+            counts = {}
+            total_bytes = 0
+            for name in ESSENTIALS:
+                # Names are fixed constants, never request inputs.
+                cur = await conn.execute(f'SELECT count(*),coalesce(sum(octet_length(record)),0),coalesce(max(octet_length(record)),0) FROM public.{name}')
+                count, size, largest = await cur.fetchone()
+                counts[name] = count
+                total_bytes += size
+                if largest > MAX_LINE:
+                    raise GuardError('An essential record exceeds the safe row size.')
+            if sum(counts.values()) > MAX_ROWS or total_bytes > MAX_OUTPUT:
+                raise GuardError('Essential history exceeds the safe download limit.')
+            cur = await conn.execute('SELECT count(*) FROM public.labels l LEFT JOIN public.predictions p ON p.id=l.id WHERE p.id IS NULL')
+            if (await cur.fetchone())[0]:
+                raise GuardError('An outcome has no linked prediction; bundle refused.')
+            cur = await conn.execute('SELECT record FROM public.boundary WHERE id=1')
+            boundary = await cur.fetchone()
+            if counts['boundary'] != 1 or not boundary:
+                raise GuardError('The immutable experiment boundary is missing or ambiguous.')
+            cur = await conn.execute('SELECT CURRENT_TIMESTAMP, min(event_ms), max(event_ms) FROM public.predictions')
+            at, first, latest = await cur.fetchone()
+            info = {'format_version': 1, 'snapshot_at_utc': at.isoformat(),
+                    'scope': 'All available essential history; all symbols; no time filter',
+                    'symbols': list(SYMBOLS), 'counts': counts,
+                    'prediction_event_range_utc': {'first': iso(first) if first is not None else None,
+                                                  'latest': iso(latest) if latest is not None else None},
+                    'pending_outcomes': counts['predictions'] - counts['labels'],
+                    'label_clock': 'Linked prediction event time, not outcome maturation time',
+                    'schema_version': json.loads(boundary[0]).get('schema_version'),
+                    'excludes': ['Dense capture streams', 'Repetitive capture status', 'Secrets and service configuration']}
+            queries = {
+                'predictions': 'SELECT id,event_ms,symbol,record FROM public.predictions ORDER BY event_ms,id',
+                'labels': 'SELECT l.id,p.event_ms,p.symbol,l.record FROM public.labels l JOIN public.predictions p ON p.id=l.id ORDER BY p.event_ms,p.id',
+                'boundary': 'SELECT id,record FROM public.boundary WHERE id=1'}
+
+            async def rows(name):
+                async with conn.cursor(name='essentials_' + name) as cursor:
+                    await cursor.execute(queries[name])
+                    while True:
+                        row = await cursor.fetchone()
+                        if row is None:
+                            return
+                        if name in ('predictions', 'labels'):
+                            yield (row[0], iso(row[1]), row[2], row[3])
+                        else:
+                            yield row
+                        await asyncio.sleep(0)
+
+            yield info, rows
+
 
 class Access:
     def __init__(self, token, development=False):
@@ -314,8 +407,13 @@ class Access:
             return False
 
 
-def create_app(db=None, token=None, development=False, health=None):
-    access = Access(token if token is not None else os.environ.get('RESEARCH_ACCESS_TOKEN', ''), development)
+def create_app(db=None, token=None, development=False, health=None, public_access=None):
+    if public_access is None:
+        mode = os.environ.get('RESEARCH_PUBLIC_ACCESS', 'false').strip().lower()
+        if mode not in ('true', 'false'):
+            raise RuntimeError('RESEARCH_PUBLIC_ACCESS must explicitly be true or false.')
+        public_access = mode == 'true'
+    access = None if public_access else Access(token if token is not None else os.environ.get('RESEARCH_ACCESS_TOKEN', ''), development)
     db = db or ResearchDB()
     gate = asyncio.Lock()
 
@@ -331,7 +429,7 @@ def create_app(db=None, token=None, development=False, health=None):
     async def protect(request, handler):
         if development and request.remote not in ('127.0.0.1', '::1'):
             raise web.HTTPForbidden(text='Development preview is localhost only.')
-        if request.path.startswith('/research/api/') and not development and not access.valid(request.cookies.get('research_session')):
+        if request.path.startswith('/research/api/') and not development and not public_access and not access.valid(request.cookies.get('research_session')):
             raise web.HTTPUnauthorized(text='Enter your research access key.')
         try:
             response = await handler(request)
@@ -352,6 +450,8 @@ def create_app(db=None, token=None, development=False, health=None):
                 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}
 
     async def login(request):
+        if public_access:
+            return web.json_response({'ok': True, 'access_mode': 'public'})
         origin = request.headers.get('Origin')
         if not origin or origin != 'https://' + request.host:
             raise web.HTTPForbidden(text='Same-origin HTTPS access required.')
@@ -378,6 +478,8 @@ def create_app(db=None, token=None, development=False, health=None):
             raise web.HTTPTooManyRequests(text='A research query is already running.')
         async with gate, asyncio.timeout(15):
             result = dict(await db.metadata())
+            result['access_mode'] = 'public' if public_access else 'protected'
+            result['bundle_available'] = True
             result['memory'] = memory_snapshot()
             if health:
                 h = health()
@@ -417,13 +519,8 @@ def create_app(db=None, token=None, development=False, health=None):
                 if data:
                     await response.write(data)
 
-            columns = {'capture': ['chunk_id', 'chunk_sha256', 'receipt_at_utc', 'symbol', 'record_json'],
-                       'predictions': ['id', 'event_at_utc', 'symbol', 'record_json'],
-                       'labels': ['id', 'prediction_event_at_utc', 'symbol', 'record_json'],
-                       'capture_status': ['id', 'at_utc', 'record_json'],
-                       'boundary': ['id', 'record_json']}
             try:
-                await send(csv_row(columns[selection.dataset]))
+                await send(csv_row(CSV_COLUMNS[selection.dataset]))
                 async for row in db.records(selection):
                     if row_count % 256 == 0:
                         check_memory()
@@ -441,6 +538,71 @@ def create_app(db=None, token=None, development=False, health=None):
                 raise
             return response
 
+    async def bundle(request):
+        if request.query:
+            raise GuardError('The essentials bundle includes all symbols and all available history; no filters are accepted.')
+        if gate.locked():
+            raise web.HTTPTooManyRequests(text='A research query is already running.')
+        async with gate, asyncio.timeout(MAX_SECONDS):
+            check_memory()
+            async with db.essentials() as (info, rows):
+                # All bounds/consistency checks complete before HTTP success.
+                check_memory()
+                response = web.StreamResponse(headers={**security_headers(),
+                    'Content-Type': 'application/zip',
+                    'Content-Disposition': 'attachment; filename="meta_brain_essentials.zip"'})
+                await response.prepare(request)
+                sink = ZipSink()
+                archive = zipfile.ZipFile(sink, 'w', zipfile.ZIP_DEFLATED, compresslevel=3)
+                total_bytes, total_rows = 0, 0
+                files = {}
+
+                async def flush():
+                    data = sink.drain()
+                    if data:
+                        await response.write(data)
+
+                try:
+                    for name in ESSENTIALS:
+                        digest = hashlib.sha256()
+                        count, size = 0, 0
+                        with archive.open(name + '.csv', 'w', force_zip64=True) as member:
+                            header = csv_row(CSV_COLUMNS[name])
+                            member.write(header)
+                            digest.update(header)
+                            size += len(header)
+                            total_bytes += len(header)
+                            await flush()
+                            async with aclosing(rows(name)) as records:
+                                async for row in records:
+                                    if total_rows % 256 == 0:
+                                        check_memory()
+                                    total_rows += 1
+                                    count += 1
+                                    data = csv_row(row)
+                                    total_bytes += len(data)
+                                    size += len(data)
+                                    if total_rows > MAX_ROWS or len(data) > MAX_LINE or total_bytes > MAX_OUTPUT:
+                                        raise GuardError('Essential export exceeds its safe streaming limit.')
+                                    member.write(data)
+                                    digest.update(data)
+                                    await flush()
+                        await flush()
+                        if count != info['counts'][name]:
+                            raise GuardError('Essential export population differs from its snapshot manifest.')
+                        files[name + '.csv'] = {'rows': count, 'bytes': size, 'sha256': digest.hexdigest()}
+                    info = {**info, 'files': files, 'complete': True}
+                    archive.writestr('manifest.json', json.dumps(info, indent=2).encode())
+                    archive.close()  # central directory is written only on success
+                    await flush()
+                    await response.write_eof()
+                except BaseException:
+                    if request.transport:
+                        request.transport.abort()
+                    archive.close()  # never flush an incomplete ZIP to the client
+                    raise
+                return response
+
     async def static(request):
         filename = request.match_info.get('file', 'index.html')
         if filename not in ('index.html', 'app.js', 'style.css'):
@@ -452,6 +614,7 @@ def create_app(db=None, token=None, development=False, health=None):
     app.router.add_get('/research/api/status', metadata)
     app.router.add_get('/research/api/estimate', estimate)
     app.router.add_get('/research/api/download', download)
+    app.router.add_get('/research/api/essentials', bundle)
     app.router.add_get('/research/', static)
     app.router.add_get('/research/{file}', static)
     return app
