@@ -119,11 +119,13 @@ async function loadGroqShadowStatus() {
     button.disabled = !info.available;
     button.dataset.protected = info.exportProtected ? 'true' : 'false';
     const mode = info.enabled ? 'enabled' : 'disabled';
-    const snapshots = info.snapshotAuditAvailable
+    const snapshots = info.canonical
+      ? (info.snapshotAuditAvailable ? 'causal snapshots included' : 'no AI requests yet')
+      : info.snapshotAuditAvailable
       ? `snapshots ${fmtBytes(info.snapshotAuditSizeBytes)} · updated ${fmtDateFull(info.snapshotAuditLastUpdatedAt)}`
       : 'no candidate snapshots yet';
     const decisions = info.available
-      ? `decisions ${fmtBytes(info.sizeBytes)} · updated ${fmtDateFull(info.lastUpdatedAt)}`
+      ? `${info.canonical ? 'AI evidence' : 'decisions'} ${fmtBytes(info.sizeBytes)} · updated ${fmtDateFull(info.lastUpdatedAt)}`
       : 'No Groq decisions yet';
     const summary=info.summary || {};
     const health=`model ${summary.successfulModelDecisions || 0} · local ${summary.localAbstains || 0} · API ${summary.apiErrors || 0} · malformed ${summary.malformedOutputs || 0} · normalized ${summary.normalizedOutputs || 0} · deferred ${summary.budgetDeferred || 0} · stale ${summary.budgetStale || 0} · tokens ${summary.tokens?.total || 0}`;
@@ -143,11 +145,12 @@ async function loadAlibabaShadowStatus() {
     const info=await api('/api/journal/research/alibaba-shadow');
     button.disabled=!info.available;button.dataset.protected=info.exportProtected?'true':'false';
     const snapshotsButton=$('#btnExportAlibabaSnapshots');
-    snapshotsButton.disabled=!info.snapshotAuditAvailable;
+    snapshotsButton.disabled=info.canonical?!info.available:!info.snapshotAuditAvailable;
     snapshotsButton.dataset.protected=button.dataset.protected;
     const summary=info.summary||{},tokens=summary.tokens||{},last=summary.lastHttpError;
-    const snapshotText=info.snapshots?`snapshots ${info.snapshots}`:'no candidate snapshots yet';
-    const decisions=info.available?`ledger ${fmtBytes(info.sizeBytes)}`:'no decisions yet';
+    const snapshotText=info.canonical?(info.snapshotAuditAvailable?'causal snapshots included':'no AI requests yet')
+      : info.snapshots?`snapshots ${info.snapshots}`:'no candidate snapshots yet';
+    const decisions=info.available?`${info.canonical?'AI evidence':'ledger'} ${fmtBytes(info.sizeBytes)}`:'no decisions yet';
     const counters=`model ${summary.successfulModelDecisions||0} · local ${summary.localAbstains||0} · API ${summary.apiErrors||0} · malformed ${summary.malformedOutputs||0} · normalized ${summary.normalizedOutputs||0} · deferred ${summary.budgetDeferred||0} · stale ${summary.budgetStale||0}`;
     const usage=`tokens ${tokens.prompt||0}/${tokens.completion||0}/${tokens.total||0} · cost $${Number(summary.estimatedCostUsd||0).toFixed(6)}`;
     const error=last?` · last ${last.status}${last.message?`: ${last.message.slice(0,120)}`:''}`:'';

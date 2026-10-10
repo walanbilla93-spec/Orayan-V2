@@ -107,6 +107,23 @@ async function downloadCurrent(options = {}) {
     cleanup: () => fs.rmSync(scratch, { recursive: true, force: true }),
   };
 }
+function providerExportMetadata(provider) {
+  const now = Date.now(), sinceAt = now - 30 * 3600000;
+  const events = Object.values(current().state.events).filter(
+    (e) => e.stream === 'ai_calls' && e.provider === provider && e.at >= sinceAt && e.at <= now,
+  );
+  const requests = events.filter((e) => e.aiEvent === 'REQUEST_PREPARED');
+  const bytes = (rows) => rows.reduce((total, e) => total + e.bytes, 0);
+  const latest = (rows) => rows.length
+    ? new Date(rows.reduce((at, e) => Math.max(at, e.at), 0)).toISOString() : null;
+  // Logical evidence bytes, not the size of the on-demand ZIP or a legacy ledger.
+  return {
+    canonical: true, exportFormat: 'zip', available: events.length > 0,
+    sizeBytes: bytes(events), lastUpdatedAt: latest(events),
+    snapshotAuditAvailable: requests.length > 0,
+    snapshotAuditSizeBytes: bytes(requests), snapshotAuditLastUpdatedAt: latest(requests),
+  };
+}
 async function daily(day) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day))
     throw Object.assign(Error("INVALID_ARCHIVE_DATE"), { statusCode: 400 });
@@ -182,6 +199,7 @@ module.exports = {
   start,
   prepare,
   downloadCurrent,
+  providerExportMetadata,
   daily,
   close,
   SCHEMA,

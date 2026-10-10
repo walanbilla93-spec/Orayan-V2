@@ -263,30 +263,40 @@ const routes = {
 
   'GET /api/journal/research/groq-shadow': async () => {
     const shadowStatus=await groqShadowProducer.status();
-    return {...groqShadowExport.metadata(),...shadowStatus,
+    const metadata=require('../lib/minimalCapture').researchEnabled()
+      ? require('../lib/researchRuntime').providerExportMetadata('Groq') : groqShadowExport.metadata();
+    return {...shadowStatus,...metadata,
       exportProtected:!!process.env.GROQ_SHADOW_EXPORT_TOKEN};
   },
 
   'GET /api/journal/research/groq-shadow/export': async ({req}) => {
     requireGroqExportAuth(req);
+    if(require('../lib/minimalCapture').researchEnabled())
+      return require('../lib/researchRuntime').downloadCurrent({provider:'Groq'});
     const result = groqShadowExport.download();
     return { __stream: true, ...result };
   },
 
   'GET /api/journal/research/alibaba-shadow': async () => {
     const shadowStatus=await alibabaShadowProducer.status();
-    return {...alibabaShadowExport.metadata(),...shadowStatus,
+    const metadata=require('../lib/minimalCapture').researchEnabled()
+      ? require('../lib/researchRuntime').providerExportMetadata('Alibaba') : alibabaShadowExport.metadata();
+    return {...shadowStatus,...metadata,
       exportProtected:!!process.env.ALIBABA_SHADOW_EXPORT_TOKEN};
   },
 
   'GET /api/journal/research/alibaba-shadow/export': async ({req}) => {
     requireAlibabaExportAuth(req);
+    if(require('../lib/minimalCapture').researchEnabled())
+      return require('../lib/researchRuntime').downloadCurrent({provider:'Alibaba'});
     const result=alibabaShadowExport.download();
     return {__stream:true,...result};
   },
 
   'GET /api/journal/research/alibaba-shadow/snapshots/export': async ({req}) => {
     requireAlibabaExportAuth(req);
+    if(require('../lib/minimalCapture').researchEnabled())
+      return require('../lib/researchRuntime').downloadCurrent({provider:'Alibaba'});
     return {__stream:true,...alibabaShadowExport.download({kind:'snapshots'})};
   },
 
