@@ -180,7 +180,7 @@ async function manageOpenTrades(settings) {
   for (const t of active) {
     try {
       const before = t.status;
-      const did = await executor.stepPaperTrade(t, settings);
+      const did = await executor.stepPaperTrade(t, settings, require('./researchExcursions').observeMinute);
       if (did) changed = true;
       if (before !== t.status) researchCapture.outcome(t.signalId, t.status, t);
       if (before !== 'CLOSED' && t.status === 'CLOSED') recordLockout(t, settings);
@@ -231,7 +231,7 @@ async function manageShadowTrades(settings) {
         }
       }
 
-      const did = await executor.stepPaperTrade(t, paperSettings);
+      const did = await executor.stepPaperTrade(t, paperSettings, require('./researchExcursions').observeMinute);
       if (did) changed = true;
       if (statusBefore !== t.status) researchCapture.outcome(t.signalId, t.status, t);
       if (!['PENDING', 'OPEN'].includes(t.status)) continue;
@@ -618,6 +618,7 @@ async function scanOnce() {
       }
     } else {
       for (const signal of candidates) {
+        if (!require('./researchRuntime').canAdmit(settings.mode)) break;
         const openNow = [...openTrades(), ...pendingTrades()];
         if (openNow.length >= settings.maxOpenPositions) break;
         const dual = settings.dualEngines === true;
@@ -654,6 +655,7 @@ async function scanOnce() {
         trade.structureBreakLevel = signal.retestLevel ?? signal.levels?.brokenLevel ?? null;
         trade.testnet = !!settings.testnet;
         researchCapture.outcome(signal.id, 'ORDER_INTENT', trade, { mode:settings.mode });
+        if (!require('./researchRuntime').canAdmit(settings.mode)) break;
 
         if (settings.mode === 'live') {
           try {
@@ -682,6 +684,7 @@ async function scanOnce() {
     if (settings.tradingEnabled && !state.killSwitch) {
       shadowCandidates.sort((a, b) => num(b.marciIndependent?.priorityScore) - num(a.marciIndependent?.priorityScore));
       for (const signal of shadowCandidates) {
+        if (!require('./researchRuntime').canAdmit('SHADOW')) break;
         const activeShadow = [...openShadowTrades(), ...pendingShadowTrades()];
         if (activeShadow.length >= settings.maxOpenPositions) break;
         if (activeShadow.some((t) => t.symbol === signal.symbol)) continue;
@@ -692,6 +695,7 @@ async function scanOnce() {
         const sizing = risk.sizePosition({ entry: signal.entry, sl: signal.sl, settings: shadowSettings, instrument });
         if (!sizing.ok) { researchCapture.outcome(signal.id, 'NO_ORDER', null, {reason:sizing.reason}); orderResolved.add(signal.id); continue; }
         researchCapture.outcome(signal.id, 'ORDER_INTENT', null, { mode:'paper' });
+        if (!require('./researchRuntime').canAdmit('SHADOW')) break;
 
         const trade = executor.createPendingOrder({ signal, sizing, settings: shadowSettings });
         trade.marketSnapshotId = signal.marketSnapshotId || marketSnapshotId;
@@ -924,6 +928,7 @@ function getState() {
     mode: settings.mode,
     testnet: settings.testnet,
     tradingEnabled: settings.tradingEnabled,
+    researchCapture: require('./minimalCapture').enabled() ? require('./researchRuntime').status() : {enabled:false},
     apiKeySet: bybit.keySet(),
     summary: summary(),
     shadowSummary: shadowSummary(),

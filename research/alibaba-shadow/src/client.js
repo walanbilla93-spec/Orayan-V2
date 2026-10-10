@@ -41,17 +41,19 @@ function endpointFor(baseUrl=DEFAULT_BASE_URL) {
   return `${url.toString().replace(/\/$/,'')}/chat/completions`;
 }
 
-async function postAlibaba(requestBody,{apiKey,baseUrl=DEFAULT_BASE_URL,timeoutMs,fetchImpl=globalThis.fetch}) {
+async function postAlibaba(requestBody,{apiKey,baseUrl=DEFAULT_BASE_URL,timeoutMs,fetchImpl=globalThis.fetch,onRaw}) {
   if(!apiKey)return {ok:false,status:'API_KEY_ABSENT',httpStatus:null,body:null,headers:{}};
   if(typeof fetchImpl!=='function')return {ok:false,status:'FETCH_UNAVAILABLE',httpStatus:null,body:null,headers:{}};
   let endpoint;
-  try{endpoint=endpointFor(baseUrl);}catch(error){return {ok:false,status:error.code,httpStatus:null,body:null,headers:{},
+  try{endpoint=endpointFor(baseUrl);}catch(error){
+    if(error.code==='RESEARCH_CAPTURE_HALTED')throw error;return {ok:false,status:error.code,httpStatus:null,body:null,headers:{},
     error:{type:'configuration_error',code:error.code,message:error.message}};}
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs),started=Date.now();
   try{
     const response=await fetchImpl(endpoint,{method:'POST',signal:controller.signal,
       headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},body:JSON.stringify(requestBody)});
-    const text=await response.text();let body=null;
+    const text=await response.text();
+    if(onRaw)await onRaw(text,{httpStatus:response.status,providerCallId:response.headers?.get?.("x-request-id")||null});let body=null;
     try{body=text?JSON.parse(text):null;}catch(_){body={unparsed:true};}
     const headers={retry_after:response.headers?.get?.('retry-after')||null,
       request_id:response.headers?.get?.('x-request-id')||response.headers?.get?.('request-id')||null,
@@ -61,7 +63,7 @@ async function postAlibaba(requestBody,{apiKey,baseUrl=DEFAULT_BASE_URL,timeoutM
     const error=sanitizedApiError(body,[apiKey]);
     return {ok:false,status:classifyApiError(response.status,error),httpStatus:response.status,body,headers,error,
       latencyMs:Date.now()-started};
-  }catch(error){return {ok:false,status:error?.name==='AbortError'?'TIMEOUT':'NETWORK_ERROR',httpStatus:null,body:null,
+  }catch(error){if(error.code==='RESEARCH_CAPTURE_HALTED')throw error;return {ok:false,status:error?.name==='AbortError'?'TIMEOUT':'NETWORK_ERROR',httpStatus:null,body:null,
     headers:{},latencyMs:Date.now()-started};}
   finally{clearTimeout(timer);}
 }

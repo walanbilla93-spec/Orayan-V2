@@ -155,44 +155,47 @@ async function loadAlibabaShadowStatus() {
   }catch(error){button.disabled=true;status.textContent=`Alibaba shadow data unavailable: ${error.message}`;}
 }
 
+async function downloadResearchZip(url){try{const cap=await api('/api/capture/status'),headers={};if(cap.exportAuthorization?.groq){const token=prompt('Enter the Groq research export token');if(!token)return;headers['X-Groq-Shadow-Export-Token']=token;}if(cap.exportAuthorization?.alibaba){const token=prompt('Enter the Alibaba research export token');if(!token)return;headers['X-Alibaba-Shadow-Export-Token']=token;}const response=await fetch(url,{headers});if(!response.ok)throw Error('Research download failed ('+response.status+')');const objectUrl=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=objectUrl;link.download=url.includes('daily.zip')?'orayan-research-'+new URL(url,location.href).searchParams.get('day')+'.zip':'orayan-current-30h.zip';link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);}catch(error){$('#captureHealth').textContent=error.message;}}
 let v3ExportGeneration=null,v3FrozenStatus=null;
 async function freezeV3Export(){const c=await api('/api/v3/cohort');v3ExportGeneration=c.generation;v3FrozenStatus=c.status;
   $('#v35Watermark').textContent=`Dashboard and downloads frozen at generation ${c.generation} · ${new Date(c.watermarkAt).toISOString()} · cursors ${JSON.stringify(c.cursors)} · retained logical rows ${JSON.stringify(Object.fromEntries(Object.entries(c.retained).map(([k,v])=>[k,v.logicalRows])))}`;
   await loadV3Status();return c;}
-async function downloadV3(channel){const minimal=await api('/api/capture/status');if(minimal.schemaVersion==='ORAYAN_MINIMAL_CAPTURE_V1'){window.location.href='/api/capture/export';return;}if(!v3ExportGeneration)await freezeV3Export();
+async function downloadV3(channel){const minimal=await api('/api/capture/status');if(['ORAYAN_MINIMAL_CAPTURE_V1','ORAYAN_RESEARCH_V2'].includes(minimal.schemaVersion)){await downloadResearchZip('/api/capture/current.zip');return;}if(!v3ExportGeneration)await freezeV3Export();
   window.location.href=channel==='summary'?`/api/v3/summary?generation=${v3ExportGeneration}`:`/api/v3/export?channel=${channel}&generation=${v3ExportGeneration}`;}
 function hideDormantResearch(){for(const id of ['groqShadowPanel','alibabaShadowPanel','btnExportSignalsCsv','btnExportSignalsJson','btnExportProspectiveResearch','btnExportProspectiveAll','btnResetProspectiveCompact','btnExportSupplementResearch','btnExportEarlyEntryResearch','btnExportLegacyResearch','btnExportResearchEvents','btnResetResearch'])$('#'+id).hidden=true;}
-async function initializeCaptureView(){try{const cap=await api('/api/capture/status');if(cap.schemaVersion==='ORAYAN_MINIMAL_CAPTURE_V1')hideDormantResearch();}catch{/* Existing status banner handles connection failures. */}}
+async function initializeCaptureView(){try{const cap=await api('/api/capture/status');if(['ORAYAN_MINIMAL_CAPTURE_V1','ORAYAN_RESEARCH_V2'].includes(cap.schemaVersion))hideDormantResearch();}catch{/* Existing status banner handles connection failures. */}}
 function renderCaptureSummary(info,cap){
   hideDormantResearch();
   $('#minimalCapturePanel').hidden=false;$('#legacyResearchPanel').hidden=true;
   const clean=cap.populationComplete&&!(cap.lostRows||cap.volatileLostRows),health=$('#captureHealth');
   const historicalOnly=cap.captureRevision?.lostRowsBaseline>0&&cap.lostRows===cap.captureRevision.lostRowsBaseline&&!cap.volatileLostRows&&!cap.writerFailed&&!cap.possibleCrashGap;
-  health.textContent=clean?'Capture healthy':historicalOnly?'Recording · earlier capture gaps':'Capture needs attention';health.className='capture-health '+(clean?'healthy':'attention');
+  health.textContent=cap.captureHalted?'RESEARCH CAPTURE HALTED · '+(cap.lastError?.code||'persistence unavailable'):cap.health==='RESEARCH CAPTURE DEGRADED'?'RESEARCH CAPTURE DEGRADED':clean?'Capture healthy':historicalOnly?'Recording · earlier capture gaps':'Capture needs attention';health.className='capture-health '+(clean?'healthy':'attention');
   $('#captureSince').textContent='Fresh epoch since '+fmtDate(cap.startedAt);
-  const count=n=>Number(n||0).toLocaleString(),metric=(label,value,note='')=>`<div class="capture-counter"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note?`<small>${esc(note)}</small>`:''}</div>`;
-  $('#captureCounters').innerHTML=[
-    metric('Recorded events',count(cap.acceptedRows)),metric('Decision boundaries',count(cap.countsByStream?.decision_episode)),
+  const count=n=>n===null?'—':Number(n||0).toLocaleString(),metric=(label,value,note='')=>`<div class="capture-counter"><span>${esc(label)}</span><strong>${esc(value)}</strong>${note?`<small>${esc(note)}</small>`:''}</div>`;
+  const v2=cap.schemaVersion==='ORAYAN_RESEARCH_V2';
+  $('#captureCounters').innerHTML=v2?[metric('Persisted events',count(cap.persistedRows)),metric('Unique decision episodes',count(cap.uniqueDecisionEpisodes)),metric('Open episodes',count(cap.episodeStates?.OPEN)),metric('Complete episodes',count(cap.episodeStates?.COMPLETE)),metric('Censored episodes',count(cap.episodeStates?.CENSORED)),metric('Research data files',fmtBytes((cap.retainedBytes||0)+(cap.archives||[]).filter(a=>!a.expired).reduce((n,a)=>n+a.bytes,0))),metric('Critical losses',count(cap.lostRows)),metric('Optional suppression',count(cap.optionalSuppressed))].join(''):[
+    metric('Recorded events',count(cap.acceptedRows)),metric('Decision boundaries',count(cap.countsByStream?.decisions??cap.countsByStream?.decision_episode)),
     metric('New admissions',count(cap.admitted)),metric('New fills',count(cap.filled)),metric('New closes',count(cap.closed)),
     metric('Stored data',fmtBytes(cap.retainedBytes)),metric('Capture losses',count((cap.lostRows||0)+(cap.volatileLostRows||0))),
     metric('Errors observed',count((cap.healthBuckets||[]).reduce((n,b)=>n+b.count,0)),'Recent aggregated buckets')
   ].join('');
   const inherited=(cap.inheritedClosed||0)+(cap.inheritedCancelled||0)+(cap.inheritedExpired||0);
-  $('#capturePopulationNote').textContent='Admissions, fills and closes count new-epoch trades across separately labeled paper and shadow modes.'+(inherited?` ${count(inherited)} inherited trade outcomes are excluded.`:'')+(!clean?' Early records contain capture gaps; use complete observation windows for research.':'');
+  $('#capturePopulationNote').textContent=v2?'Counters cover capture history across epochs. Episodes preserve their original cohort; missing chains are labeled censored.':'Admissions, fills and closes count new-epoch trades across separately labeled paper and shadow modes.'+(inherited?` ${count(inherited)} inherited trade outcomes are excluded.`:'')+(!clean?' Early records contain capture gaps; use complete observation windows for research.':'');
   const arms=info.holdout?.pairedArms||{},names={FIRST_ADMISSION_ONLY:['First admission','One admission per episode'],FIRST_FILLED_ONLY:['First filled trade','One filled trade per episode'],ATR1M_BUFFER:['1 ATR buffer','Wider stop; original structural target'],ATR1M_1P5_REPLACEMENT:['1.5 ATR replacement','Separate full-geometry opportunity population']};
   $('#comparisonCards').innerHTML=Object.entries(names).map(([key,[title,note]])=>{
     const arm=arms[key]||{},cash=x=>x===null||x===undefined?'—':fmt(x,2)+' USDT';
     const values=[['Eligible',count(arm.eligibleAdmissions)],['Filled',count(arm.filled)],['Resolved',count(arm.resolved)],['Censored',count(arm.censored)],['Net cash',cash(arm.netCash)],['Vs control',cash(arm.pairedNetCash)]];
     return `<article class="comparison-card"><h4>${esc(title)}</h4><p>${esc(note)}</p><dl>${values.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${!arm.eligibleAdmissions?'<small>Awaiting eligible episodes</small>':''}</article>`;
   }).join('');
-  $('#captureStorageNote').textContent=`${count(cap.retainedRows)} retained events · ${count(cap.prunedRows)} rotated out · ${fmtBytes(cap.limits?.dailyBytes||0)}/day cap. Detailed records are in the download.`;
+  if(cap.schemaVersion==='ORAYAN_RESEARCH_V2'){let daily=document.getElementById('dailyResearchArchives');if(!daily){daily=document.createElement('div');daily.id='dailyResearchArchives';$('#captureStorageNote').after(daily);}daily.onclick=event=>{const link=event.target.closest('a');if(link){event.preventDefault();downloadResearchZip(link.getAttribute('href'));}};daily.innerHTML=(cap.archives||[]).filter(a=>!a.expired&&a.published&&a.verified).map(a=>`<a href="/api/capture/daily.zip?day=${encodeURIComponent(a.day)}">${esc(a.day)} daily ZIP</a>`).join(' · ');}
+  $('#captureStorageNote').textContent=`${count(cap.retainedRows)} retained events · ${count(cap.prunedRows)} rotated out · seven completed daily ZIPs plus current data. Download includes approximately 30 hours with dependencies.`;
   $('#btnExportV3').disabled=false;v3FrozenStatus=null;
 }
 async function loadV3Status() {
   try {
     const info=v3FrozenStatus||await api('/api/v3/status');
     const a=info.archive||{};
-    if(a.captureSchema==='ORAYAN_MINIMAL_CAPTURE_V1'){renderCaptureSummary(info,await api('/api/capture/status'));return;}
+    if(['ORAYAN_MINIMAL_CAPTURE_V1','ORAYAN_RESEARCH_V2'].includes(a.captureSchema)){renderCaptureSummary(info,await api('/api/capture/status'));return;}
     $('#legacyResearchPanel').hidden=false;$('#minimalCapturePanel').hidden=true;
     const h=info.holdout||{},telemetry=a.telemetry||{};
     $('#v35Holdout').textContent=`Holdout start ${h.startedAt?new Date(h.startedAt).toISOString():h.notBeforeAt?'awaiting full UTC hour '+new Date(h.notBeforeAt).toISOString():'awaiting capture validation'} · unique filled episodes ${h.uniqueFilledEpisodes||0}/100 · symbols ${h.distinctSymbols||0}/30 · long/short ${h.longEpisodes||0}/${h.shortEpisodes||0} · regimes ${JSON.stringify(h.regimeCounts||{})} · largest symbol ${(100*(h.maxSymbolShare||0)).toFixed(1)}% · repeat eligible episodes ${h.repeatEligibleEpisodes||0}/30 · <1ATR evaluable filled episodes ${h.atrBufferEligibleFilledEpisodes||0}/20 · unresolved/censored ${h.unresolvedAdmissions||0}/${h.explicitlyCensoredAdmissions||0}`;
@@ -225,13 +228,13 @@ async function loadV3Status() {
     $('#v3TradeStatus').textContent=`Accepted ${c.admitted||0} · Filled ${c.filled||0} · Closed ${c.closed||0} · Cancelled ${c.cancelled||0} · Expired ${c.expired||0} · Incomplete paths ${c.incomplete||0}${info.lastTradeError?` · Data retry: ${info.lastTradeError.reason}`:''}. Independent simulations; no portfolio P&L. Funding uses settled rates with an entry-notional approximation; net stays unavailable until resolved.`;
     $('#btnExportV3Trades').disabled=!(info.counts.trades>0);
     $('#v3TradeRows').innerHTML=(info.shadowTrades||[]).slice().reverse().map(t=>`<tr><td>${esc(t.symbol)}</td><td>${esc(t.side)}</td><td>${esc(readable(t.status))}</td><td>${esc(readable(t.outcome))}</td><td>${esc(t.entryPrice===null?'—':fmt(t.entryPrice,6))}</td><td>${esc(t.exitPrice===null?'—':fmt(t.exitPrice,6))}</td><td>${esc(t.netPnl===null?'—':fmt(t.netPnl,4))}</td><td>${esc(t.realizedR===null?'—':fmt(t.realizedR,2))}</td><td>${esc(`${t.ambiguous?'Ambiguous · ':''}${readable(t.fundingStatus)}`)}</td></tr>`).join('')||'<tr><td colspan="9">No eligible V3.3 trades yet. Rejected candidates remain in the V3 data.</td></tr>';
-    if(a.captureSchema==='ORAYAN_MINIMAL_CAPTURE_V1'){
+    if(['ORAYAN_MINIMAL_CAPTURE_V1','ORAYAN_RESEARCH_V2'].includes(a.captureSchema)){
       const cap=await api('/api/capture/status');v3FrozenStatus=null;
       $('#v3Status').textContent='Minimal event capture · epoch '+cap.epochId+' · '+cap.acceptedRows+' accepted / '+cap.lostRows+' lost events · '+fmtBytes(cap.retainedBytes)+' retained · '+cap.retentionStatus+' · '+(cap.populationComplete?'no reported capture loss':'INCOMPLETE capture')+'. Simulation scan counts below are internal observations, not recorded population.';
       $('#v35Capture').textContent='Candidate/trade events only. No all-day environment, minute paths, dormant arms or AI payload archive.';
-      $('#v35Watermark').textContent='Canonical exports: all modes separated, schema '+cap.schemaVersion+', lifetime '+cap.acceptedRows+' accepted, retained '+cap.retainedRows+' rows, pruned '+cap.prunedRows+'. Downloads return the minimal event dataset.';
+      $('#v35Watermark').textContent='Canonical exports: all modes separated, schema '+cap.schemaVersion+', lifetime '+cap.acceptedRows+' accepted, retained '+cap.retainedRows+' rows, pruned '+cap.prunedRows+'. Downloads contain canonical records with checksums and dependencies.';
       $('#btnExportV3').disabled=false;
-      $('#btnExportV3').textContent='Download minimal episodes & outcomes';
+      $('#btnExportV3').textContent='CURRENT ~30H RESEARCH ZIP';
       for(const id of ['btnExportV3Summary','btnExportV3V2','btnExportV3AI','btnExportV3Trades','btnExportV3Errors','btnExportV3Paths','btnExportV3Arms','btnExportV3Ledger','btnExportV3Tombstones','btnV3Freeze','v35Daily','btnV3Daily'])$('#'+id).hidden=true;
       $('#v3ExportNote').textContent='One dataset contains decision episodes, trade outcomes, active comparison arms, sparse management events and compact health records. The export includes a fixed watermark and lifetime/retained/pruned counts. Old snapshot and minute-path downloads are retired. Forensic recording is off.';
     }

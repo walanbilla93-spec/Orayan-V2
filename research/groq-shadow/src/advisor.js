@@ -1,5 +1,6 @@
 'use strict';
 
+const researchAI=require('../../../backend/lib/researchAI');
 const path = require('path');
 
 const {
@@ -33,7 +34,7 @@ function configFromEnv(env = process.env) {
   };
 }
 
-function buildRequest(snapshot, config) {
+function buildLegacyRequest(snapshot, config) {
   return {
     model:config.model,
     reasoning_effort:'low',
@@ -47,6 +48,10 @@ function buildRequest(snapshot, config) {
   };
 }
 
+function buildRequest(snapshot,config){
+ const request=buildLegacyRequest(snapshot,config);
+ return require('../../../backend/lib/minimalCapture').researchEnabled()?require('../../../backend/lib/researchPayload').build(request,snapshot,RESPONSE_SCHEMA):request;
+}
 function estimateTokens(request, completionReserveTokens = 450) {
   const promptEstimate = Math.ceil(Buffer.byteLength(JSON.stringify(request),'utf8')/3.5);
   return promptEstimate + completionReserveTokens;
@@ -59,7 +64,7 @@ function abstainDecision(reasons, code = 'INSUFFICIENT_DECISION_TIME_EVIDENCE') 
 function baseRecord({recordType,requestId,snapshot,inputHash,config,nowIso,status}) {
   return {
     schema_version:SCHEMA_VERSION,record_type:recordType,request_id:requestId,
-    candidate_id:snapshot.candidate_id,candidate_birth_at_utc:snapshot.candidate_birth_at_utc,
+    candidate_id:snapshot.candidate_id,candidate_episode_id:snapshot.candidate_episode_id||null,candidate_birth_at_utc:snapshot.candidate_birth_at_utc,
     model:config.model,prompt_version:PROMPT_VERSION,prompt_variant:PROMPT_VARIANT,
     prompt_hash:PROMPT_HASH,response_schema_version:RESPONSE_SCHEMA_VERSION,response_schema_hash:RESPONSE_SCHEMA_HASH,
     input_snapshot_hash:inputHash,status,
@@ -71,9 +76,10 @@ async function advise(snapshot, options = {}) {
   const config = options.config || configFromEnv();
   const nowMs = options.nowMs ?? Date.now(), nowIso = new Date(nowMs).toISOString();
   const check = validateSnapshot(snapshot, nowMs);
+  if(require('../../../backend/lib/minimalCapture').researchEnabled())check.abstainReasons.push(...require('../../../backend/lib/researchPayload').staleReasons(snapshot,nowMs,config.maxDeferAgeMs));
   const compact = compactSnapshot(snapshot);
   const requestId = sha256(`${snapshot?.candidate_id || 'missing'}|${compact.inputHash}|${config.model}|${PROMPT_HASH}|${PROMPT_VARIANT}`);
-  const index = await ledgerIndex(config.ledger, nowMs, {allowedRoot:config.allowedRoot});
+  const index = await ledgerIndex(config.ledger, nowMs, {allowedRoot:config.allowedRoot,canonical:researchAI.canonical('Groq')} );
   const state = index.state(nowMs);
   if (state.requestIds.has(requestId)) return {status:'DUPLICATE_IGNORED',request_id:requestId,persisted:false};
   const priorInput = state.candidateInputs.get(snapshot?.candidate_id);
@@ -133,22 +139,32 @@ async function advise(snapshot, options = {}) {
   if (options.mode !== 'live' && options.mode !== 'mock') throw new Error('Mode must be dry-run, mock, or live.');
   if (options.mode === 'live' && !config.allowLive) throw new Error('Live call blocked: set GROQ_SHADOW_ALLOW_LIVE=true only after explicit approval.');
 
+  if(require('../../../backend/lib/minimalCapture').researchEnabled()){
+    const dispatchNow=options.nowMs??Date.now();
+    const stale=require('../../../backend/lib/researchPayload').staleReasons(snapshot,dispatchNow,config.maxDeferAgeMs);
+    if(stale.length){const at=new Date(dispatchNow).toISOString(),record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'LOCAL_ABSTAIN'}),completed_at_utc:at,available_to_system_at_utc:at,latency_ms:0,tokens:null,decision:abstainDecision(stale,'DATA_STALE')};await index.append(record,dispatchNow);return record;}
+  }
   await index.append({...baseRecord({recordType:'REQUEST_STARTED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'REQUEST_STARTED'}),
     request_hash:requestHash,estimated_tokens_reserved:estimatedTokens,
     completion_tokens_reserved:completionReserveTokens}, nowMs);
+  const aiContext=researchAI.begin('Groq',snapshot,request,requestId,[config.apiKey]);
   const started = Date.now();
-  const api = options.mode === 'mock'
+  let api;
+  try {
+    api = options.mode === 'mock'
     ? await options.mockTransport(request)
-    : await postGroq(request,{apiKey:config.apiKey,timeoutMs:config.timeoutMs,fetchImpl:options.fetchImpl});
+    : await postGroq(request,{apiKey:config.apiKey,timeoutMs:config.timeoutMs,fetchImpl:options.fetchImpl,onRaw:(text,meta)=>researchAI.raw(aiContext,text,meta)});
+  } catch(error) { researchAI.transportError(aiContext,error);throw error; }
+  if(options.mode==='mock')researchAI.raw(aiContext,api.rawText??JSON.stringify(api.body),{mock:true,httpStatus:api.httpStatus,providerCallId:api.headers?.request_id||null});
   const completedMs = options.completedMs ?? Date.now(), completedIso = new Date(completedMs).toISOString();
-  let status = api.status, decision, normalization = null;
+  let status = api.status, decision, normalization = null, parsedResponse=null;
   if (api.ok) {
     let parsed;
     try { parsed = JSON.parse(api.body?.choices?.[0]?.message?.content || ''); }
     catch (_) { status='MALFORMED_JSON'; }
-    const normalized = parsed ? normalizeDecision(parsed) : {decision:parsed,normalization:null};
+    parsedResponse=parsed;const normalized = parsed ? normalizeDecision(parsed) : {decision:parsed,normalization:null};
     parsed=normalized.decision;normalization=normalized.normalization;
-    const decisionErrors = parsed ? validateDecision(parsed,compact.snapshot) : ['response:not_json'];
+    const decisionErrors = parsed ? validateDecision(parsed,require('../../../backend/lib/minimalCapture').researchEnabled()?require('../../../backend/lib/researchPayload').evidence(compact.snapshot):compact.snapshot) : ['response:not_json'];
     if (decisionErrors.length) {
       status='MALFORMED_OUTPUT'; decision=abstainDecision(decisionErrors,'MALFORMED_MODEL_OUTPUT');
     } else decision=parsed;
@@ -161,6 +177,7 @@ async function advise(snapshot, options = {}) {
     api_error:api.ok ? null : (api.error || {type:null,code:null,message:null}),normalization,
     tokens:usage ? {prompt:usage.prompt_tokens??null,completion:usage.completion_tokens??null,total:usage.total_tokens??null} : null,
     decision};
+  researchAI.finish(aiContext,{...record,parsed_response:parsedResponse});
   await index.append(record, completedMs);
   return record;
 }
@@ -182,4 +199,4 @@ class BoundedShadowQueue {
   }
 }
 
-module.exports = {configFromEnv,buildRequest,estimateTokens,advise,BoundedShadowQueue,abstainDecision};
+module.exports = {configFromEnv,buildLegacyRequest,buildRequest,estimateTokens,advise,BoundedShadowQueue,abstainDecision};

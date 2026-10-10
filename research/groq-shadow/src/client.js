@@ -32,7 +32,7 @@ function classifyApiError(httpStatus, error) {
   return `API_${httpStatus || 'UNKNOWN'}`;
 }
 
-async function postGroq(requestBody, {apiKey, timeoutMs, fetchImpl = globalThis.fetch}) {
+async function postGroq(requestBody, {apiKey, timeoutMs, fetchImpl = globalThis.fetch,onRaw}) {
   if (!apiKey) return {ok:false,status:'API_KEY_ABSENT',httpStatus:null,body:null,headers:{}};
   if (typeof fetchImpl !== 'function') return {ok:false,status:'FETCH_UNAVAILABLE',httpStatus:null,body:null,headers:{}};
   const controller = new AbortController();
@@ -45,6 +45,7 @@ async function postGroq(requestBody, {apiKey, timeoutMs, fetchImpl = globalThis.
       body:JSON.stringify(requestBody),
     });
     const text = await response.text();
+    if(onRaw)await onRaw(text,{httpStatus:response.status,providerCallId:response.headers?.get?.("x-request-id")||null});
     let body = null;
     try { body = text ? JSON.parse(text) : null; } catch (_) { body = {unparsed:true}; }
     const headers = {
@@ -57,6 +58,7 @@ async function postGroq(requestBody, {apiKey, timeoutMs, fetchImpl = globalThis.
     const status = classifyApiError(response.status,error);
     return {ok:false,status,httpStatus:response.status,body,headers,error,latencyMs:Date.now()-started};
   } catch (error) {
+    if(error.code==='RESEARCH_CAPTURE_HALTED')throw error;
     const timeout = error?.name === 'AbortError';
     return {ok:false,status:timeout?'TIMEOUT':'NETWORK_ERROR',httpStatus:null,body:null,headers:{},latencyMs:Date.now()-started};
   } finally { clearTimeout(timer); }

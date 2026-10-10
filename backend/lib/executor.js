@@ -65,7 +65,7 @@ function createPendingOrder({ signal, sizing, settings }) {
 }
 
 /** Advance one paper trade against 1-minute candles. Returns true if the trade changed. */
-async function stepPaperTrade(trade, settings) {
+async function stepPaperTrade(trade, settings, observeMinute) {
   const testnet = settings.testnet;
 
   // Only fetch back to where we last looked, not to the fill. Bybit caps a kline page at 1000
@@ -131,6 +131,7 @@ async function stepPaperTrade(trade, settings) {
   const after = candles.filter((c) => c.ts >= from);
 
   for (const c of after) {
+    try { if(observeMinute)observeMinute(trade,c); } catch (_) { /* Observation cannot alter execution. */ }
     const hitTp = isBuy ? c.high >= trade.tp + tpBuf : c.low <= trade.tp - tpBuf;
     const hitSl = isBuy ? c.low <= trade.sl : c.high >= trade.sl;
 

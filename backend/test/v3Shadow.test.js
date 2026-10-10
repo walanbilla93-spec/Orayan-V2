@@ -125,9 +125,9 @@ test('AI annotations read incrementally, redact secrets, and never become determ
   assert.equal(r.agreedWithV3,false);assert.equal(r.executionAuthority,false);
   assert.ok(r.processBootId);assert.equal(r.implementationHash.length,64);
 });
-test('V2 strategy/execution/settings and AI modules are byte-identical to benchmark',()=>{
+test('V2 strategy/execution/settings remain byte-identical to benchmark',()=>{
   for(const file of ['signals.js','signals_trend.js','signals_structure.js','gates.js','risk.js','executor.js','settings.js',
-    'marketData.js','groqShadowProducer.js','alibabaShadowProducer.js']) {
+    'marketData.js']) {
     const relative='backend/lib/'+file;
     const frozen=execFileSync('git',['show',`${BENCHMARK}:${relative}`],{cwd:root}).toString().replace(/\r\n/g,'\n');
     assert.equal(require('./captureBaseline')(fs.readFileSync(path.join(root,relative),'utf8'),file),frozen,file);

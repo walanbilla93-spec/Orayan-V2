@@ -286,6 +286,7 @@ function buildSnapshot(signal, birth, context = {}) {
 }
 
 async function appendAudit(cfg, record) {
+  if(minimal.researchEnabled())return;
   await appendImmutableAsync(cfg.snapshotAudit,
     { audit_schema_version: AUDIT_SCHEMA, recorded_at_utc: new Date().toISOString(), ...record },
     { allowedRoot:cfg.allowedRoot });
@@ -304,7 +305,7 @@ class DurableShadowRuntime {
     this.snapshotCount = 0;
     this.snapshotIds = new Set();
     this.queue = new BoundedShadowQueue({maxSize:cfg.maxQueue,worker:item=>this.process(item)});
-    this.ready = this.recover().finally(()=>{this.recoveryDone=true;});
+    this.ready = (minimal.researchEnabled()?ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Alibaba')}):this.recover()).finally(()=>{this.recoveryDone=true;});
   }
 
   reserve() {
@@ -360,6 +361,7 @@ class DurableShadowRuntime {
   async accept(snapshot) {
     const id = handoffId(snapshot);
     const appendedDuringRecovery=!this.recoveryDone;
+    if(minimal.researchEnabled()){try{await this.ready;return await this.queue.enqueue({id,snapshot});}finally{this.reserved=Math.max(0,this.reserved-1);}}
     try {
       // The fsync is asynchronous: durable evidence reaches disk before in-memory pending work,
       // without blocking the trading call stack or keeping an unbounded prequeue in memory.
@@ -388,13 +390,14 @@ async function initialize(env = process.env) {
   const cfg=config(env);
   const [recovery] = await Promise.all([
     getRuntime(cfg).ready,
-    ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot}),
+    ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Alibaba')}),
   ]);
   return recovery;
 }
 
 function observeBirth(signal, birth, context = {}) {
-  if(minimal.enabled())return null;
+  if(minimal.enabled()&&!minimal.researchEnabled())return null;
+  if(minimal.researchEnabled()&&!minimal.current().canDispatch())return false;
   if (!birth || birth.kind !== 'candidate_birth' || birth.engine !== 'NEW_ORAYAN') return false;
   const dedupeKey = `${birth.episodeId || ''}|${signal.id}`;
   if (seenBirths.has(dedupeKey)) return false;
@@ -406,8 +409,10 @@ function observeBirth(signal, birth, context = {}) {
     logger.warn('alibaba-shadow', 'Alibaba shadow path configuration rejected', redact({ code: error.code, error: error.message }));
     return false;
   }
+  if(minimal.researchEnabled()&&!cfg.allowLive){require('./researchAI').notRequested('Alibaba',birth,signal.id,'PROVIDER_DISABLED');return false;}
   const currentRuntime=getRuntime(cfg);
   if(!currentRuntime.reserve()) {
+    if(minimal.researchEnabled())require('./researchAI').notRequested('Alibaba',birth,signal.id,'DISPATCH_QUEUE_FULL');
     logger.warn('alibaba-shadow','Durable shadow handoff capacity is full',redact({candidateId:signal.id}));
     return false;
   }
@@ -442,7 +447,7 @@ function statOrNull(file) {
 async function status(env = process.env) {
   const cfg = config(env);
   const audit = statOrNull(cfg.snapshotAudit);
-  const state = await ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot});
+  const state = await ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Alibaba')});
   return {
     enabled: cfg.allowLive,
     model: cfg.model || DEFAULT_MODEL,

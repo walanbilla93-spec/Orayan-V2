@@ -6,7 +6,7 @@ COPY backend ./backend
 COPY frontend ./frontend
 COPY research/groq-shadow ./research/groq-shadow
 COPY research/alibaba-shadow ./research/alibaba-shadow
-RUN cd backend && npm install --omit=dev --no-audit --no-fund
+RUN cd backend && npm ci --omit=dev --no-audit --no-fund
 
 # Settings and trade history persist here — mounted as a volume in docker-compose.yml
 # so a container rebuild never throws away trade history or pinned settings.

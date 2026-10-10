@@ -2,6 +2,8 @@
 
 // Operator-authorized capture reset runs before any writer or execution state is restored.
 require('./lib/startupCaptureReset').run();
+require('./lib/researchRuntime').prepare();
+require('./lib/researchRuntime').start();
 
 const http = require('http');
 const fs = require('fs');

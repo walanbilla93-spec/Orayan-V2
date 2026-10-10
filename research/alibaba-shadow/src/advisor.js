@@ -1,5 +1,6 @@
 'use strict';
 
+const researchAI=require('../../../backend/lib/researchAI');
 const path=require('path');
 const {SCHEMA_VERSION,PROMPT_VERSION,PROMPT_VARIANT,RESPONSE_SCHEMA_VERSION,DEFAULT_MODEL,DEFAULT_BASE_URL,
   MODEL_PRICING_USD_PER_MILLION,RESPONSE_SCHEMA,SYSTEM_PROMPT,PROMPT_HASH,RESPONSE_SCHEMA_HASH,SNAPSHOT_SCHEMA_HASH,
@@ -36,11 +37,15 @@ function configFromEnv(env=process.env){
   };
 }
 
-function buildRequest(snapshot,config){
+function buildLegacyRequest(snapshot,config){
   return {model:config.model,enable_thinking:false,max_tokens:config.maxOutputTokens,temperature:0.1,
     messages:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:canonicalJson({prompt_version:PROMPT_VERSION,
       prompt_variant:PROMPT_VARIANT,response_contract:RESPONSE_SCHEMA,candidate:snapshot})}],
     response_format:{type:'json_object'}};
+}
+function buildRequest(snapshot,config){
+ const request=buildLegacyRequest(snapshot,config);
+ return require('../../../backend/lib/minimalCapture').researchEnabled()?require('../../../backend/lib/researchPayload').build(request,snapshot,RESPONSE_SCHEMA):request;
 }
 function estimatePromptTokens(request){return Math.ceil(Buffer.byteLength(JSON.stringify(request),'utf8')/3.5);}
 function estimateTokens(request,completionReserveTokens=450){return estimatePromptTokens(request)+completionReserveTokens;}
@@ -54,7 +59,7 @@ function abstainDecision(reasons,code='INSUFFICIENT_DECISION_TIME_EVIDENCE'){
     rationale_short:'Required causal decision-time evidence is missing, stale, unavailable, or invalid.'};
 }
 function baseRecord({recordType,requestId,snapshot,inputHash,config,nowIso,status}){
-  return {schema_version:SCHEMA_VERSION,record_type:recordType,request_id:requestId,candidate_id:snapshot.candidate_id,
+  return {schema_version:SCHEMA_VERSION,record_type:recordType,request_id:requestId,candidate_id:snapshot.candidate_id,candidate_episode_id:snapshot.candidate_episode_id||null,
     candidate_birth_at_utc:snapshot.candidate_birth_at_utc,model:config.model,base_url:config.baseUrl,
     region:'Singapore',thinking_enabled:false,prompt_version:PROMPT_VERSION,prompt_variant:PROMPT_VARIANT,
     prompt_hash:PROMPT_HASH,response_schema_version:RESPONSE_SCHEMA_VERSION,response_schema_hash:RESPONSE_SCHEMA_HASH,
@@ -66,8 +71,9 @@ async function advise(snapshot,options={}){
   const config=options.config||configFromEnv(),nowMs=options.nowMs??Date.now(),nowIso=new Date(nowMs).toISOString();
   snapshot=redact(snapshot,[config.apiKey]);
   const check=validateSnapshot(snapshot,nowMs),compact=compactSnapshot(snapshot);
+  if(require('../../../backend/lib/minimalCapture').researchEnabled())check.abstainReasons.push(...require('../../../backend/lib/researchPayload').staleReasons(snapshot,nowMs,config.maxDeferAgeMs));
   const requestId=sha256(`${snapshot?.candidate_id||'missing'}|${compact.inputHash}|${config.model}|${PROMPT_HASH}|${PROMPT_VARIANT}`);
-  const index=await ledgerIndex(config.ledger,nowMs,{allowedRoot:config.allowedRoot}),state=index.state(nowMs);
+  const index=await ledgerIndex(config.ledger,nowMs,{allowedRoot:config.allowedRoot,canonical:researchAI.canonical('Alibaba')} ),state=index.state(nowMs);
   if(state.requestIds.has(requestId))return {status:'DUPLICATE_IGNORED',request_id:requestId,persisted:false};
   const priorInput=state.candidateInputs.get(snapshot?.candidate_id);
   if(priorInput&&priorInput!==compact.inputHash){
@@ -139,17 +145,24 @@ async function advise(snapshot,options={}){
     estimated_cost_usd_reserved:estimatedCostReserved,completion_tokens_reserved:completionReserveTokens,persisted:false};
   if(!['live','mock'].includes(options.mode))throw new Error('Mode must be dry-run, mock, or live.');
 
+  if(require('../../../backend/lib/minimalCapture').researchEnabled()){
+    const dispatchNow=options.nowMs??Date.now();
+    const stale=require('../../../backend/lib/researchPayload').staleReasons(snapshot,dispatchNow,config.maxDeferAgeMs);
+    if(stale.length){const at=new Date(dispatchNow).toISOString(),record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'LOCAL_ABSTAIN'}),completed_at_utc:at,available_to_system_at_utc:at,latency_ms:0,tokens:null,decision:abstainDecision(stale,'DATA_STALE')};await index.append(record,dispatchNow);return record;}
+  }
   await index.append({...baseRecord({recordType:'REQUEST_STARTED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,
     status:'REQUEST_STARTED'}),request_hash:requestHash,estimated_tokens_reserved:estimatedTokens,
     estimated_cost_usd_reserved:estimatedCostReserved,completion_tokens_reserved:completionReserveTokens},nowMs);
+  const aiContext=researchAI.begin('Alibaba',snapshot,request,requestId,[config.apiKey]);
   const started=Date.now();
-  const api=options.mode==='mock'?await options.mockTransport(request):await postAlibaba(request,{apiKey:config.apiKey,
-    baseUrl:config.baseUrl,timeoutMs:config.timeoutMs,fetchImpl:options.fetchImpl});
+  let api;try{api=options.mode==='mock'?await options.mockTransport(request):await postAlibaba(request,{apiKey:config.apiKey,
+    baseUrl:config.baseUrl,timeoutMs:config.timeoutMs,fetchImpl:options.fetchImpl,onRaw:(text,meta)=>researchAI.raw(aiContext,text,meta)});}catch(error){researchAI.transportError(aiContext,error);throw error;}
+  if(options.mode==='mock')researchAI.raw(aiContext,api.rawText??JSON.stringify(api.body),{mock:true,httpStatus:api.httpStatus,providerCallId:api.headers?.request_id||null});
   const completedMs=options.completedMs??Date.now(),completedIso=new Date(completedMs).toISOString();
-  let status=api.status,decision,normalization=null;
+  let status=api.status,decision,normalization=null,parsedResponse=null;
   if(api.ok){let parsed;try{parsed=JSON.parse(api.body?.choices?.[0]?.message?.content||'');}catch(_){status='MALFORMED_JSON';}
-    const normalized=parsed?normalizeDecision(parsed):{decision:parsed,normalization:null};parsed=normalized.decision;normalization=normalized.normalization;
-    const errors=parsed?validateDecision(parsed,compact.snapshot):['response:not_json'];
+    parsedResponse=parsed;const normalized=parsed?normalizeDecision(parsed):{decision:parsed,normalization:null};parsed=normalized.decision;normalization=normalized.normalization;
+    const errors=parsed?validateDecision(parsed,require('../../../backend/lib/minimalCapture').researchEnabled()?require('../../../backend/lib/researchPayload').evidence(compact.snapshot):compact.snapshot):['response:not_json'];
     if(errors.length){status='MALFORMED_OUTPUT';decision=abstainDecision(errors,'MALFORMED_MODEL_OUTPUT');}else decision=parsed;
   }else decision=abstainDecision([api.status],api.status);
   const usage=api.body?.usage||null;
@@ -165,6 +178,7 @@ async function advise(snapshot,options={}){
     api_error:api.ok?null:(api.error||{type:null,code:null,message:null}),normalization,tokens,
     estimated_cost_usd:actualCost,pricing_usd_per_million:{input:config.inputUsdPerMillion,output:config.outputUsdPerMillion},decision};
   const safeRecord=redact(record,[config.apiKey]);
+  researchAI.finish(aiContext,safeRecord);
   await index.append(safeRecord,completedMs);return safeRecord;
 }
 
@@ -176,4 +190,4 @@ class BoundedShadowQueue{
     try{item.resolve(await this.worker(item.snapshot));}catch(error){item.reject(error);}finally{this.active=false;queueMicrotask(()=>this.pump());}}
 }
 
-module.exports={configFromEnv,buildRequest,estimatePromptTokens,estimateTokens,estimatedCostUsd,advise,BoundedShadowQueue,abstainDecision};
+module.exports={configFromEnv,buildLegacyRequest,buildRequest,estimatePromptTokens,estimateTokens,estimatedCostUsd,advise,BoundedShadowQueue,abstainDecision};

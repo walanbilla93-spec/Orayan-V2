@@ -46,6 +46,7 @@ function requireAlibabaExportAuth(req,env=process.env){
   return true;
 }
 
+function requireResearchExportAuth(req,env=process.env){requireGroqExportAuth(req,env);requireAlibabaExportAuth(req,env);}
 function researchExportPlan(files=[]) {
   const watermarkAt=Date.now();
   const plan=files.map(file=>({path:file,size:fs.existsSync(file)?fs.statSync(file).size:0}));
@@ -96,10 +97,11 @@ async function withFloatingPnl(trades) {
 const routes = {
   'GET /api/capture/receipt':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'),'utf8')):({complete:false}),
   'GET /api/capture/reset-audit':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'),'utf8')):({available:false}),
-  'GET /api/capture/status':async()=>require('../lib/minimalCapture').enabled()?await require('../lib/minimalCapture').current().flush():({enabled:false}),
-  'GET /api/capture/export':async()=>{const m=require('../lib/minimalCapture');if(!m.enabled())throw Object.assign(Error('MINIMAL_CAPTURE_DISABLED'),{statusCode:409});
-    const c=m.current(),e=await c.export(),manifest=require('path').join(c.dir,'export-'+require('crypto').randomUUID()+'.jsonl');require('fs').writeFileSync(manifest,JSON.stringify({stream:'capture_status',...e.status,watermark:e.watermark})+'\n');
-    return {__files:true,files:[{path:manifest,size:require('fs').statSync(manifest).size},...e.files],contentType:'application/x-ndjson',filename:'orayan-minimal-'+c.state.epochId+'.jsonl',cleanup:()=>{if(require('fs').existsSync(manifest))require('fs').unlinkSync(manifest);}};},
+  'GET /api/capture/status':async()=>require('../lib/minimalCapture').researchEnabled()?require('../lib/researchRuntime').status():require('../lib/minimalCapture').enabled()?require('../lib/minimalCapture').current().status():({enabled:false}),
+  'GET /api/capture/current.zip':async({req})=>{requireResearchExportAuth(req);return require('../lib/researchRuntime').downloadCurrent();},
+  'GET /api/capture/archives':async()=>require('../lib/researchRuntime').current().state.archives.filter(a=>!a.expired&&a.verified&&a.published).map(({day,bytes,sha256})=>({day,bytes,sha256,url:'/api/capture/daily.zip?day='+day})),
+  'GET /api/capture/daily.zip':async({query,req})=>{requireResearchExportAuth(req);return require('../lib/researchRuntime').daily(query.day);},
+  'GET /api/capture/export':async({req})=>{requireResearchExportAuth(req);return require('../lib/researchRuntime').downloadCurrent();},
   'GET /api/health': async () => ({
     ok: true,
     now: Date.now(),
@@ -252,12 +254,12 @@ const routes = {
 
   'GET /api/journal/research/manifest': async () => researchManifest.buildManifest(),
 
-  'GET /api/v3/status': async () => v3Shadow.status(),
+  'GET /api/v3/status': async () => {try{return v3Shadow.status();}catch(e){if(require('../lib/minimalCapture').researchEnabled())return {archive:require('../lib/researchRuntime').status()};throw e;}},
   'GET /api/v3/summary': async ({query}) => ({__file:true,contentType:'application/json',
     filename:'orayan_v3_summary.json',body:JSON.stringify(v3Shadow.summary(query.generation),null,2)}),
-  'GET /api/v3/export': async ({query}) => v3Shadow.download(query.channel||'v3',query.generation),
+  'GET /api/v3/export': async ({query,req}) => {if(require('../lib/minimalCapture').researchEnabled())requireResearchExportAuth(req);return v3Shadow.download(query.channel||'v3',query.generation);},
   'GET /api/v3/cohort': async () => v3Shadow.cohort(),
-  'GET /api/v3/daily': async ({query}) => v3Shadow.daily(query.day),
+  'GET /api/v3/daily': async ({query,req}) => {if(require('../lib/minimalCapture').researchEnabled())requireResearchExportAuth(req);return v3Shadow.daily(query.day);},
 
   'GET /api/journal/research/groq-shadow': async () => {
     const shadowStatus=await groqShadowProducer.status();
@@ -300,12 +302,7 @@ const routes = {
   'POST /api/journal/trades/clear': async () => engine.resetTrades(),
   'POST /api/journal/shadow/clear': async () => engine.resetShadowTrades(),
   'POST /api/research/reset-all': async () => {
-    journal.clearSignalHistory();
-    journal.clearResearch();
-    engine.clearLastSignals();
-    engine.resetTrades();
-    engine.resetShadowTrades();
-    return { ok: true };
+    return { ok: true, epochId:require('../lib/researchRuntime').current().epoch(), historicalResearchPreserved:true };
   },
   'POST /api/control/clear-cache': async () => { marketData.clearCaches(); return { ok: true }; },
 
@@ -330,4 +327,4 @@ const routes = {
   },
 };
 
-module.exports = { routes, _test:{requireGroqExportAuth,requireAlibabaExportAuth} };
+module.exports = { routes, _test:{requireGroqExportAuth,requireAlibabaExportAuth,requireResearchExportAuth} };

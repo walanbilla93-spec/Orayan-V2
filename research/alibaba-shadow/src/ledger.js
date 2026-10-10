@@ -105,6 +105,7 @@ class LedgerIndex {
   constructor(file, options = {}) {
     this.file = path.resolve(file);
     this.allowedRoot = options.allowedRoot;
+    this.canonical = options.canonical;
     this.initialized = false;
     this.loading = null;
     this.day = null;
@@ -212,7 +213,7 @@ class LedgerIndex {
     const day = new Date(nowMs).toISOString().slice(0,10);
     this.clear(day);
     scanCount += 1;
-    await readRecords(this.file, row => this.apply(row, nowMs));
+    if(this.canonical) await this.canonical.read(row=>this.apply(row,nowMs)); else await readRecords(this.file, row => this.apply(row, nowMs));
     for (const started of recovering ? [...this.openRequests.values()] : []) {
       const completedIso = new Date(nowMs).toISOString();
       const interrupted = {
@@ -232,7 +233,7 @@ class LedgerIndex {
           rationale_short:'Request outcome is unknown after process interruption; automatic retry is forbidden.'},
       };
       delete interrupted.estimated_tokens_reserved;
-      await appendImmutableAsync(this.file, interrupted, {allowedRoot:this.allowedRoot});
+      if(this.canonical) await this.canonical.append(interrupted); else await appendImmutableAsync(this.file, interrupted, {allowedRoot:this.allowedRoot});
       this.apply(interrupted, nowMs);
     }
     this.initialized = true;
@@ -264,7 +265,7 @@ class LedgerIndex {
   }
 
   async append(record, nowMs = Date.now()) {
-    await appendImmutableAsync(this.file, record, {allowedRoot:this.allowedRoot});
+    if(this.canonical) await this.canonical.append(record); else await appendImmutableAsync(this.file, record, {allowedRoot:this.allowedRoot});
     this.apply(record, nowMs);
   }
 }

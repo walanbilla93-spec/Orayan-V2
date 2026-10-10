@@ -175,6 +175,7 @@ function compactSnapshot(snapshot) {
 function validateDecision(decision, snapshot) {
   const errors = [];
   if (!isObject(decision)) return ['decision:not_object'];
+  if(decision.missing_useful_data!==undefined&&(!Array.isArray(decision.missing_useful_data)||decision.missing_useful_data.length>8||decision.missing_useful_data.some(v=>typeof v!=='string'||v.length>128)))errors.push('missing_useful_data:invalid');
   if (!['RETAIN','SKIP','ABSTAIN'].includes(decision.decision)) errors.push('decision:invalid');
   if (!['LOW','MEDIUM','HIGH','UNKNOWN'].includes(decision.risk_level)) errors.push('risk_level:invalid');
   if (!finite(decision.confidence) || decision.confidence < 0 || decision.confidence > 1) errors.push('confidence:invalid');

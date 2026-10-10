@@ -109,17 +109,11 @@ test('trade safety isolation preserves exact daily/consecutive breaker results, 
  assert.throws(()=>reset.safetyBaseline([{status:'OPEN'}]),/ACTIVE_EXECUTION_POSITION/);
 });
 function resetFixture(root){const write=(name,j)=>fs.writeFileSync(path.join(root,name),JSON.stringify(j));write('settings.json',{riskUsdtPerTrade:.1});write('symbolStats.json',{X:{blockedUntil:123}});write('trades.json',[{id:'OLD',status:'CLOSED',closedAt:Date.now(),netPnl:-1}]);write('marciShadowTrades.json',[{id:'WORKING',status:'OPEN',engine:'MARCI_SHADOW',mode:'paper'},{id:'CLOSED',status:'CLOSED'}]);write('engineControl.json',{desiredRunning:false});write('capture-reset-request.json',{schemaVersion:'ORAYAN_MINIMAL_CAPTURE_V1',epochId:'NEW',planSha256:'frozen',expectedMode:'paper',resumeEngine:true});fs.mkdirSync(path.join(root,'research-v2'));fs.writeFileSync(path.join(root,'research-v2','compact-2026-10-07-21.jsonl'),'old payload');}
-test('allowlisted reset wipes captured history, retains safety/active working state and starts one clean epoch',t=>{
- const root=tmp(t);resetFixture(root);const settings=fs.readFileSync(path.join(root,'settings.json')),receipt=reset.run(root);assert.equal(receipt.complete,true);assert.ok(receipt.clearedBytes>0);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root,'trades.json'))),[]);
- assert.deepEqual(fs.readFileSync(path.join(root,'settings.json')),settings);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'marciShadowTrades.json'))).length,1);assert.equal(JSON.parse(fs.readFileSync(path.join(root,'captureSafetyClosed.json'))).closed[0].netPnl,-1);assert.equal(fs.existsSync(path.join(root,'research-v2','compact-2026-10-07-21.jsonl')),false);assert.equal(reset.run(root).requested,false);
+test('legacy destructive reset requests never delete captured or operational history',t=>{
+ const root=tmp(t);resetFixture(root);const before=fs.readFileSync(path.join(root,'trades.json'));assert.throws(()=>reset.run(root),/DESTRUCTIVE_LEGACY_RESET_DISABLED/);assert.deepEqual(fs.readFileSync(path.join(root,'trades.json')),before);assert.equal(fs.readFileSync(path.join(root,'research-v2','compact-2026-10-07-21.jsonl'),'utf8'),'old payload');
 });
-test('reset resumes a partly deleted scope without losing protected safety or changing the epoch',t=>{
- const root=tmp(t);resetFixture(root);const original=fs.unlinkSync;let deleted=false;fs.unlinkSync=function(file){if(!deleted&&file.endsWith('trades.json')){deleted=true;throw Error('TEST_CRASH');}return original.call(fs,file);};
- try{assert.throws(()=>reset.run(root),/TEST_CRASH/);}finally{fs.unlinkSync=original;}
- assert.ok(fs.existsSync(path.join(root,'capture-reset-progress.json')));const receipt=reset.run(root);assert.equal(receipt.epochId,'NEW');assert.equal(receipt.safetyTuples,1);assert.equal(receipt.preservedMarciWorkingPositions,1);assert.equal(fs.existsSync(path.join(root,'capture-operational-marci.json')),false);
-});
-test('LIVE mode and active main positions block the entire reset before any deletion',t=>{
- for(const scenario of ['LIVE','ACTIVE']){const root=tmp(t);resetFixture(root);fs.writeFileSync(path.join(root,scenario==='LIVE'?'settings.json':'trades.json'),JSON.stringify(scenario==='LIVE'?{mode:'live'}:[{status:'OPEN'}]));assert.throws(()=>reset.run(root),/RESET_BLOCKED/);assert.equal(fs.readFileSync(path.join(root,'research-v2','compact-2026-10-07-21.jsonl'),'utf8'),'old payload');}
+test('new epoch request preserves AI files and remains idempotent after interruption',t=>{
+ const root=tmp(t);resetFixture(root);fs.writeFileSync(path.join(root,'capture-reset-request.json'),JSON.stringify({schemaVersion:'ORAYAN_RESEARCH_V2',epochId:'NEW'}));fs.mkdirSync(path.join(root,'groq-shadow'));fs.writeFileSync(path.join(root,'groq-shadow','decisions.jsonl'),'AI original');const receipt=reset.run(root);assert.equal(receipt.historicalResearchPreserved,true);assert.equal(fs.readFileSync(path.join(root,'groq-shadow','decisions.jsonl'),'utf8'),'AI original');assert.equal(reset.run(root).requested,false);
 });
 test('worker isolates writer I/O, suppresses no-event repeats and returns exact export watermarks',async t=>{
  const {CaptureProxy}=require('../lib/captureProxy'),c=new CaptureProxy(tmp(t),{epochId:'ASYNC'});t.after(()=>c.close().catch(()=>{}));await c.flush();

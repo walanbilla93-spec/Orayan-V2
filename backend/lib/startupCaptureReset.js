@@ -35,32 +35,12 @@ function inventory(root){const files=[];function walk(file,family,relative=''){
 }
 function run(root=path.resolve(__dirname,'../data')){
  const requestFile=path.join(root,'capture-reset-request.json');if(!fs.existsSync(requestFile))return {requested:false};
- const req=read(requestFile,{});if(req.schemaVersion!=='ORAYAN_MINIMAL_CAPTURE_V1'||!req.epochId||!req.planSha256||req.expectedMode!=='paper')throw Error('INVALID_CAPTURE_RESET_REQUEST');
- const receiptFile=path.join(root,'capture-reset-receipt.json');if(fs.existsSync(receiptFile)&&read(receiptFile,{}).epochId===req.epochId){fs.unlinkSync(requestFile);for(const name of ['capture-operational-marci.json','capture-reset-progress.json'])if(fs.existsSync(path.join(root,name)))fs.unlinkSync(path.join(root,name));return {alreadyComplete:true};}
- const settings=read(path.join(root,'settings.json'),{});if((settings.mode??'paper')!=='paper')throw Error('EXECUTION_MODE_RESET_BLOCKED');
- const progressFile=path.join(root,'capture-reset-progress.json'),operative=path.join(root,'capture-operational-marci.json');
- let progress=read(progressFile,null),audit,baseline,pendingShadow,hashes,censoredOldV3ResearchPositions;
- if(progress){if(progress.epochId!==req.epochId)throw Error('RESET_EPOCH_CONFLICT');audit=read(path.join(root,'capture-pre-reset-final-audit.json'));baseline=read(path.join(root,'captureSafetyClosed.json'));pendingShadow=read(operative);hashes=progress.protectedHashes;censoredOldV3ResearchPositions=progress.censoredOldV3ResearchPositions;}
- else {
-  const trades=read(path.join(root,'trades.json'),[]),shadow=read(path.join(root,'marciShadowTrades.json'),[]);baseline=safetyBaseline(trades);
-  audit=inventory(root); // Validate the entire allowlist BEFORE deleting a single byte.
-  const protectedNames=['settings.json','symbolStats.json','bosPending.json'];hashes=Object.fromEntries(protectedNames.filter(n=>fs.existsSync(path.join(root,n))).map(n=>[n,sha(fs.readFileSync(path.join(root,n)))]));
-  const oldCheckpoint=read(path.join(root,'v3-shadow-compact-v1/checkpoint.json'),{});censoredOldV3ResearchPositions=(oldCheckpoint.activeTrades||[]).length+(oldCheckpoint.armWorkers||[]).length;
-  pendingShadow=shadow.filter(t=>['PENDING','OPEN'].includes(t.status));
-  atomic(operative,pendingShadow.map(t=>({...t,inheritedWorkingState:true,originEpoch:'PRE_RESET'})));
-  atomic(path.join(root,'captureSafetyClosed.json'),baseline);atomic(path.join(root,'capture-pre-reset-final-audit.json'),audit);
-  progress={epochId:req.epochId,protectedHashes:hashes,censoredOldV3ResearchPositions,preparedAt:new Date().toISOString()};atomic(progressFile,progress);
- }
- // Explicit files only; never delete a directory parent or the shared volume.
- for(const f of audit.files)if(fs.existsSync(f.path)){within(root,f.path);fs.unlinkSync(f.path);}
- for(const name of FILES)atomic(path.join(root,name),[]);
- atomic(path.join(root,'marciShadowTrades.json'),pendingShadow.map(t=>({...t,inheritedWorkingState:true,originEpoch:'PRE_RESET'})));
- // The extra operational file is a temporary migration handoff, not a retained backup.
- const policy={epochId:req.epochId,startedAt:Date.now(),schemaVersion:req.schemaVersion,planSha256:req.planSha256,schemaSha256:req.schemaSha256,mode:'paper'};
- atomic(path.join(root,'capture-minimal-policy.json'),policy);
- for(const [name,hash]of Object.entries(hashes))if(sha(fs.readFileSync(path.join(root,name)))!==hash)throw Error('PROTECTED_STATE_CHANGED');
- const control=read(path.join(root,'engineControl.json'),{});atomic(path.join(root,'engineControl.json'),{...control,desiredRunning:req.resumeEngine===true,lastStopReason:'CAPTURE_RESET_COMPLETE'});
- const receipt={completedAt:new Date().toISOString(),epochId:req.epochId,cleanEpochStartedAt:policy.startedAt,schemaVersion:req.schemaVersion,planSha256:req.planSha256,schemaSha256:req.schemaSha256,cleared:audit.files.map(f=>({path:f.path,bytes:f.bytes})),clearedBytes:audit.totalBytes,clearedFiles:audit.totalFiles,protectedHashes:hashes,executionModePreserved:'paper',activeLiveOrdersTouched:0,activeMainPositions:0,preservedMarciWorkingPositions:pendingShadow.length,safetyTuples:baseline.closed.length,safetyReason:'Exact operational breaker input; no candidate/trade identity or prices retained',censoredOldV3ResearchPositions,fullPayloadBackupCreated:false,complete:true};
- atomic(receiptFile,receipt);fs.unlinkSync(requestFile);fs.unlinkSync(operative);fs.unlinkSync(progressFile);return receipt;
+ const req=read(requestFile,{});
+ if(req.schemaVersion!=='ORAYAN_RESEARCH_V2')throw Error('DESTRUCTIVE_LEGACY_RESET_DISABLED');
+ if(!req.epochId){req.epochId=crypto.randomUUID();atomic(requestFile,req);}
+ const {ResearchStore}=require('./researchStore'),c=new ResearchStore(path.join(root,'research-canonical-v2'));
+ c.epoch(req.epochId||crypto.randomUUID());
+ const receipt={epochId:c.state.epochId,complete:true,historicalResearchPreserved:true,completedAt:new Date().toISOString()};
+ atomic(path.join(root,'capture-epoch-receipt.json'),receipt);fs.renameSync(requestFile,requestFile+'.completed');return receipt;
 }
 module.exports={run,inventory,safetyBaseline,DIRECTORY_RULES,FILES};

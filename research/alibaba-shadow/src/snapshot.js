@@ -194,8 +194,9 @@ function compactSnapshot(snapshot) {
 function validateDecision(decision, snapshot) {
   const errors = [];
   if (!isObject(decision)) return ['decision:not_object'];
+  if(decision.missing_useful_data!==undefined&&(!Array.isArray(decision.missing_useful_data)||decision.missing_useful_data.length>8||decision.missing_useful_data.some(v=>typeof v!=='string'||v.length>128)))errors.push('missing_useful_data:invalid');
   const allowed=new Set(['decision','risk_level','confidence','reason_codes','reason_notes','evidence_keys',
-    'missing_or_stale','rationale_short','market_context_summary']);
+    'missing_or_stale','rationale_short','market_context_summary','missing_useful_data']);
   const required=['decision','risk_level','confidence','reason_codes','reason_notes','evidence_keys','missing_or_stale','rationale_short'];
   for(const key of Object.keys(decision))if(!allowed.has(key))errors.push(`additional_property:${key}`);
   for(const key of required)if(!Object.prototype.hasOwnProperty.call(decision,key))errors.push(`required:${key}`);

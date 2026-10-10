@@ -12,6 +12,12 @@ const hourAt=hour=>Date.parse(hour.slice(0,10)+'T'+hour.slice(11)+':00:00Z');
 class Archive {
   constructor(dir,options={}) {
     this.dir=dir;fs.mkdirSync(dir,{recursive:true});
+    if(minimal.researchEnabled()){
+      const file=path.join(dir,'capture-ledger','totals.json'),legacy=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')):{};
+      const c=()=>minimal.current(),status=()=>require('./researchRuntime').status();
+      this.ledger={state:{...legacy,cursors:legacy.cursors||{},generation:legacy.generation||0},measurement(){},receiptPulse(){},error(){},recovered(){},beginCohort(){},save(){},records:()=>[],identity:()=>status().reconciliation,status:()=>({skipCounters:{},researchCapture:status()})};
+      this.sessions=new Map();this.files=new Map();this.heads=new Map();this.definitions=new Set();this.leases=new Map();this.deltaContexts=new Map();this.skipped=0;this.pausedUntil=null;this.summaryHours={};this.maxBytes=Infinity;this.hourBytes=Infinity;return;
+    }
     this.ledger=new CaptureLedger(dir);this.sessions=new Map();
     if(minimal.enabled())for(const method of ['measurement','receiptPulse','error','recovered','beginCohort'])this.ledger[method]=()=>{};
     const txn=path.join(dir,'archive-transaction.json');
@@ -57,7 +63,7 @@ class Archive {
     }
   }
   write(entries,replaying=false) {
-    if(minimal.enabled()){for(const e of entries)minimal.observe(e.channel,e.row);return;}
+    if(minimal.enabled()){for(const e of entries){const ok=minimal.observe(e.channel,e.row);if(ok===false&&minimal.researchEnabled()&&minimal.current().state.captureHalted)throw Error('RESEARCH_CAPTURE_HALTED');}return;}
 
     if(!entries.length)return;
     if(!replaying&&fs.existsSync(this.pending)){
@@ -187,7 +193,7 @@ class Archive {
     return {files,cleanup:()=>{for(const p of links)if(fs.existsSync(p))fs.unlinkSync(p);for(const p of originals)this.release(p);}};
   }
   release(p){const n=(this.leases.get(p)||1)-1;if(n)this.leases.set(p,n);else this.leases.delete(p);}
-  status(){if(minimal.enabled())return {...minimal.current().status(),captureSchema:minimal.SCHEMA,capturePolicy:minimal.SCHEMA,sizeBytes:minimal.current().state.retainedBytes,maxBytes:minimal.LIMITS.totalBytes,hourBudgetBytes:0,telemetry:this.ledger.status(),budgetSkippedRecords:0,skipCounters:this.ledger.status().skipCounters,reconciliation:this.ledger.identity(0),minimumRetentionHours:0};return {captureSchema:SCHEMA,capturePolicy:POLICY,budgetEnforcement:'ALERT_ONLY_REQUIRED_CHANNELS_NEVER_DROPPED',sizeBytes:this.total(),maxBytes:this.maxBytes,hourBudgetBytes:this.hourBytes,
+  status(){if(minimal.researchEnabled()){const s=minimal.current().status();return {...s,captureSchema:s.schemaVersion,capturePolicy:s.schemaVersion,sizeBytes:s.retainedBytes,maxBytes:null,minimumRetentionDays:7,hourBudgetBytes:null,budgetSkippedRecords:0,skipCounters:{},telemetry:this.ledger.status()};}if(minimal.enabled())return {...minimal.current().status(),captureSchema:minimal.SCHEMA,capturePolicy:minimal.SCHEMA,sizeBytes:minimal.current().state.retainedBytes,maxBytes:minimal.LIMITS.totalBytes,hourBudgetBytes:0,telemetry:this.ledger.status(),budgetSkippedRecords:0,skipCounters:this.ledger.status().skipCounters,reconciliation:this.ledger.identity(0),minimumRetentionHours:0};return {captureSchema:SCHEMA,capturePolicy:POLICY,budgetEnforcement:'ALERT_ONLY_REQUIRED_CHANNELS_NEVER_DROPPED',sizeBytes:this.total(),maxBytes:this.maxBytes,hourBudgetBytes:this.hourBytes,
     priorityReserveFraction:0,priorityReserveScope:'SHARED_REQUIRED_CHANNELS_NO_REJECTION',priorityOverflowBytes:Math.max(0,this.total()-this.maxBytes),
     retentionHeadroomBytes:Math.max(0,this.maxBytes-this.total()),telemetry:this.ledger.status(),
     minimumRetentionHours:30,maximumBlockRawBytes:BLOCK_BYTES,maximumRowRawBytes:TRADE_ROW_BYTES,maximumCandidateRawBytes:ROW_BYTES,
@@ -252,7 +258,7 @@ class Archive {
         partialFirstDay:this.ledger.state.startedAt>=Date.parse(day+'T00:00:00Z')});
     }
   }
-  dailyList(){const root=path.join(this.dir,'daily-snapshots');if(!fs.existsSync(root))return [];
+  dailyList(){if(minimal.researchEnabled())return minimal.current().state.archives.filter(a=>!a.expired&&a.published).map(a=>({...a,files:[a.filename]}));const root=path.join(this.dir,'daily-snapshots');if(!fs.existsSync(root))return [];
     return fs.readdirSync(root).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)&&fs.existsSync(path.join(root,d,'manifest.json'))).map(day=>JSON.parse(fs.readFileSync(path.join(root,day,'manifest.json'),'utf8')));}
 }
 module.exports={Archive,HOUR_BYTES,MAX_BYTES,MIN_RETAIN,BLOCK_BYTES,ROW_BYTES,TRADE_ROW_BYTES,FILE};

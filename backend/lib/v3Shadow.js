@@ -132,9 +132,10 @@ class ShadowJournal {
         this.filledEpisodes=new Map((saved.filledEpisodes||[]).slice(-512));
       }catch(_){this.counts.errors++;}
     }
-    if(minimal.enabled()&&!this.holdout.state.startedAt){
+    try { if(minimal.enabled()&&!this.holdout.state.startedAt){
       const c=minimal.current();Object.assign(this.holdout.state,{startedAt:c.state.startedAt,cohortId:c.state.epochId,definitions:r35.DEFINITIONS,control:control34,awaitingLiveQualification:false,analyticalStatus:'MINIMAL_CANDIDATE_POPULATION'});this.holdout.save();this.startedAt=c.state.startedAt;this.captureCohort=c.state.epochId;
     }
+    } catch (e) { this.captureInitializationError=e.code||'RESEARCH_CAPTURE_HALTED'; }
     this.saveCheckpoint();
   }
   append(channel,row) {
@@ -221,7 +222,7 @@ class ShadowJournal {
       decision:row.v2Decision.length?'CANDIDATE':'NO_NATIVE_CANDIDATE',plans:row.v2Decision}}];
     let trade;
     let prospective;
-    if(this.holdout.state.startedAt&&row.rejectReason==='COST_ADJUSTED_RR_TOO_LOW'&&row.directionPermission&&previous?.lastReplacementSetup!==setupId){
+    if(require('./researchRuntime').canAdmit('SHADOW')&&this.holdout.state.startedAt&&row.rejectReason==='COST_ADJUSTED_RR_TOO_LOW'&&row.directionPermission&&previous?.lastReplacementSetup!==setupId){
       prospective={...trades.create(record,setupId+'-ATR15',capturedAt),originCaptureCohort:this.captureCohort,holdoutCohort:this.holdout.state.cohortId,
         regime:row.regime,controlGeometryRejected:true,status:'CANCELLED',outcome:'CONTROL_DECISION_GEOMETRY_REJECTED',netPnl:0,outcomeComplete:true};
       const all=r35.admit(prospective,record.measurement34,this.holdout.episode(episodeId));
@@ -229,7 +230,7 @@ class ShadowJournal {
       writes.push({channel:'arms',row:{outputType:'V34B_REPLACEMENT_FULL_GEOMETRY_OPPORTUNITY',capturedAt,episodeId,tradeId:prospective.tradeId,
         arm:prospective.research35,researchOnly:true,executionAllowed:false}});
     }
-    if(row.v3Decision==='ACCEPT_SHADOW') {
+    if(row.v3Decision==='ACCEPT_SHADOW'&&require('./researchRuntime').canAdmit('SHADOW')) {
       trade={...trades.create(record,setupId,capturedAt),originCaptureCohort:this.captureCohort};
       trade.controlFingerprint=control34.fingerprint;trade.episodeAdmissionOrdinal=record.episodeAdmissionOrdinal;
       if(record.measurement34)trade.research34=t34.init(trade,record.measurement34);
@@ -285,7 +286,7 @@ class ShadowJournal {
         t.research34.defendedCursorAt=Math.max(...fresh.map(l=>l.knownAt));}
     }
   }
-  cohort(){if(this.exportBuilding)return this.exportBuilding;
+  cohort(){if(minimal.researchEnabled())return Promise.resolve({schemaVersion:'ORAYAN_RESEARCH_V2',status:minimal.current().status(),currentZip:'/api/capture/current.zip',dailyArchives:'/api/capture/archives'});if(this.exportBuilding)return this.exportBuilding;
     this.exportBuilding=this.buildCohort().finally(()=>{this.exportBuilding=null;});return this.exportBuilding;}
   async buildCohort(){const status=JSON.parse(JSON.stringify(this.status())),retainedLogicalRows=JSON.parse(JSON.stringify(this.archive.summaryHours)),holdoutCohort=this.holdout.state.cohortId;
     const s=await this.archive.cohort(),{channels,tombstones,...manifest}=s;
@@ -300,7 +301,7 @@ class ShadowJournal {
     return {...manifest,captureCohort:this.captureCohort,holdoutCohort,
       control:control34,status,retainedLogicalRows,
       channelFiles:Object.fromEntries(Object.entries(channels).map(([k,v])=>[k,v.files.map(f=>({size:f.size}))]))};}
-  dailyExport(day){
+  dailyExport(day){if(minimal.researchEnabled())return require('./researchRuntime').daily(day);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(day||''))throw Object.assign(Error('INVALID_SNAPSHOT_DAY'),{statusCode:400});
     const snapshot=this.archive.dailyList().find(d=>d.day===day);if(!snapshot)throw Object.assign(Error('SNAPSHOT_NOT_FOUND'),{statusCode:404});
     const dir=path.join(this.dir,'daily-snapshots',day),manifest=path.join(dir,'download-manifest.jsonl.gz');
@@ -318,7 +319,7 @@ class ShadowJournal {
     if(!CHANNELS.includes(channel))throw Object.assign(Error('Invalid V3 export channel'),{statusCode:400});
     return this.archive.list(channel).map(f=>({path:f.path,size:f.size}));
   }
-  export(channel,generation) {
+  export(channel,generation) {if(minimal.researchEnabled())return require('./researchRuntime').downloadCurrent();
     if(['ledger','tombstones'].includes(channel)){
       if(!generation)return this.cohort().then(s=>this.export(channel,s.generation));
       const s=this.archive.sessions.get(generation);if(!s||s.expiresAt<Date.now())throw Object.assign(Error('EXPORT_GENERATION_EXPIRED'),{statusCode:410});
