@@ -162,6 +162,7 @@ function status() {
   try {
     return {
       ...current().status(),
+      evidencePreservationEnabled: require("./researchArchive").preservationEnabled(),
       exportAuthorization: {
         groq: !!process.env.GROQ_SHADOW_EXPORT_TOKEN,
         alibaba: !!process.env.ALIBABA_SHADOW_EXPORT_TOKEN,

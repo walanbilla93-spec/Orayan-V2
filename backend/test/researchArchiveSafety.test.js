@@ -84,3 +84,52 @@ test("missing funding endpoint is OPEN; explicit path gap is CENSORED", (t) => {
   assert.equal(c.state.episodes[c.state.sourceEpisodes.A].state, "CENSORED");
   assert.equal(c.state.episodes[c.state.sourceEpisodes.A].reason, "EMPTY_PATH");
 });
+
+test("qualification preservation retains sources, more than seven archives and restart garbage while exports verify", async (t) => {
+  const previous = process.env.RESEARCH_PRESERVE_EVIDENCE;
+  process.env.RESEARCH_PRESERVE_EVIDENCE = "true";
+  t.after(() => {
+    if (previous === undefined) delete process.env.RESEARCH_PRESERVE_EVIDENCE;
+    else process.env.RESEARCH_PRESERVE_EVIDENCE = previous;
+  });
+  let at = Date.parse("2026-09-01T01:00:00Z");
+  const dir = temporary(t);
+  let c = new ResearchStore(dir, { reserveBytes: 0, now: () => at });
+  c.emit("decisions", { sourceEpisodeId: "preserved", admission: "REJECT" });
+  const sources = c.state.segments.map((s) => ({
+    name: s.name, bytes: fs.readFileSync(path.join(dir, s.name)),
+  }));
+  const eventIds = Object.keys(c.state.events);
+  at = Date.parse("2026-09-09T01:00:00Z");
+  await archive.tick(c, at);
+  assert.equal(c.state.archives.filter((a) => !a.expired).length, 8);
+  for (const a of c.state.archives) {
+    await archive.verify(path.join(dir, "archives", a.filename));
+    assert.equal(await archive.fileHash(path.join(dir, "archives", a.filename)), a.sha256);
+  }
+  for (const s of sources) {
+    assert.deepEqual(fs.readFileSync(path.join(dir, s.name)), s.bytes);
+    assert.ok(c.state.segments.some((segment) => segment.name === s.name));
+  }
+  assert.deepEqual(Object.keys(c.state.events), eventIds);
+  assert.equal(c.state.archivedRows, 1);
+  const garbage = path.join(dir, "pending-garbage.jsonl");
+  fs.writeFileSync(garbage, "preserve pending evidence");
+  c.state.garbageSegments = ["pending-garbage.jsonl"];
+  c.flush();
+  await c.close();
+  c = new ResearchStore(dir, { reserveBytes: 0, now: () => at });
+  await archive.retention(c);
+  await archive.collectGarbage(c);
+  archive.compactIndex(c);
+  await archive.tick(c, at);
+  assert.equal(fs.readFileSync(garbage, "utf8"), "preserve pending evidence");
+  assert.deepEqual(c.state.garbageSegments, ["pending-garbage.jsonl"]);
+  assert.equal(c.state.archives.filter((a) => !a.expired).length, 8);
+  assert.deepEqual(Object.keys(c.state.events), eventIds);
+  const target = path.join(temporary(t), "current.zip");
+  await archive.build(c, { sinceAt: 0, target });
+  const manifest = await archive.verify(target);
+  assert.deepEqual(manifest.events.map((e) => e.eventId).sort(), eventIds.sort());
+  await c.close();
+});

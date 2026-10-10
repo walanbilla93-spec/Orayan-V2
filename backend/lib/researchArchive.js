@@ -452,6 +452,10 @@ async function verify(file) {
         throw Error("ARCHIVE_DEPENDENCY_MISSING");
   return manifest;
 }
+// Qualification keeps published evidence and its source/index addressable.
+function preservationEnabled() {
+  return process.env.RESEARCH_PRESERVE_EVIDENCE === "true";
+}
 async function closeDay(store, day) {
   if (store.state.archives.some((a) => a.day === day && !a.expired))
     return store.state.archives.find((a) => a.day === day && !a.expired);
@@ -490,6 +494,7 @@ async function closeDay(store, day) {
       (store.state.archivedByStream[stream] || 0) + 1;
   }
   store.flush();
+  if (preservationEnabled()) return receipt;
   // Publication is addressable by the backend's download route; only now release
   // redundant sealed source segments. New writes always enter the current date.
   const releasable = store.state.segments.filter((s) => s.day === day);
@@ -502,6 +507,7 @@ async function closeDay(store, day) {
   return receipt;
 }
 async function retention(store) {
+  if (preservationEnabled()) return;
   if (store.exportReaders) return;
   const active = store.state.archives
     .filter((a) => !a.expired)
@@ -570,6 +576,7 @@ async function retention(store) {
   }
 }
 async function collectGarbage(store) {
+  if (preservationEnabled()) return;
   if (store.exportReaders || !store.state.garbageSegments?.length) return;
   for (const name of store.state.garbageSegments || []) {
     const file = path.join(store.dir, name);
@@ -579,6 +586,7 @@ async function collectGarbage(store) {
   store.flush();
 }
 function compactIndex(store) {
+  if (preservationEnabled()) return;
   if (
     !store.state.lastClosedDay ||
     store.state.indexCompactedThroughDay === store.state.lastClosedDay
@@ -658,6 +666,7 @@ async function tick(store, now = Date.now()) {
   await collectGarbage(store);
 }
 module.exports = {
+  preservationEnabled,
   build,
   verify,
   closeDay,
