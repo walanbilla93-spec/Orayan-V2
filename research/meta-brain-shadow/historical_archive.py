@@ -118,8 +118,15 @@ def make_handlers():
             if date not in info['dates']: raise web.HTTPNotFound()
             if request.query.get('watermark') != info['watermark_sha256']:
                 raise web.HTTPConflict(text='Export watermark mismatch')
+            try:part=int(request.query.get('part','0'))
+            except ValueError:raise web.HTTPBadRequest(text='Part must be 1..8')
+            if part not in range(9):raise web.HTTPBadRequest(text='Part must be 1..8')
+            lower=int(datetime.fromisoformat(date).replace(tzinfo=COLOMBO).timestamp()*1000)
+            upper=lower+86400000
+            if part:lower+=(part-1)*10800000;upper=lower+10800000
+            suffix=('-part'+str(part).zfill(2)) if part else ''
             response = web.StreamResponse(headers={'Content-Type': 'application/zip',
-                'Content-Disposition': 'attachment; filename="META_BRAIN_FULL_' + date + '.zip"', 'Cache-Control': 'no-store'})
+                'Content-Disposition': 'attachment; filename="META_BRAIN_FULL_' + date + suffix+'.zip"', 'Cache-Control': 'no-store'})
             await response.prepare(request)
             sink = Sink(); archive = zipfile.ZipFile(sink, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True)
             files = {}; stream_counts = {}; dependencies = {}; clocks = {}
@@ -132,12 +139,13 @@ def make_handlers():
             try:
                 for table in TABLES:
                     count = 0; size = 0; digest = hashlib.sha256()
-                    expected = (await (await conn.execute('SELECT count(*) FROM public.' + table + ' WHERE (' + DAY_SQL % CLocks[table] + ')=%s', (date,))).fetchone())[0]
+                    condition=CLocks[table]+' >= %s AND '+CLocks[table]+' < %s'
+                    expected = (await (await conn.execute('SELECT count(*) FROM public.' + table + ' WHERE '+condition, (lower,upper))).fetchone())[0]
                     entry_info = zipfile.ZipInfo(table + '.ndjson')
                     entry_info.compress_type = zipfile.ZIP_STORED if table == 'capture_chunks' else zipfile.ZIP_DEFLATED
                     with archive.open(entry_info, 'w', force_zip64=True) as entry:
                         async with conn.cursor(name='archive_' + table) as cur:
-                            await cur.execute('SELECT * FROM public.' + table + ' WHERE (' + DAY_SQL % CLocks[table] + ')=%s', (date,))
+                            await cur.execute('SELECT * FROM public.' + table + ' WHERE '+condition, (lower,upper))
                             columns = [c.name for c in cur.description]
                             while True:
                                 batch = await cur.fetchmany(128)
@@ -175,7 +183,9 @@ def make_handlers():
                     await drain()
                 coverage = {t: {'utc': [datetime.fromtimestamp(v / 1000, timezone.utc).isoformat() for v in pair],
                                 'colombo': [datetime.fromtimestamp(v / 1000, COLOMBO).isoformat() for v in pair]} for t, pair in clocks.items()}
-                manifest = {**info, 'date': date, 'files': files, 'stream_counts': stream_counts, 'coverage': coverage,
+                manifest = {**info, 'date': date,'part':part or 1,'parts':8 if part else 1,
+                            'partition':{'start_ms':lower,'end_ms_exclusive':upper,'clock':'table owner clock'},
+                            'files': files, 'stream_counts': stream_counts, 'coverage': coverage,
                             'dependencies': dependencies, 'label_join': 'labels.id references predictions.id across the archive set',
                             'complete': True, 'exported_at_utc': datetime.now(timezone.utc).isoformat()}
                 archive.writestr('manifest.json', canonical(manifest).encode()); archive.close()
