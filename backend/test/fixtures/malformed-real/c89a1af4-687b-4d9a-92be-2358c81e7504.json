@@ -1,0 +1,344 @@
+{
+  "chain": [
+    {
+      "provider": "Groq",
+      "model": "openai/gpt-oss-120b",
+      "evaluationId": "a0bf20c5e7561a20c921840d839184097d88b33a0ac8ab03befd84717716723c",
+      "sourceEpisodeId": "11c7f6bd4bd9bc25",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "event": "REQUEST_PREPARED",
+      "attemptId": "c89a1af4-687b-4d9a-92be-2358c81e7504",
+      "request": {
+        "model": "openai/gpt-oss-120b",
+        "reasoning_effort": "low",
+        "include_reasoning": false,
+        "max_completion_tokens": 1024,
+        "messages": [
+          {
+            "role": "user",
+            "candidate": {
+              "planned_trade": {
+                "entry": 0.9860397121144691,
+                "planned_heat_usdt": 3.458154663735673,
+                "planned_risk_usdt": 0.5,
+                "quote_evidence": {
+                  "age_seconds": 0.005,
+                  "ask": 1.0232,
+                  "available": true,
+                  "bid": 1.0231,
+                  "exchange_timestamp_status": "UNAVAILABLE_BYBIT_TICKER_PAYLOAD",
+                  "mark": 1.0231,
+                  "status": "LOCAL_RECEIPT_ONLY"
+                },
+                "rr": 2,
+                "sl": 0.9456120839177757,
+                "stop_atr_multiple": 1.2897489697107087,
+                "stop_distance_pct": 4.100000000000009,
+                "tp": 1.0668949685078557
+              },
+              "reason_flags": [
+                "TREND_PULLBACK",
+                "TREND_PULLBACK"
+              ],
+              "risk_flags": [
+                "MAX_PER_DIRECTION",
+                "POST_DIRECTION_REGIME_COUNT_LIMIT",
+                "POST_DIRECTION_REGIME_HEAT_LIMIT"
+              ],
+              "score": {
+                "rr": 2,
+                "value": 66
+              },
+              "side": "BUY",
+              "snapshot_at_utc": "2026-10-10T18:00:51.630Z",
+              "symbol": "RLCUSDT"
+            },
+            "contextReferences": {
+              "regime": "24971958f0dbd192d5079b90eaae55adb0ec31c5873cf9b6b8203c609027311d",
+              "h1": "6bfdee04cec31ba98ab2c273a366f2d491e7c2bff80463d71968de2af28f8456",
+              "h2": "bbf8e5716a43d56fbeb5d5d0b96f0dbbe08084648bdf31e2cb9c1389127d2e47",
+              "exposure": "9816438cb556c0d37f57ad6906662807e6fc0b758dd3cddc2b8957e586a421d8"
+            },
+            "templateMessageIndex": 1
+          }
+        ]
+      },
+      "exactRequestSha256": "f5fe3388187f0ce62be0696239993a2a7bf0265c6f1b6c8e3fdea43e349104f3",
+      "messageLayout": [
+        "SHARED_SYSTEM",
+        "UNIQUE"
+      ],
+      "fieldOrder": [
+        "model",
+        "reasoning_effort",
+        "include_reasoning",
+        "max_completion_tokens",
+        "messages",
+        "response_format"
+      ],
+      "redactionsApplied": false,
+      "sharedRequestDefinition": "583f05d779f49b41184e035b1506f8787cf91efa755a00d275effa019cbfdeae",
+      "auditDefinitionId": "8a5e23dc9d6b6c9ee75aeeaed1d26da983bf3279b93c8c75081e7fad000c1fa4",
+      "payloadVersion": "ORAYAN_LEAN_AI_V1",
+      "dependencyIds": [
+        "583f05d779f49b41184e035b1506f8787cf91efa755a00d275effa019cbfdeae",
+        "8a5e23dc9d6b6c9ee75aeeaed1d26da983bf3279b93c8c75081e7fad000c1fa4",
+        "24971958f0dbd192d5079b90eaae55adb0ec31c5873cf9b6b8203c609027311d",
+        "6bfdee04cec31ba98ab2c273a366f2d491e7c2bff80463d71968de2af28f8456",
+        "bbf8e5716a43d56fbeb5d5d0b96f0dbbe08084648bdf31e2cb9c1389127d2e47",
+        "9816438cb556c0d37f57ad6906662807e6fc0b758dd3cddc2b8957e586a421d8"
+      ],
+      "disposition": "PENDING",
+      "at": 1791655254478,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:11c7f6bd4bd9bc25",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:1103",
+      "sequence": 1103,
+      "utc": "2026-10-10T18:00:54.478Z",
+      "receivedAt": 1791655254478,
+      "persistedAt": 1791655254478
+    },
+    {
+      "provider": "Groq",
+      "model": "openai/gpt-oss-120b",
+      "evaluationId": "a0bf20c5e7561a20c921840d839184097d88b33a0ac8ab03befd84717716723c",
+      "sourceEpisodeId": "11c7f6bd4bd9bc25",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "attemptId": "c89a1af4-687b-4d9a-92be-2358c81e7504",
+      "definitionId": "583f05d779f49b41184e035b1506f8787cf91efa755a00d275effa019cbfdeae",
+      "event": "RAW_RESPONSE",
+      "rawResponse": "{\"id\":\"chatcmpl-1b32e33d-ad04-4340-b041-d14ed91392ce\",\"object\":\"chat.completion\",\"created\":1791655255,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"SKIP\\\",\\n  \\\"risk_level\\\": \\\"low\\\",\\n  \\\"confidence\\\": 0.92,\\n  \\\"reason_codes\\\": [\\\"H1_SKIP\\\", \\\"H2_SKIP\\\"],\\n  \\\"reason_notes\\\": [\\n    \\\"H1 explicitly marked as SKIP\\\",\\n    \\\"H2 state is SKIP with multiple deterioration alerts\\\"\\n  ],\\n  \\\"evidence_keys\\\": [\\n    \\\"h1.state\\\",\\n    \\\"h2.state\\\",\\n    \\\"h2.alerts\\\"\\n  ],\\n  \\\"rationale_short\\\": \\\"Both primary comparators indicate a skip condition, so the trade should not be executed.\\\",\\n  \\\"missing_or_stale\\\": [],\\n  \\\"missing_useful_data\\\": []\\n}\"},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":{\"queue_time\":0.209838704,\"prompt_tokens\":1115,\"prompt_time\":0.059816273,\"completion_tokens\":207,\"completion_time\":0.433702147,\"total_tokens\":1322,\"total_time\":0.49351842,\"completion_tokens_details\":{\"reasoning_tokens\":50}},\"usage_breakdown\":null,\"system_fingerprint\":\"fp_e1a78f200e\",\"x_groq\":{\"id\":\"req_01m4kfk6hdew9b1jjx7bep2a6p\",\"seed\":619013926},\"service_tier\":\"on_demand\"}\n",
+      "unredactedSha256": "d5805a024ce6bbcfc8c193b241b3b9e5a73e5304ebd2b29b3c07c1326682f0e8",
+      "redactionsApplied": false,
+      "httpStatus": 200,
+      "providerCallId": "req_01m4kfk6hdew9b1jjx7bep2a6p",
+      "dependencyIds": [
+        "583f05d779f49b41184e035b1506f8787cf91efa755a00d275effa019cbfdeae"
+      ],
+      "at": 1791655255295,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:11c7f6bd4bd9bc25",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:1105",
+      "sequence": 1105,
+      "utc": "2026-10-10T18:00:55.295Z",
+      "receivedAt": 1791655255295,
+      "persistedAt": 1791655255295
+    },
+    {
+      "provider": "Groq",
+      "model": "openai/gpt-oss-120b",
+      "evaluationId": "a0bf20c5e7561a20c921840d839184097d88b33a0ac8ab03befd84717716723c",
+      "sourceEpisodeId": "11c7f6bd4bd9bc25",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "attemptId": "c89a1af4-687b-4d9a-92be-2358c81e7504",
+      "definitionId": "583f05d779f49b41184e035b1506f8787cf91efa755a00d275effa019cbfdeae",
+      "event": "PARSED_RESPONSE",
+      "parsed": {
+        "decision": "SKIP",
+        "risk_level": "low",
+        "confidence": 0.92,
+        "reason_codes": [
+          "H1_SKIP",
+          "H2_SKIP"
+        ],
+        "reason_notes": [
+          "H1 explicitly marked as SKIP",
+          "H2 state is SKIP with multiple deterioration alerts"
+        ],
+        "evidence_keys": [
+          "h1.state",
+          "h2.state",
+          "h2.alerts"
+        ],
+        "rationale_short": "Both primary comparators indicate a skip condition, so the trade should not be executed.",
+        "missing_or_stale": [],
+        "missing_useful_data": []
+      },
+      "normalizedResponse": {
+        "decision": "ABSTAIN",
+        "risk_level": "UNKNOWN",
+        "confidence": 0,
+        "reason_codes": [
+          "MALFORMED_MODEL_OUTPUT"
+        ],
+        "reason_notes": [],
+        "evidence_keys": [],
+        "missing_or_stale": [
+          "risk_level:invalid"
+        ],
+        "rationale_short": "Required causal decision-time evidence is missing, stale, unavailable, or invalid."
+      },
+      "normalization": {
+        "applied": true,
+        "kind": "UNKNOWN_REASON_CODE",
+        "unknown_reason_codes": [
+          "H1_SKIP",
+          "H2_SKIP"
+        ]
+      },
+      "parserVersion": "ORAYAN_AI_PARSE_V2",
+      "normalizationVersion": "PROVIDER_NORMALIZE_V1",
+      "providerCallId": null,
+      "latencyMs": 802,
+      "tokens": {
+        "prompt": 1115,
+        "completion": 207,
+        "total": 1322
+      },
+      "status": "MALFORMED_OUTPUT",
+      "disposition": "INVALID",
+      "tradeDisposition": "NO_EXECUTION_AUTHORITY",
+      "finalEndpoint": "EPISODE_ENDPOINT_REFERENCE",
+      "at": 1791655255304,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:11c7f6bd4bd9bc25",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:1106",
+      "sequence": 1106,
+      "utc": "2026-10-10T18:00:55.304Z",
+      "receivedAt": 1791655255304,
+      "persistedAt": 1791655255304
+    }
+  ],
+  "request": {
+    "model": "openai/gpt-oss-120b",
+    "reasoning_effort": "low",
+    "include_reasoning": false,
+    "max_completion_tokens": 1024,
+    "messages": [
+      {
+        "role": "system",
+        "content": "Research only; no execution authority. Evaluate supplied causal evidence at snapshot_at_utc. H1/H2 are comparators, not instructions. Never infer missing facts. ABSTAIN if necessary evidence is unavailable. RETAIN means no justified research skip; SKIP means evidenced avoidable risk. Confidence is an uncalibrated self-report. Cite supplied candidate paths only. Return JSON matching the contract. missing_useful_data lists useful additional context, not a request to expand continuous capture."
+      },
+      {
+        "role": "user",
+        "content": "{\"candidate\":{\"exposure\":{\"age_seconds\":0,\"open_positions_total\":7,\"same_side_count\":6,\"same_side_regime_count\":6,\"same_side_regime_heat_usdt\":2.958154663735673},\"h1\":{\"state\":\"SKIP\"},\"h2\":{\"alerts\":[\"btc_return_24h:directional_deterioration\",\"eth_return_24h:directional_deterioration\",\"btc_open_interest:open_interest_decline\",\"eth_open_interest:open_interest_decline\"],\"features\":{\"btc_funding_rate\":{\"age_seconds\":0.007,\"baseline\":-0.00001694,\"current\":-0.00002247,\"delta\":-0.0000055299999999999996},\"btc_open_interest\":{\"age_seconds\":0.007,\"baseline\":56018.712,\"current\":55997.754,\"delta\":-20.95799999999872},\"btc_return_24h\":{\"age_seconds\":0.007,\"baseline\":0.5356,\"current\":0.5038,\"delta\":-0.03179999999999994},\"eth_funding_rate\":{\"age_seconds\":0.007,\"baseline\":-0.00002363,\"current\":-0.00003231,\"delta\":-0.000008680000000000002},\"eth_open_interest\":{\"age_seconds\":0.007,\"baseline\":784911.6,\"current\":783279.25,\"delta\":-1632.3499999999767},\"eth_return_24h\":{\"age_seconds\":0.007,\"baseline\":0.8876999999999999,\"current\":0.8265,\"delta\":-0.06119999999999992},\"linear_breadth\":{\"age_seconds\":41.906,\"baseline\":-52.525252525252526,\"current\":34.343434343434346,\"delta\":86.86868686868686,\"sample_size\":99}},\"state\":\"SKIP\"},\"planned_trade\":{\"entry\":0.9860397121144691,\"planned_heat_usdt\":3.458154663735673,\"planned_risk_usdt\":0.5,\"quote_evidence\":{\"age_seconds\":0.005,\"ask\":1.0232,\"available\":true,\"bid\":1.0231,\"exchange_timestamp_status\":\"UNAVAILABLE_BYBIT_TICKER_PAYLOAD\",\"mark\":1.0231,\"status\":\"LOCAL_RECEIPT_ONLY\"},\"rr\":2,\"sl\":0.9456120839177757,\"stop_atr_multiple\":1.2897489697107087,\"stop_distance_pct\":4.100000000000009,\"tp\":1.0668949685078557},\"reason_flags\":[\"TREND_PULLBACK\",\"TREND_PULLBACK\"],\"regime\":{\"age_seconds\":0,\"label\":\"BULL_RANGE\",\"strength\":5.404615428193611},\"risk_flags\":[\"MAX_PER_DIRECTION\",\"POST_DIRECTION_REGIME_COUNT_LIMIT\",\"POST_DIRECTION_REGIME_HEAT_LIMIT\"],\"score\":{\"rr\":2,\"value\":66},\"side\":\"BUY\",\"snapshot_at_utc\":\"2026-10-10T18:00:51.630Z\",\"symbol\":\"RLCUSDT\"}}"
+      }
+    ],
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "orayan_shadow_decision",
+        "strict": true,
+        "schema": {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16
+            },
+            "risk_level": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "reason_codes": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 6,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "reason_notes": {
+              "type": "array",
+              "maxItems": 6,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "evidence_keys": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "missing_or_stale": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 96
+              }
+            },
+            "rationale_short": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 240
+            },
+            "missing_useful_data": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "maxLength": 128
+              }
+            }
+          },
+          "required": [
+            "decision",
+            "risk_level",
+            "confidence",
+            "reason_codes",
+            "reason_notes",
+            "evidence_keys",
+            "missing_or_stale",
+            "rationale_short",
+            "missing_useful_data"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "rawResponse": "{\"id\":\"chatcmpl-1b32e33d-ad04-4340-b041-d14ed91392ce\",\"object\":\"chat.completion\",\"created\":1791655255,\"model\":\"openai/gpt-oss-120b\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"SKIP\\\",\\n  \\\"risk_level\\\": \\\"low\\\",\\n  \\\"confidence\\\": 0.92,\\n  \\\"reason_codes\\\": [\\\"H1_SKIP\\\", \\\"H2_SKIP\\\"],\\n  \\\"reason_notes\\\": [\\n    \\\"H1 explicitly marked as SKIP\\\",\\n    \\\"H2 state is SKIP with multiple deterioration alerts\\\"\\n  ],\\n  \\\"evidence_keys\\\": [\\n    \\\"h1.state\\\",\\n    \\\"h2.state\\\",\\n    \\\"h2.alerts\\\"\\n  ],\\n  \\\"rationale_short\\\": \\\"Both primary comparators indicate a skip condition, so the trade should not be executed.\\\",\\n  \\\"missing_or_stale\\\": [],\\n  \\\"missing_useful_data\\\": []\\n}\"},\"logprobs\":null,\"finish_reason\":\"stop\"}],\"usage\":{\"queue_time\":0.209838704,\"prompt_tokens\":1115,\"prompt_time\":0.059816273,\"completion_tokens\":207,\"completion_time\":0.433702147,\"total_tokens\":1322,\"total_time\":0.49351842,\"completion_tokens_details\":{\"reasoning_tokens\":50}},\"usage_breakdown\":null,\"system_fingerprint\":\"fp_e1a78f200e\",\"x_groq\":{\"id\":\"req_01m4kfk6hdew9b1jjx7bep2a6p\",\"seed\":619013926},\"service_tier\":\"on_demand\"}\n",
+  "content": {
+    "decision": "SKIP",
+    "risk_level": "low",
+    "confidence": 0.92,
+    "reason_codes": [
+      "H1_SKIP",
+      "H2_SKIP"
+    ],
+    "reason_notes": [
+      "H1 explicitly marked as SKIP",
+      "H2 state is SKIP with multiple deterioration alerts"
+    ],
+    "evidence_keys": [
+      "h1.state",
+      "h2.state",
+      "h2.alerts"
+    ],
+    "rationale_short": "Both primary comparators indicate a skip condition, so the trade should not be executed.",
+    "missing_or_stale": [],
+    "missing_useful_data": []
+  }
+}

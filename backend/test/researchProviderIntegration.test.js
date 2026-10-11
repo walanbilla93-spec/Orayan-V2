@@ -90,7 +90,7 @@ for (const provider of ["groq", "alibaba"])
       const restoredAudit={...auditRow.definition.snapshot};
       for(const [key,id] of Object.entries(auditRow.definition.contextReferences))restoredAudit[key]=rows.find(r=>r.definitionId===id).definition.value;
       assert.deepEqual(restoredAudit,snapshot);
-      assert.equal(auditRow.definition.payloadVersion,'ORAYAN_LEAN_AI_V1');
+      assert.equal(auditRow.definition.payloadVersion,'ORAYAN_LEAN_AI_V2');
       const prepared = rows.find((r) => r.event === "REQUEST_PREPARED"),
         definitions = new Map(
           rows

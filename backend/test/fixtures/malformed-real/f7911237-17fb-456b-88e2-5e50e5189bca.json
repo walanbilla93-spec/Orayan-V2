@@ -1,0 +1,269 @@
+{
+  "chain": [
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "2623ccb796cd4524360c2a99706f8f9e84eb5afbe8e8b7e706decf0681aa087e",
+      "sourceEpisodeId": "51b64c666941be6c",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "event": "REQUEST_PREPARED",
+      "attemptId": "f7911237-17fb-456b-88e2-5e50e5189bca",
+      "request": {
+        "model": "qwen3.7-flash",
+        "enable_thinking": false,
+        "max_tokens": 600,
+        "temperature": 0.1,
+        "messages": [
+          {
+            "role": "user",
+            "candidate": {
+              "planned_trade": {
+                "entry": 0.08542585765973233,
+                "planned_heat_usdt": 0.5,
+                "planned_risk_usdt": 0.5,
+                "quote_evidence": {
+                  "age_seconds": 0.145,
+                  "ask": 0.0838,
+                  "available": true,
+                  "bid": 0.08379,
+                  "exchange_timestamp_status": "UNAVAILABLE_BYBIT_TICKER_PAYLOAD",
+                  "mark": 0.08379,
+                  "status": "LOCAL_RECEIPT_ONLY"
+                },
+                "rr": 2,
+                "sl": 0.0872198006705867,
+                "stop_atr_multiple": 1.558436700319438,
+                "stop_distance_pct": 2.099999999999984,
+                "tp": 0.0818379716380236
+              },
+              "reason_flags": [
+                "TREND_PULLBACK",
+                "TREND_PULLBACK"
+              ],
+              "risk_flags": [
+                "SCORE_BAND",
+                "BTC_REGIME"
+              ],
+              "score": {
+                "rr": 2,
+                "value": 33
+              },
+              "side": "SELL",
+              "snapshot_at_utc": "2026-10-10T17:01:09.323Z",
+              "symbol": "MINAUSDT"
+            },
+            "contextReferences": {
+              "regime": "f9aa89a6dd6a0c882677a5e9e3cb58a07b2f875ce2fe53d060463a235f9dcc82",
+              "h1": "f29e4dd6d23ef4201209d4f792374876aae0cbc716fe03d642f81f68d13e6005",
+              "h2": "1378d0c3f13ba98025f3198ff16c5bd9a3ea1b5dcf3d85503a30f5c77c8e665a",
+              "exposure": "d659c6b7556b7a34d5a0d476a3f0b224966e62b9735fe84c40ac14791544c436",
+              "market_context": "2603e4532e6a6c7449a49c7dd1580603bf2b11942be45c07256e9ae7ff10868d",
+              "market_intelligence": "d7ae9418a9cf1300b7eb1f2ffc83ec369a83280f77aecb8ac14611ee8d5586f0"
+            },
+            "templateMessageIndex": 1
+          }
+        ]
+      },
+      "exactRequestSha256": "3faa42fce06983b7a5b82c072cd3e71dfee5f38ad45af7320c6f5f84c2746856",
+      "messageLayout": [
+        "SHARED_SYSTEM",
+        "UNIQUE"
+      ],
+      "fieldOrder": [
+        "model",
+        "enable_thinking",
+        "max_tokens",
+        "temperature",
+        "messages",
+        "response_format"
+      ],
+      "redactionsApplied": false,
+      "sharedRequestDefinition": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "auditDefinitionId": "fd5dd11fb38b9d2a04e7af4c646e67df5da4da505926ffa7864dca7df5e4f01c",
+      "payloadVersion": "ORAYAN_LEAN_AI_V1",
+      "dependencyIds": [
+        "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+        "fd5dd11fb38b9d2a04e7af4c646e67df5da4da505926ffa7864dca7df5e4f01c",
+        "f9aa89a6dd6a0c882677a5e9e3cb58a07b2f875ce2fe53d060463a235f9dcc82",
+        "f29e4dd6d23ef4201209d4f792374876aae0cbc716fe03d642f81f68d13e6005",
+        "1378d0c3f13ba98025f3198ff16c5bd9a3ea1b5dcf3d85503a30f5c77c8e665a",
+        "d659c6b7556b7a34d5a0d476a3f0b224966e62b9735fe84c40ac14791544c436",
+        "2603e4532e6a6c7449a49c7dd1580603bf2b11942be45c07256e9ae7ff10868d",
+        "d7ae9418a9cf1300b7eb1f2ffc83ec369a83280f77aecb8ac14611ee8d5586f0"
+      ],
+      "disposition": "PENDING",
+      "at": 1791651673936,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:51b64c666941be6c",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:483",
+      "sequence": 483,
+      "utc": "2026-10-10T17:01:13.936Z",
+      "receivedAt": 1791651673936,
+      "persistedAt": 1791651673936
+    },
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "2623ccb796cd4524360c2a99706f8f9e84eb5afbe8e8b7e706decf0681aa087e",
+      "sourceEpisodeId": "51b64c666941be6c",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "attemptId": "f7911237-17fb-456b-88e2-5e50e5189bca",
+      "definitionId": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "event": "RAW_RESPONSE",
+      "rawResponse": "{\"id\":\"chatcmpl-2582a829-5ef0-9c21-bdb5-f1cbe6d05e21\",\"object\":\"chat.completion\",\"created\":1791651674,\"model\":\"qwen3.7-flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"SKIP\\\",\\n  \\\"risk_level\\\": \\\"HIGH\\\",\\n  \\\"confidence\\\": 0.85,\\n  \\\"reason_codes\\\": [\\n    \\\"TREND_PULLBACK\\\",\\n    \\\"SAME_SIDE_CROWDING\\\",\\n    \\\"BREADTH_DIVERGENCE\\\"\\n  ],\\n  \\\"reason_notes\\\": [\\n    \\\"Market breadth is severely negative (-56.57) vs baseline (16.16), indicating broad weakness despite BTC/ETH positive returns.\\\",\\n    \\\"BTC and ETH funding rates show same-side crowding increase (crowding long while price rises, potential squeeze risk).\\\",\\n    \\\"Directional deterioration alerts for both BTC and ETH suggest underlying momentum is weakening.\\\"\\n  ],\\n  \\\"evidence_keys\\\": [\\n    \\\"linear_breadth:current_vs_baseline\\\",\\n    \\\"btc_funding_rate:delta\\\",\\n    \\\"eth_funding_rate:delta\\\",\\n    \\\"btc_return_24h:directional_deterioration\\\",\\n    \\\"eth_return_24h:directional_deterioration\\\"\\n  ],\\n  \\\"missing_or_stale\\\": [],\\n  \\\"rationale_short\\\": \\\"Skip due to severe market breadth divergence and rising same-side crowding in funding rates, signaling high reversal risk despite short-term price gains.\\\",\\n  \\\"missing_useful_data\\\": []\\n}\"},\"finish_reason\":\"stop\",\"logprobs\":null}],\"usage\":{\"prompt_tokens\":1927,\"total_tokens\":2216,\"completion_tokens\":289,\"prompt_tokens_details\":{\"cached_tokens\":0,\"text_tokens\":1927}}}",
+      "unredactedSha256": "97b2f2684b4c607fbc71fc849d6cc91558ef6ad9ad724e08edc82d93a8e77b82",
+      "redactionsApplied": false,
+      "httpStatus": 200,
+      "providerCallId": "2582a829-5ef0-9c21-bdb5-f1cbe6d05e21",
+      "dependencyIds": [
+        "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e"
+      ],
+      "at": 1791651678070,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:51b64c666941be6c",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:505",
+      "sequence": 505,
+      "utc": "2026-10-10T17:01:18.070Z",
+      "receivedAt": 1791651678070,
+      "persistedAt": 1791651678070
+    },
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "2623ccb796cd4524360c2a99706f8f9e84eb5afbe8e8b7e706decf0681aa087e",
+      "sourceEpisodeId": "51b64c666941be6c",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "attemptId": "f7911237-17fb-456b-88e2-5e50e5189bca",
+      "definitionId": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "event": "PARSED_RESPONSE",
+      "parsed": {
+        "decision": "ABSTAIN",
+        "risk_level": "UNKNOWN",
+        "confidence": 0,
+        "reason_codes": [
+          "MALFORMED_MODEL_OUTPUT"
+        ],
+        "reason_notes": [],
+        "evidence_keys": [],
+        "missing_or_stale": [
+          "reason_notes:invalid_value",
+          "evidence_key:not_in_input:linear_breadth:current_vs_baseline",
+          "evidence_key:not_in_input:btc_funding_rate:delta",
+          "evidence_key:not_in_input:eth_funding_rate:delta",
+          "evidence_key:not_in_input:btc_return_24h:directional_deterioration",
+          "evidence_key:not_in_input:eth_return_24h:directional_deterioration"
+        ],
+        "rationale_short": "Required causal decision-time evidence is missing, stale, unavailable, or invalid."
+      },
+      "normalizedResponse": {
+        "decision": "ABSTAIN",
+        "risk_level": "UNKNOWN",
+        "confidence": 0,
+        "reason_codes": [
+          "MALFORMED_MODEL_OUTPUT"
+        ],
+        "reason_notes": [],
+        "evidence_keys": [],
+        "missing_or_stale": [
+          "reason_notes:invalid_value",
+          "evidence_key:not_in_input:linear_breadth:current_vs_baseline",
+          "evidence_key:not_in_input:btc_funding_rate:delta",
+          "evidence_key:not_in_input:eth_funding_rate:delta",
+          "evidence_key:not_in_input:btc_return_24h:directional_deterioration",
+          "evidence_key:not_in_input:eth_return_24h:directional_deterioration"
+        ],
+        "rationale_short": "Required causal decision-time evidence is missing, stale, unavailable, or invalid."
+      },
+      "normalization": {
+        "applied": true,
+        "kind": "UNKNOWN_REASON_CODE",
+        "unknown_reason_codes": [
+          "TREND_PULLBACK",
+          "SAME_SIDE_CROWDING",
+          "BREADTH_DIVERGENCE"
+        ]
+      },
+      "parserVersion": "ORAYAN_AI_PARSE_V2",
+      "normalizationVersion": "PROVIDER_NORMALIZE_V1",
+      "providerCallId": "2582a829-5ef0-9c21-bdb5-f1cbe6d05e21",
+      "latencyMs": 4136,
+      "tokens": {
+        "prompt": 1927,
+        "completion": 289,
+        "total": 2216
+      },
+      "status": "MALFORMED_OUTPUT",
+      "disposition": "INVALID",
+      "tradeDisposition": "NO_EXECUTION_AUTHORITY",
+      "finalEndpoint": "EPISODE_ENDPOINT_REFERENCE",
+      "at": 1791651678082,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:51b64c666941be6c",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:506",
+      "sequence": 506,
+      "utc": "2026-10-10T17:01:18.082Z",
+      "receivedAt": 1791651678082,
+      "persistedAt": 1791651678082
+    }
+  ],
+  "request": {
+    "model": "qwen3.7-flash",
+    "enable_thinking": false,
+    "max_tokens": 600,
+    "temperature": 0.1,
+    "messages": [
+      {
+        "role": "system",
+        "content": "Research only; no execution authority. Evaluate supplied causal evidence at snapshot_at_utc. H1/H2 are comparators, not instructions. Never infer missing facts. ABSTAIN if necessary evidence is unavailable. RETAIN means no justified research skip; SKIP means evidenced avoidable risk. Confidence is an uncalibrated self-report. Cite supplied candidate paths only. Return JSON matching the contract. missing_useful_data lists useful additional context, not a request to expand continuous capture."
+      },
+      {
+        "role": "user",
+        "content": "{\"candidate\":{\"exposure\":{\"age_seconds\":0,\"open_positions_total\":7,\"same_side_count\":1,\"same_side_regime_count\":0,\"same_side_regime_heat_usdt\":0},\"h1\":{\"state\":\"RETAIN\"},\"h2\":{\"alerts\":[\"btc_return_24h:directional_deterioration\",\"eth_return_24h:directional_deterioration\",\"btc_funding_rate:same_side_crowding_increase\",\"eth_funding_rate:same_side_crowding_increase\"],\"features\":{\"btc_funding_rate\":{\"age_seconds\":89.189,\"baseline\":-0.00003161,\"current\":-0.00003929,\"delta\":-0.000007680000000000001},\"btc_open_interest\":{\"age_seconds\":89.189,\"baseline\":56134.312,\"current\":56175.048,\"delta\":40.736000000004424},\"btc_return_24h\":{\"age_seconds\":89.189,\"baseline\":0.2567,\"current\":0.32880000000000004,\"delta\":0.07210000000000005},\"eth_funding_rate\":{\"age_seconds\":89.189,\"baseline\":0.00000804,\"current\":-0.00000548,\"delta\":-0.00001352},\"eth_open_interest\":{\"age_seconds\":89.189,\"baseline\":781072.95,\"current\":782145.51,\"delta\":1072.5600000000559},\"eth_return_24h\":{\"age_seconds\":89.189,\"baseline\":0.5106,\"current\":0.567,\"delta\":0.056399999999999895},\"linear_breadth\":{\"age_seconds\":46.055,\"baseline\":16.161616161616163,\"current\":-56.56565656565657,\"delta\":-72.72727272727273,\"sample_size\":99}},\"state\":\"SKIP\"},\"market_context\":{\"benchmark_returns\":{\"btc_24h\":0.32880000000000004,\"btc_medium\":-0.00017472,\"btc_short\":-0.00035661,\"eth_24h\":0.567},\"breadth\":{\"baseline\":16.161616161616163,\"current\":-56.56565656565657,\"delta\":-72.72727272727273,\"sample_size\":99},\"current\":{\"breadth_current\":-56.56565656565657,\"breadth_momentum\":-72.72727272727273,\"btc_realised_vol_20\":0.00062365,\"btc_return_1\":-0.00035661,\"btc_return_3\":-0.00017472,\"btc_shock_state\":\"NORMAL\",\"btc_shock_z\":-0.5718,\"coverage_pct\":99,\"cross_sectional_dispersion\":0.00645714,\"directional_coherence\":0.51611425,\"market_snapshot_id\":\"mes_15_1791650700000\",\"median_realised_vol_20\":0.00365317,\"sample_size\":99,\"timeframe\":\"15\",\"trend_down_pct\":15.151515151515152,\"trend_up_pct\":40.4040404040404,\"volatility_state\":\"WARMUP\"},\"funding\":{\"btc\":{\"age_seconds\":89.189,\"baseline\":-0.00003161,\"current\":-0.00003929,\"delta\":-0.000007680000000000001},\"eth\":{\"age_seconds\":89.189,\"baseline\":0.00000804,\"current\":-0.00000548,\"delta\":-0.00001352}},\"open_interest\":{\"btc\":{\"age_seconds\":89.189,\"baseline\":56134.312,\"current\":56175.048,\"delta\":40.736000000004424},\"eth\":{\"age_seconds\":89.189,\"baseline\":781072.95,\"current\":782145.51,\"delta\":1072.5600000000559}}},\"market_intelligence\":{\"reason\":\"NOT_PRESENT_AT_CANDIDATE_BIRTH\",\"status\":\"UNAVAILABLE\"},\"planned_trade\":{\"entry\":0.08542585765973233,\"planned_heat_usdt\":0.5,\"planned_risk_usdt\":0.5,\"quote_evidence\":{\"age_seconds\":0.145,\"ask\":0.0838,\"available\":true,\"bid\":0.08379,\"exchange_timestamp_status\":\"UNAVAILABLE_BYBIT_TICKER_PAYLOAD\",\"mark\":0.08379,\"status\":\"LOCAL_RECEIPT_ONLY\"},\"rr\":2,\"sl\":0.0872198006705867,\"stop_atr_multiple\":1.558436700319438,\"stop_distance_pct\":2.099999999999984,\"tp\":0.0818379716380236},\"reason_flags\":[\"TREND_PULLBACK\",\"TREND_PULLBACK\"],\"regime\":{\"age_seconds\":0.144,\"label\":\"BULL_RANGE\",\"strength\":5.60990384550238},\"risk_flags\":[\"SCORE_BAND\",\"BTC_REGIME\"],\"score\":{\"rr\":2,\"value\":33},\"side\":\"SELL\",\"snapshot_at_utc\":\"2026-10-10T17:01:09.323Z\",\"symbol\":\"MINAUSDT\"},\"response_contract\":{\"additionalProperties\":false,\"properties\":{\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"decision\":{\"maxLength\":16,\"minLength\":1,\"type\":\"string\"},\"evidence_keys\":{\"items\":{\"maxLength\":128,\"minLength\":1,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"market_context_summary\":{\"maxLength\":240,\"type\":\"string\"},\"missing_or_stale\":{\"items\":{\"maxLength\":128,\"minLength\":1,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"missing_useful_data\":{\"items\":{\"maxLength\":128,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"rationale_short\":{\"maxLength\":240,\"minLength\":1,\"type\":\"string\"},\"reason_codes\":{\"items\":{\"maxLength\":64,\"minLength\":1,\"type\":\"string\"},\"maxItems\":6,\"minItems\":1,\"type\":\"array\"},\"reason_notes\":{\"items\":{\"maxLength\":96,\"minLength\":1,\"type\":\"string\"},\"maxItems\":6,\"type\":\"array\"},\"risk_level\":{\"maxLength\":16,\"minLength\":1,\"type\":\"string\"}},\"required\":[\"decision\",\"risk_level\",\"confidence\",\"reason_codes\",\"reason_notes\",\"evidence_keys\",\"missing_or_stale\",\"rationale_short\",\"missing_useful_data\"],\"type\":\"object\"}}"
+      }
+    ],
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "rawResponse": "{\"id\":\"chatcmpl-2582a829-5ef0-9c21-bdb5-f1cbe6d05e21\",\"object\":\"chat.completion\",\"created\":1791651674,\"model\":\"qwen3.7-flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"SKIP\\\",\\n  \\\"risk_level\\\": \\\"HIGH\\\",\\n  \\\"confidence\\\": 0.85,\\n  \\\"reason_codes\\\": [\\n    \\\"TREND_PULLBACK\\\",\\n    \\\"SAME_SIDE_CROWDING\\\",\\n    \\\"BREADTH_DIVERGENCE\\\"\\n  ],\\n  \\\"reason_notes\\\": [\\n    \\\"Market breadth is severely negative (-56.57) vs baseline (16.16), indicating broad weakness despite BTC/ETH positive returns.\\\",\\n    \\\"BTC and ETH funding rates show same-side crowding increase (crowding long while price rises, potential squeeze risk).\\\",\\n    \\\"Directional deterioration alerts for both BTC and ETH suggest underlying momentum is weakening.\\\"\\n  ],\\n  \\\"evidence_keys\\\": [\\n    \\\"linear_breadth:current_vs_baseline\\\",\\n    \\\"btc_funding_rate:delta\\\",\\n    \\\"eth_funding_rate:delta\\\",\\n    \\\"btc_return_24h:directional_deterioration\\\",\\n    \\\"eth_return_24h:directional_deterioration\\\"\\n  ],\\n  \\\"missing_or_stale\\\": [],\\n  \\\"rationale_short\\\": \\\"Skip due to severe market breadth divergence and rising same-side crowding in funding rates, signaling high reversal risk despite short-term price gains.\\\",\\n  \\\"missing_useful_data\\\": []\\n}\"},\"finish_reason\":\"stop\",\"logprobs\":null}],\"usage\":{\"prompt_tokens\":1927,\"total_tokens\":2216,\"completion_tokens\":289,\"prompt_tokens_details\":{\"cached_tokens\":0,\"text_tokens\":1927}}}",
+  "content": {
+    "decision": "SKIP",
+    "risk_level": "HIGH",
+    "confidence": 0.85,
+    "reason_codes": [
+      "TREND_PULLBACK",
+      "SAME_SIDE_CROWDING",
+      "BREADTH_DIVERGENCE"
+    ],
+    "reason_notes": [
+      "Market breadth is severely negative (-56.57) vs baseline (16.16), indicating broad weakness despite BTC/ETH positive returns.",
+      "BTC and ETH funding rates show same-side crowding increase (crowding long while price rises, potential squeeze risk).",
+      "Directional deterioration alerts for both BTC and ETH suggest underlying momentum is weakening."
+    ],
+    "evidence_keys": [
+      "linear_breadth:current_vs_baseline",
+      "btc_funding_rate:delta",
+      "eth_funding_rate:delta",
+      "btc_return_24h:directional_deterioration",
+      "eth_return_24h:directional_deterioration"
+    ],
+    "missing_or_stale": [],
+    "rationale_short": "Skip due to severe market breadth divergence and rising same-side crowding in funding rates, signaling high reversal risk despite short-term price gains.",
+    "missing_useful_data": []
+  }
+}

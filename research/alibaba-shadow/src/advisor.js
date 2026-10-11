@@ -178,7 +178,7 @@ async function advise(snapshot,options={}){
     api_error:api.ok?null:(api.error||{type:null,code:null,message:null}),normalization,tokens,
     estimated_cost_usd:actualCost,pricing_usd_per_million:{input:config.inputUsdPerMillion,output:config.outputUsdPerMillion},decision};
   const safeRecord=redact(record,[config.apiKey]);
-  researchAI.finish(aiContext,safeRecord);
+  researchAI.finish(aiContext,{...safeRecord,parsed_response:redact(parsedResponse,[config.apiKey])});
   await index.append(safeRecord,completedMs);return safeRecord;
 }
 

@@ -1,0 +1,262 @@
+{
+  "chain": [
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "406885896e9ca66d032a9e913c50e0b8133064e57667afc76d690707bea8cf6c",
+      "sourceEpisodeId": "09dd1da35a46ebbb",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "event": "REQUEST_PREPARED",
+      "attemptId": "c880fae6-de73-4053-8147-962de04a07e4",
+      "request": {
+        "model": "qwen3.7-flash",
+        "enable_thinking": false,
+        "max_tokens": 600,
+        "temperature": 0.1,
+        "messages": [
+          {
+            "role": "user",
+            "candidate": {
+              "planned_trade": {
+                "entry": 0.06868362573331384,
+                "planned_heat_usdt": 3.319858494843674,
+                "planned_risk_usdt": 0.5,
+                "quote_evidence": {
+                  "age_seconds": 0.153,
+                  "ask": 0.06919,
+                  "available": true,
+                  "bid": 0.06918,
+                  "exchange_timestamp_status": "UNAVAILABLE_BYBIT_TICKER_PAYLOAD",
+                  "mark": 0.0692,
+                  "status": "LOCAL_RECEIPT_ONLY"
+                },
+                "rr": 2,
+                "sl": 0.06643455687294823,
+                "stop_atr_multiple": 5.962289603457705,
+                "stop_distance_pct": 3.274534266869275,
+                "tp": 0.07318176345404505
+              },
+              "reason_flags": [
+                "TREND_PULLBACK",
+                "TREND_PULLBACK"
+              ],
+              "risk_flags": [
+                "MAX_PER_DIRECTION",
+                "POST_DIRECTION_REGIME_COUNT_LIMIT",
+                "POST_DIRECTION_REGIME_HEAT_LIMIT"
+              ],
+              "score": {
+                "rr": 2,
+                "value": 51
+              },
+              "side": "BUY",
+              "snapshot_at_utc": "2026-10-10T17:01:09.332Z",
+              "symbol": "SEIUSDT"
+            },
+            "contextReferences": {
+              "regime": "0fad6576c37b23a4f27426229fc74976e20c80ed7ae1e7cfc26e3f12710e073b",
+              "h1": "6bfdee04cec31ba98ab2c273a366f2d491e7c2bff80463d71968de2af28f8456",
+              "h2": "798ab0fd781a0359f3120c4c3fe4e17731e4909c7f521ed9e77a29fd7ce971e2",
+              "exposure": "eed88e652f79a1339b1f966c89228930d6a3976f67e51b4822b236d4b1347996",
+              "market_context": "f9852bd3991fba81a55795da0b4838add7990f26c77a096e04e130c1aabe4435",
+              "market_intelligence": "d7ae9418a9cf1300b7eb1f2ffc83ec369a83280f77aecb8ac14611ee8d5586f0"
+            },
+            "templateMessageIndex": 1
+          }
+        ]
+      },
+      "exactRequestSha256": "551435fc47f7accc1f6334b51275c91294b894337d211d60963c627280000377",
+      "messageLayout": [
+        "SHARED_SYSTEM",
+        "UNIQUE"
+      ],
+      "fieldOrder": [
+        "model",
+        "enable_thinking",
+        "max_tokens",
+        "temperature",
+        "messages",
+        "response_format"
+      ],
+      "redactionsApplied": false,
+      "sharedRequestDefinition": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "auditDefinitionId": "45c66618d9bfb18d42eee57e572e0f8ab5786c25b335afb8c3102995bce690c5",
+      "payloadVersion": "ORAYAN_LEAN_AI_V1",
+      "dependencyIds": [
+        "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+        "45c66618d9bfb18d42eee57e572e0f8ab5786c25b335afb8c3102995bce690c5",
+        "0fad6576c37b23a4f27426229fc74976e20c80ed7ae1e7cfc26e3f12710e073b",
+        "6bfdee04cec31ba98ab2c273a366f2d491e7c2bff80463d71968de2af28f8456",
+        "798ab0fd781a0359f3120c4c3fe4e17731e4909c7f521ed9e77a29fd7ce971e2",
+        "eed88e652f79a1339b1f966c89228930d6a3976f67e51b4822b236d4b1347996",
+        "f9852bd3991fba81a55795da0b4838add7990f26c77a096e04e130c1aabe4435",
+        "d7ae9418a9cf1300b7eb1f2ffc83ec369a83280f77aecb8ac14611ee8d5586f0"
+      ],
+      "disposition": "PENDING",
+      "at": 1791651681168,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:09dd1da35a46ebbb",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:538",
+      "sequence": 538,
+      "utc": "2026-10-10T17:01:21.168Z",
+      "receivedAt": 1791651681168,
+      "persistedAt": 1791651681168
+    },
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "406885896e9ca66d032a9e913c50e0b8133064e57667afc76d690707bea8cf6c",
+      "sourceEpisodeId": "09dd1da35a46ebbb",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "attemptId": "c880fae6-de73-4053-8147-962de04a07e4",
+      "definitionId": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "event": "RAW_RESPONSE",
+      "rawResponse": "{\"id\":\"chatcmpl-d721a13b-f673-90b2-9e54-8eb1c61c8b52\",\"object\":\"chat.completion\",\"created\":1791651681,\"model\":\"qwen3.7-flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"SKIP\\\",\\n  \\\"risk_level\\\": \\\"HIGH\\\",\\n  \\\"confidence\\\": 0.85,\\n  \\\"reason_codes\\\": [\\n    \\\"LINEAR_BREADTH_DETERIORATION\\\",\\n    \\\"TREND_PULLBACK\\\"\\n  ],\\n  \\\"reason_notes\\\": [\\n    \\\"Linear breadth collapsed from +16.16 to -56.57 (delta: -72.73), signaling severe directional deterioration and loss of market coherence.\\\",\\n    \\\"H1 explicitly advises SKIP; H2 alerts confirm linear_breadth directional_deterioration despite RETAIN state.\\\"\\n  ],\\n  \\\"evidence_keys\\\": [\\n    \\\"linear_breadth.current\\\",\\n    \\\"linear_breadth.delta\\\",\\n    \\\"h1.state\\\",\\n    \\\"h2.alerts.linear_breadth\\\"\\n  ],\\n  \\\"missing_or_stale\\\": [],\\n  \\\"rationale_short\\\": \\\"Severe linear breadth deterioration (-72.73 delta) indicates strong directional risk outweighing pullback opportunity; H1 advises SKIP.\\\",\\n  \\\"missing_useful_data\\\": []\\n}\"},\"finish_reason\":\"stop\",\"logprobs\":null}],\"usage\":{\"prompt_tokens\":1931,\"total_tokens\":2172,\"completion_tokens\":241,\"prompt_tokens_details\":{\"cached_tokens\":0,\"text_tokens\":1931}}}",
+      "unredactedSha256": "afc5be88fca7945d6443bcb222f3c33f02655e22de5ae20e17edf552e6872789",
+      "redactionsApplied": false,
+      "httpStatus": 200,
+      "providerCallId": "d721a13b-f673-90b2-9e54-8eb1c61c8b52",
+      "dependencyIds": [
+        "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e"
+      ],
+      "at": 1791651684380,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:09dd1da35a46ebbb",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:539",
+      "sequence": 539,
+      "utc": "2026-10-10T17:01:24.380Z",
+      "receivedAt": 1791651684383,
+      "persistedAt": 1791651684383
+    },
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "406885896e9ca66d032a9e913c50e0b8133064e57667afc76d690707bea8cf6c",
+      "sourceEpisodeId": "09dd1da35a46ebbb",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "attemptId": "c880fae6-de73-4053-8147-962de04a07e4",
+      "definitionId": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "event": "PARSED_RESPONSE",
+      "parsed": {
+        "decision": "ABSTAIN",
+        "risk_level": "UNKNOWN",
+        "confidence": 0,
+        "reason_codes": [
+          "MALFORMED_MODEL_OUTPUT"
+        ],
+        "reason_notes": [],
+        "evidence_keys": [],
+        "missing_or_stale": [
+          "reason_notes:invalid_value",
+          "evidence_key:not_in_input:linear_breadth.current",
+          "evidence_key:not_in_input:linear_breadth.delta",
+          "evidence_key:not_in_input:h2.alerts.linear_breadth"
+        ],
+        "rationale_short": "Required causal decision-time evidence is missing, stale, unavailable, or invalid."
+      },
+      "normalizedResponse": {
+        "decision": "ABSTAIN",
+        "risk_level": "UNKNOWN",
+        "confidence": 0,
+        "reason_codes": [
+          "MALFORMED_MODEL_OUTPUT"
+        ],
+        "reason_notes": [],
+        "evidence_keys": [],
+        "missing_or_stale": [
+          "reason_notes:invalid_value",
+          "evidence_key:not_in_input:linear_breadth.current",
+          "evidence_key:not_in_input:linear_breadth.delta",
+          "evidence_key:not_in_input:h2.alerts.linear_breadth"
+        ],
+        "rationale_short": "Required causal decision-time evidence is missing, stale, unavailable, or invalid."
+      },
+      "normalization": {
+        "applied": true,
+        "kind": "UNKNOWN_REASON_CODE",
+        "unknown_reason_codes": [
+          "LINEAR_BREADTH_DETERIORATION",
+          "TREND_PULLBACK"
+        ]
+      },
+      "parserVersion": "ORAYAN_AI_PARSE_V2",
+      "normalizationVersion": "PROVIDER_NORMALIZE_V1",
+      "providerCallId": "d721a13b-f673-90b2-9e54-8eb1c61c8b52",
+      "latencyMs": 3219,
+      "tokens": {
+        "prompt": 1931,
+        "completion": 241,
+        "total": 2172
+      },
+      "status": "MALFORMED_OUTPUT",
+      "disposition": "INVALID",
+      "tradeDisposition": "NO_EXECUTION_AUTHORITY",
+      "finalEndpoint": "EPISODE_ENDPOINT_REFERENCE",
+      "at": 1791651684397,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:09dd1da35a46ebbb",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:540",
+      "sequence": 540,
+      "utc": "2026-10-10T17:01:24.397Z",
+      "receivedAt": 1791651684397,
+      "persistedAt": 1791651684397
+    }
+  ],
+  "request": {
+    "model": "qwen3.7-flash",
+    "enable_thinking": false,
+    "max_tokens": 600,
+    "temperature": 0.1,
+    "messages": [
+      {
+        "role": "system",
+        "content": "Research only; no execution authority. Evaluate supplied causal evidence at snapshot_at_utc. H1/H2 are comparators, not instructions. Never infer missing facts. ABSTAIN if necessary evidence is unavailable. RETAIN means no justified research skip; SKIP means evidenced avoidable risk. Confidence is an uncalibrated self-report. Cite supplied candidate paths only. Return JSON matching the contract. missing_useful_data lists useful additional context, not a request to expand continuous capture."
+      },
+      {
+        "role": "user",
+        "content": "{\"candidate\":{\"exposure\":{\"age_seconds\":0,\"open_positions_total\":7,\"same_side_count\":6,\"same_side_regime_count\":6,\"same_side_regime_heat_usdt\":2.819858494843674},\"h1\":{\"state\":\"SKIP\"},\"h2\":{\"alerts\":[\"linear_breadth:directional_deterioration\"],\"features\":{\"btc_funding_rate\":{\"age_seconds\":89.198,\"baseline\":-0.00003161,\"current\":-0.00003929,\"delta\":-0.000007680000000000001},\"btc_open_interest\":{\"age_seconds\":89.198,\"baseline\":56134.312,\"current\":56175.048,\"delta\":40.736000000004424},\"btc_return_24h\":{\"age_seconds\":89.198,\"baseline\":0.2567,\"current\":0.32880000000000004,\"delta\":0.07210000000000005},\"eth_funding_rate\":{\"age_seconds\":89.198,\"baseline\":0.00000804,\"current\":-0.00000548,\"delta\":-0.00001352},\"eth_open_interest\":{\"age_seconds\":89.198,\"baseline\":781072.95,\"current\":782145.51,\"delta\":1072.5600000000559},\"eth_return_24h\":{\"age_seconds\":89.198,\"baseline\":0.5106,\"current\":0.567,\"delta\":0.056399999999999895},\"linear_breadth\":{\"age_seconds\":46.064,\"baseline\":16.161616161616163,\"current\":-56.56565656565657,\"delta\":-72.72727272727273,\"sample_size\":99}},\"state\":\"RETAIN\"},\"market_context\":{\"benchmark_returns\":{\"btc_24h\":0.32880000000000004,\"btc_medium\":-0.00017472,\"btc_short\":-0.00035661,\"eth_24h\":0.567},\"breadth\":{\"baseline\":16.161616161616163,\"current\":-56.56565656565657,\"delta\":-72.72727272727273,\"sample_size\":99},\"current\":{\"breadth_current\":-56.56565656565657,\"breadth_momentum\":-72.72727272727273,\"btc_realised_vol_20\":0.00062365,\"btc_return_1\":-0.00035661,\"btc_return_3\":-0.00017472,\"btc_shock_state\":\"NORMAL\",\"btc_shock_z\":-0.5718,\"coverage_pct\":99,\"cross_sectional_dispersion\":0.00645714,\"directional_coherence\":0.51611425,\"market_snapshot_id\":\"mes_15_1791650700000\",\"median_realised_vol_20\":0.00365317,\"sample_size\":99,\"timeframe\":\"15\",\"trend_down_pct\":15.151515151515152,\"trend_up_pct\":40.4040404040404,\"volatility_state\":\"WARMUP\"},\"funding\":{\"btc\":{\"age_seconds\":89.198,\"baseline\":-0.00003161,\"current\":-0.00003929,\"delta\":-0.000007680000000000001},\"eth\":{\"age_seconds\":89.198,\"baseline\":0.00000804,\"current\":-0.00000548,\"delta\":-0.00001352}},\"open_interest\":{\"btc\":{\"age_seconds\":89.198,\"baseline\":56134.312,\"current\":56175.048,\"delta\":40.736000000004424},\"eth\":{\"age_seconds\":89.198,\"baseline\":781072.95,\"current\":782145.51,\"delta\":1072.5600000000559}}},\"market_intelligence\":{\"reason\":\"NOT_PRESENT_AT_CANDIDATE_BIRTH\",\"status\":\"UNAVAILABLE\"},\"planned_trade\":{\"entry\":0.06868362573331384,\"planned_heat_usdt\":3.319858494843674,\"planned_risk_usdt\":0.5,\"quote_evidence\":{\"age_seconds\":0.153,\"ask\":0.06919,\"available\":true,\"bid\":0.06918,\"exchange_timestamp_status\":\"UNAVAILABLE_BYBIT_TICKER_PAYLOAD\",\"mark\":0.0692,\"status\":\"LOCAL_RECEIPT_ONLY\"},\"rr\":2,\"sl\":0.06643455687294823,\"stop_atr_multiple\":5.962289603457705,\"stop_distance_pct\":3.274534266869275,\"tp\":0.07318176345404505},\"reason_flags\":[\"TREND_PULLBACK\",\"TREND_PULLBACK\"],\"regime\":{\"age_seconds\":0.153,\"label\":\"BULL_RANGE\",\"strength\":5.60990384550238},\"risk_flags\":[\"MAX_PER_DIRECTION\",\"POST_DIRECTION_REGIME_COUNT_LIMIT\",\"POST_DIRECTION_REGIME_HEAT_LIMIT\"],\"score\":{\"rr\":2,\"value\":51},\"side\":\"BUY\",\"snapshot_at_utc\":\"2026-10-10T17:01:09.332Z\",\"symbol\":\"SEIUSDT\"},\"response_contract\":{\"additionalProperties\":false,\"properties\":{\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"decision\":{\"maxLength\":16,\"minLength\":1,\"type\":\"string\"},\"evidence_keys\":{\"items\":{\"maxLength\":128,\"minLength\":1,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"market_context_summary\":{\"maxLength\":240,\"type\":\"string\"},\"missing_or_stale\":{\"items\":{\"maxLength\":128,\"minLength\":1,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"missing_useful_data\":{\"items\":{\"maxLength\":128,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"rationale_short\":{\"maxLength\":240,\"minLength\":1,\"type\":\"string\"},\"reason_codes\":{\"items\":{\"maxLength\":64,\"minLength\":1,\"type\":\"string\"},\"maxItems\":6,\"minItems\":1,\"type\":\"array\"},\"reason_notes\":{\"items\":{\"maxLength\":96,\"minLength\":1,\"type\":\"string\"},\"maxItems\":6,\"type\":\"array\"},\"risk_level\":{\"maxLength\":16,\"minLength\":1,\"type\":\"string\"}},\"required\":[\"decision\",\"risk_level\",\"confidence\",\"reason_codes\",\"reason_notes\",\"evidence_keys\",\"missing_or_stale\",\"rationale_short\",\"missing_useful_data\"],\"type\":\"object\"}}"
+      }
+    ],
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "rawResponse": "{\"id\":\"chatcmpl-d721a13b-f673-90b2-9e54-8eb1c61c8b52\",\"object\":\"chat.completion\",\"created\":1791651681,\"model\":\"qwen3.7-flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"SKIP\\\",\\n  \\\"risk_level\\\": \\\"HIGH\\\",\\n  \\\"confidence\\\": 0.85,\\n  \\\"reason_codes\\\": [\\n    \\\"LINEAR_BREADTH_DETERIORATION\\\",\\n    \\\"TREND_PULLBACK\\\"\\n  ],\\n  \\\"reason_notes\\\": [\\n    \\\"Linear breadth collapsed from +16.16 to -56.57 (delta: -72.73), signaling severe directional deterioration and loss of market coherence.\\\",\\n    \\\"H1 explicitly advises SKIP; H2 alerts confirm linear_breadth directional_deterioration despite RETAIN state.\\\"\\n  ],\\n  \\\"evidence_keys\\\": [\\n    \\\"linear_breadth.current\\\",\\n    \\\"linear_breadth.delta\\\",\\n    \\\"h1.state\\\",\\n    \\\"h2.alerts.linear_breadth\\\"\\n  ],\\n  \\\"missing_or_stale\\\": [],\\n  \\\"rationale_short\\\": \\\"Severe linear breadth deterioration (-72.73 delta) indicates strong directional risk outweighing pullback opportunity; H1 advises SKIP.\\\",\\n  \\\"missing_useful_data\\\": []\\n}\"},\"finish_reason\":\"stop\",\"logprobs\":null}],\"usage\":{\"prompt_tokens\":1931,\"total_tokens\":2172,\"completion_tokens\":241,\"prompt_tokens_details\":{\"cached_tokens\":0,\"text_tokens\":1931}}}",
+  "content": {
+    "decision": "SKIP",
+    "risk_level": "HIGH",
+    "confidence": 0.85,
+    "reason_codes": [
+      "LINEAR_BREADTH_DETERIORATION",
+      "TREND_PULLBACK"
+    ],
+    "reason_notes": [
+      "Linear breadth collapsed from +16.16 to -56.57 (delta: -72.73), signaling severe directional deterioration and loss of market coherence.",
+      "H1 explicitly advises SKIP; H2 alerts confirm linear_breadth directional_deterioration despite RETAIN state."
+    ],
+    "evidence_keys": [
+      "linear_breadth.current",
+      "linear_breadth.delta",
+      "h1.state",
+      "h2.alerts.linear_breadth"
+    ],
+    "missing_or_stale": [],
+    "rationale_short": "Severe linear breadth deterioration (-72.73 delta) indicates strong directional risk outweighing pullback opportunity; H1 advises SKIP.",
+    "missing_useful_data": []
+  }
+}

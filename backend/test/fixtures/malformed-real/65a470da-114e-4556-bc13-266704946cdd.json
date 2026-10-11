@@ -1,0 +1,258 @@
+{
+  "chain": [
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "594d31f8f52c61096a8dc730564b3f258e60fbb73a7dded4a5f03a019d49ef99",
+      "sourceEpisodeId": "3ef3da3c0b61725e",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "event": "REQUEST_PREPARED",
+      "attemptId": "65a470da-114e-4556-bc13-266704946cdd",
+      "request": {
+        "model": "qwen3.7-flash",
+        "enable_thinking": false,
+        "max_tokens": 600,
+        "temperature": 0.1,
+        "messages": [
+          {
+            "role": "user",
+            "candidate": {
+              "planned_trade": {
+                "entry": 0.11731451831797575,
+                "planned_heat_usdt": 3.319858494843674,
+                "planned_risk_usdt": 0.5,
+                "quote_evidence": {
+                  "age_seconds": 0.152,
+                  "ask": 0.11836,
+                  "available": true,
+                  "bid": 0.11835,
+                  "exchange_timestamp_status": "UNAVAILABLE_BYBIT_TICKER_PAYLOAD",
+                  "mark": 0.11835,
+                  "status": "LOCAL_RECEIPT_ONLY"
+                },
+                "rr": 2,
+                "sl": 0.11485091343329826,
+                "stop_atr_multiple": 2.755281340942353,
+                "stop_distance_pct": 2.1000000000000014,
+                "tp": 0.12224172808733073
+              },
+              "reason_flags": [
+                "TREND_PULLBACK",
+                "TREND_PULLBACK"
+              ],
+              "risk_flags": [
+                "MAX_PER_DIRECTION",
+                "POST_DIRECTION_REGIME_COUNT_LIMIT",
+                "POST_DIRECTION_REGIME_HEAT_LIMIT"
+              ],
+              "score": {
+                "rr": 2,
+                "value": 56
+              },
+              "side": "BUY",
+              "snapshot_at_utc": "2026-10-10T17:01:09.329Z",
+              "symbol": "ALGOUSDT"
+            },
+            "contextReferences": {
+              "regime": "b53fbb9024c2eb0387a44d5ec6c327502f51fd2272ee033184ee0f0cc42add3e",
+              "h1": "6bfdee04cec31ba98ab2c273a366f2d491e7c2bff80463d71968de2af28f8456",
+              "h2": "22ed1a6a32b4e9f013068cb510052ef6e69a2b1ef15123c9b71511f287a90f11",
+              "exposure": "eed88e652f79a1339b1f966c89228930d6a3976f67e51b4822b236d4b1347996",
+              "market_context": "5a3755f5659688a687f289a34399df30e2c2b409e18d81ad909f5d3b850bb726",
+              "market_intelligence": "d7ae9418a9cf1300b7eb1f2ffc83ec369a83280f77aecb8ac14611ee8d5586f0"
+            },
+            "templateMessageIndex": 1
+          }
+        ]
+      },
+      "exactRequestSha256": "a780482c75a15ceb058a14b308c8cd5745bca38b209843ac208d8517df47df32",
+      "messageLayout": [
+        "SHARED_SYSTEM",
+        "UNIQUE"
+      ],
+      "fieldOrder": [
+        "model",
+        "enable_thinking",
+        "max_tokens",
+        "temperature",
+        "messages",
+        "response_format"
+      ],
+      "redactionsApplied": false,
+      "sharedRequestDefinition": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "auditDefinitionId": "d1bfc8eb91895095594cbfd1062c2cade4900878e71b7b508e4193c31e4054bd",
+      "payloadVersion": "ORAYAN_LEAN_AI_V1",
+      "dependencyIds": [
+        "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+        "d1bfc8eb91895095594cbfd1062c2cade4900878e71b7b508e4193c31e4054bd",
+        "b53fbb9024c2eb0387a44d5ec6c327502f51fd2272ee033184ee0f0cc42add3e",
+        "6bfdee04cec31ba98ab2c273a366f2d491e7c2bff80463d71968de2af28f8456",
+        "22ed1a6a32b4e9f013068cb510052ef6e69a2b1ef15123c9b71511f287a90f11",
+        "eed88e652f79a1339b1f966c89228930d6a3976f67e51b4822b236d4b1347996",
+        "5a3755f5659688a687f289a34399df30e2c2b409e18d81ad909f5d3b850bb726",
+        "d7ae9418a9cf1300b7eb1f2ffc83ec369a83280f77aecb8ac14611ee8d5586f0"
+      ],
+      "disposition": "PENDING",
+      "at": 1791651678204,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:3ef3da3c0b61725e",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:517",
+      "sequence": 517,
+      "utc": "2026-10-10T17:01:18.204Z",
+      "receivedAt": 1791651678204,
+      "persistedAt": 1791651678204
+    },
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "594d31f8f52c61096a8dc730564b3f258e60fbb73a7dded4a5f03a019d49ef99",
+      "sourceEpisodeId": "3ef3da3c0b61725e",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "attemptId": "65a470da-114e-4556-bc13-266704946cdd",
+      "definitionId": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "event": "RAW_RESPONSE",
+      "rawResponse": "{\"id\":\"chatcmpl-93098aac-91c1-9082-9e24-250e9b046ecf\",\"object\":\"chat.completion\",\"created\":1791651678,\"model\":\"qwen3.7-flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"SKIP\\\",\\n  \\\"risk_level\\\": \\\"HIGH\\\",\\n  \\\"confidence\\\": 0.85,\\n  \\\"reason_codes\\\": [\\n    \\\"LINEAR_BREADTH_DETERIORATION\\\",\\n    \\\"CONFLICTING_SIGNALS\\\"\\n  ],\\n  \\\"reason_notes\\\": [\\n    \\\"Linear breadth collapsed from +16 to -56 (delta -72), signaling strong directional deterioration.\\\",\\n    \\\"H2 explicitly flags 'linear_breadth:directional_deterioration' and recommends SKIP.\\\",\\n    \\\"Buy signal conflicts with negative breadth momentum (-72.7) despite positive BTC/ETH returns.\\\"\\n  ],\\n  \\\"evidence_keys\\\": [\\n    \\\"h2.state\\\",\\n    \\\"market_context.breadth.delta\\\",\\n    \\\"candidate.exposure.same_side_count\\\"\\n  ],\\n  \\\"missing_or_stale\\\": [],\\n  \\\"rationale_short\\\": \\\"H2 advises SKIP due to severe linear breadth deterioration (-72 delta). Negative breadth momentum contradicts the BUY signal despite positive asset returns.\\\",\\n  \\\"missing_useful_data\\\": []\\n}\"},\"finish_reason\":\"stop\",\"logprobs\":null}],\"usage\":{\"prompt_tokens\":1932,\"total_tokens\":2169,\"completion_tokens\":237,\"prompt_tokens_details\":{\"cached_tokens\":0,\"text_tokens\":1932}}}",
+      "unredactedSha256": "01dfbfef31ec4435b9dfb3992632f3272eeeb56526b8d0afbd48a98ae33240e8",
+      "redactionsApplied": false,
+      "httpStatus": 200,
+      "providerCallId": "93098aac-91c1-9082-9e24-250e9b046ecf",
+      "dependencyIds": [
+        "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e"
+      ],
+      "at": 1791651681034,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:3ef3da3c0b61725e",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:526",
+      "sequence": 526,
+      "utc": "2026-10-10T17:01:21.034Z",
+      "receivedAt": 1791651681034,
+      "persistedAt": 1791651681034
+    },
+    {
+      "provider": "Alibaba",
+      "model": "qwen3.7-flash",
+      "evaluationId": "594d31f8f52c61096a8dc730564b3f258e60fbb73a7dded4a5f03a019d49ef99",
+      "sourceEpisodeId": "3ef3da3c0b61725e",
+      "attemptNumber": 1,
+      "retryOfAttemptId": null,
+      "attemptId": "65a470da-114e-4556-bc13-266704946cdd",
+      "definitionId": "b87544fb9678e80eeb8d7a2332fe1f5404cfcadfb5b36ccbbd589b891ada409e",
+      "event": "PARSED_RESPONSE",
+      "parsed": {
+        "decision": "ABSTAIN",
+        "risk_level": "UNKNOWN",
+        "confidence": 0,
+        "reason_codes": [
+          "MALFORMED_MODEL_OUTPUT"
+        ],
+        "reason_notes": [],
+        "evidence_keys": [],
+        "missing_or_stale": [
+          "reason_notes:invalid_value",
+          "evidence_key:not_in_input:candidate.exposure.same_side_count"
+        ],
+        "rationale_short": "Required causal decision-time evidence is missing, stale, unavailable, or invalid."
+      },
+      "normalizedResponse": {
+        "decision": "ABSTAIN",
+        "risk_level": "UNKNOWN",
+        "confidence": 0,
+        "reason_codes": [
+          "MALFORMED_MODEL_OUTPUT"
+        ],
+        "reason_notes": [],
+        "evidence_keys": [],
+        "missing_or_stale": [
+          "reason_notes:invalid_value",
+          "evidence_key:not_in_input:candidate.exposure.same_side_count"
+        ],
+        "rationale_short": "Required causal decision-time evidence is missing, stale, unavailable, or invalid."
+      },
+      "normalization": {
+        "applied": true,
+        "kind": "UNKNOWN_REASON_CODE",
+        "unknown_reason_codes": [
+          "LINEAR_BREADTH_DETERIORATION",
+          "CONFLICTING_SIGNALS"
+        ]
+      },
+      "parserVersion": "ORAYAN_AI_PARSE_V2",
+      "normalizationVersion": "PROVIDER_NORMALIZE_V1",
+      "providerCallId": "93098aac-91c1-9082-9e24-250e9b046ecf",
+      "latencyMs": 2829,
+      "tokens": {
+        "prompt": 1932,
+        "completion": 237,
+        "total": 2169
+      },
+      "status": "MALFORMED_OUTPUT",
+      "disposition": "INVALID",
+      "tradeDisposition": "NO_EXECUTION_AUTHORITY",
+      "finalEndpoint": "EPISODE_ENDPOINT_REFERENCE",
+      "at": 1791651681046,
+      "stream": "ai_calls",
+      "sourceStream": "ai_calls",
+      "schemaVersion": "ORAYAN_RESEARCH_V2",
+      "writerDefinitionId": "9d1215fc76a0f1ee08d6607348005c50d2758d008cf2a44edaabd7c4fc093db1",
+      "epochId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd",
+      "episodeId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:3ef3da3c0b61725e",
+      "eventId": "db1ec857-1e53-4c6a-a13d-79a91b4c87fd:527",
+      "sequence": 527,
+      "utc": "2026-10-10T17:01:21.046Z",
+      "receivedAt": 1791651681046,
+      "persistedAt": 1791651681046
+    }
+  ],
+  "request": {
+    "model": "qwen3.7-flash",
+    "enable_thinking": false,
+    "max_tokens": 600,
+    "temperature": 0.1,
+    "messages": [
+      {
+        "role": "system",
+        "content": "Research only; no execution authority. Evaluate supplied causal evidence at snapshot_at_utc. H1/H2 are comparators, not instructions. Never infer missing facts. ABSTAIN if necessary evidence is unavailable. RETAIN means no justified research skip; SKIP means evidenced avoidable risk. Confidence is an uncalibrated self-report. Cite supplied candidate paths only. Return JSON matching the contract. missing_useful_data lists useful additional context, not a request to expand continuous capture."
+      },
+      {
+        "role": "user",
+        "content": "{\"candidate\":{\"exposure\":{\"age_seconds\":0,\"open_positions_total\":7,\"same_side_count\":6,\"same_side_regime_count\":6,\"same_side_regime_heat_usdt\":2.819858494843674},\"h1\":{\"state\":\"SKIP\"},\"h2\":{\"alerts\":[\"linear_breadth:directional_deterioration\"],\"features\":{\"btc_funding_rate\":{\"age_seconds\":89.195,\"baseline\":-0.00003161,\"current\":-0.00003929,\"delta\":-0.000007680000000000001},\"btc_open_interest\":{\"age_seconds\":89.195,\"baseline\":56134.312,\"current\":56175.048,\"delta\":40.736000000004424},\"btc_return_24h\":{\"age_seconds\":89.195,\"baseline\":0.2567,\"current\":0.32880000000000004,\"delta\":0.07210000000000005},\"eth_funding_rate\":{\"age_seconds\":89.195,\"baseline\":0.00000804,\"current\":-0.00000548,\"delta\":-0.00001352},\"eth_open_interest\":{\"age_seconds\":89.195,\"baseline\":781072.95,\"current\":782145.51,\"delta\":1072.5600000000559},\"eth_return_24h\":{\"age_seconds\":89.195,\"baseline\":0.5106,\"current\":0.567,\"delta\":0.056399999999999895},\"linear_breadth\":{\"age_seconds\":46.061,\"baseline\":16.161616161616163,\"current\":-56.56565656565657,\"delta\":-72.72727272727273,\"sample_size\":99}},\"state\":\"RETAIN\"},\"market_context\":{\"benchmark_returns\":{\"btc_24h\":0.32880000000000004,\"btc_medium\":-0.00017472,\"btc_short\":-0.00035661,\"eth_24h\":0.567},\"breadth\":{\"baseline\":16.161616161616163,\"current\":-56.56565656565657,\"delta\":-72.72727272727273,\"sample_size\":99},\"current\":{\"breadth_current\":-56.56565656565657,\"breadth_momentum\":-72.72727272727273,\"btc_realised_vol_20\":0.00062365,\"btc_return_1\":-0.00035661,\"btc_return_3\":-0.00017472,\"btc_shock_state\":\"NORMAL\",\"btc_shock_z\":-0.5718,\"coverage_pct\":99,\"cross_sectional_dispersion\":0.00645714,\"directional_coherence\":0.51611425,\"market_snapshot_id\":\"mes_15_1791650700000\",\"median_realised_vol_20\":0.00365317,\"sample_size\":99,\"timeframe\":\"15\",\"trend_down_pct\":15.151515151515152,\"trend_up_pct\":40.4040404040404,\"volatility_state\":\"WARMUP\"},\"funding\":{\"btc\":{\"age_seconds\":89.195,\"baseline\":-0.00003161,\"current\":-0.00003929,\"delta\":-0.000007680000000000001},\"eth\":{\"age_seconds\":89.195,\"baseline\":0.00000804,\"current\":-0.00000548,\"delta\":-0.00001352}},\"open_interest\":{\"btc\":{\"age_seconds\":89.195,\"baseline\":56134.312,\"current\":56175.048,\"delta\":40.736000000004424},\"eth\":{\"age_seconds\":89.195,\"baseline\":781072.95,\"current\":782145.51,\"delta\":1072.5600000000559}}},\"market_intelligence\":{\"reason\":\"NOT_PRESENT_AT_CANDIDATE_BIRTH\",\"status\":\"UNAVAILABLE\"},\"planned_trade\":{\"entry\":0.11731451831797575,\"planned_heat_usdt\":3.319858494843674,\"planned_risk_usdt\":0.5,\"quote_evidence\":{\"age_seconds\":0.152,\"ask\":0.11836,\"available\":true,\"bid\":0.11835,\"exchange_timestamp_status\":\"UNAVAILABLE_BYBIT_TICKER_PAYLOAD\",\"mark\":0.11835,\"status\":\"LOCAL_RECEIPT_ONLY\"},\"rr\":2,\"sl\":0.11485091343329826,\"stop_atr_multiple\":2.755281340942353,\"stop_distance_pct\":2.1000000000000014,\"tp\":0.12224172808733073},\"reason_flags\":[\"TREND_PULLBACK\",\"TREND_PULLBACK\"],\"regime\":{\"age_seconds\":0.15,\"label\":\"BULL_RANGE\",\"strength\":5.60990384550238},\"risk_flags\":[\"MAX_PER_DIRECTION\",\"POST_DIRECTION_REGIME_COUNT_LIMIT\",\"POST_DIRECTION_REGIME_HEAT_LIMIT\"],\"score\":{\"rr\":2,\"value\":56},\"side\":\"BUY\",\"snapshot_at_utc\":\"2026-10-10T17:01:09.329Z\",\"symbol\":\"ALGOUSDT\"},\"response_contract\":{\"additionalProperties\":false,\"properties\":{\"confidence\":{\"maximum\":1,\"minimum\":0,\"type\":\"number\"},\"decision\":{\"maxLength\":16,\"minLength\":1,\"type\":\"string\"},\"evidence_keys\":{\"items\":{\"maxLength\":128,\"minLength\":1,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"market_context_summary\":{\"maxLength\":240,\"type\":\"string\"},\"missing_or_stale\":{\"items\":{\"maxLength\":128,\"minLength\":1,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"missing_useful_data\":{\"items\":{\"maxLength\":128,\"type\":\"string\"},\"maxItems\":8,\"type\":\"array\"},\"rationale_short\":{\"maxLength\":240,\"minLength\":1,\"type\":\"string\"},\"reason_codes\":{\"items\":{\"maxLength\":64,\"minLength\":1,\"type\":\"string\"},\"maxItems\":6,\"minItems\":1,\"type\":\"array\"},\"reason_notes\":{\"items\":{\"maxLength\":96,\"minLength\":1,\"type\":\"string\"},\"maxItems\":6,\"type\":\"array\"},\"risk_level\":{\"maxLength\":16,\"minLength\":1,\"type\":\"string\"}},\"required\":[\"decision\",\"risk_level\",\"confidence\",\"reason_codes\",\"reason_notes\",\"evidence_keys\",\"missing_or_stale\",\"rationale_short\",\"missing_useful_data\"],\"type\":\"object\"}}"
+      }
+    ],
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "rawResponse": "{\"id\":\"chatcmpl-93098aac-91c1-9082-9e24-250e9b046ecf\",\"object\":\"chat.completion\",\"created\":1791651678,\"model\":\"qwen3.7-flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\n  \\\"decision\\\": \\\"SKIP\\\",\\n  \\\"risk_level\\\": \\\"HIGH\\\",\\n  \\\"confidence\\\": 0.85,\\n  \\\"reason_codes\\\": [\\n    \\\"LINEAR_BREADTH_DETERIORATION\\\",\\n    \\\"CONFLICTING_SIGNALS\\\"\\n  ],\\n  \\\"reason_notes\\\": [\\n    \\\"Linear breadth collapsed from +16 to -56 (delta -72), signaling strong directional deterioration.\\\",\\n    \\\"H2 explicitly flags 'linear_breadth:directional_deterioration' and recommends SKIP.\\\",\\n    \\\"Buy signal conflicts with negative breadth momentum (-72.7) despite positive BTC/ETH returns.\\\"\\n  ],\\n  \\\"evidence_keys\\\": [\\n    \\\"h2.state\\\",\\n    \\\"market_context.breadth.delta\\\",\\n    \\\"candidate.exposure.same_side_count\\\"\\n  ],\\n  \\\"missing_or_stale\\\": [],\\n  \\\"rationale_short\\\": \\\"H2 advises SKIP due to severe linear breadth deterioration (-72 delta). Negative breadth momentum contradicts the BUY signal despite positive asset returns.\\\",\\n  \\\"missing_useful_data\\\": []\\n}\"},\"finish_reason\":\"stop\",\"logprobs\":null}],\"usage\":{\"prompt_tokens\":1932,\"total_tokens\":2169,\"completion_tokens\":237,\"prompt_tokens_details\":{\"cached_tokens\":0,\"text_tokens\":1932}}}",
+  "content": {
+    "decision": "SKIP",
+    "risk_level": "HIGH",
+    "confidence": 0.85,
+    "reason_codes": [
+      "LINEAR_BREADTH_DETERIORATION",
+      "CONFLICTING_SIGNALS"
+    ],
+    "reason_notes": [
+      "Linear breadth collapsed from +16 to -56 (delta -72), signaling strong directional deterioration.",
+      "H2 explicitly flags 'linear_breadth:directional_deterioration' and recommends SKIP.",
+      "Buy signal conflicts with negative breadth momentum (-72.7) despite positive BTC/ETH returns."
+    ],
+    "evidence_keys": [
+      "h2.state",
+      "market_context.breadth.delta",
+      "candidate.exposure.same_side_count"
+    ],
+    "missing_or_stale": [],
+    "rationale_short": "H2 advises SKIP due to severe linear breadth deterioration (-72 delta). Negative breadth momentum contradicts the BUY signal despite positive asset returns.",
+    "missing_useful_data": []
+  }
+}
