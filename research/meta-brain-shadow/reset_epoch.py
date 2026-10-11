@@ -24,7 +24,11 @@ def inspect(connection):
         'triggers':[list(r) for r in connection.execute("SELECT tgrelid::regclass::text,tgname,pg_get_triggerdef(oid) FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN (SELECT oid FROM pg_class WHERE relnamespace='public'::regnamespace) ORDER BY tgname")],
         'sequences':[r[0] for r in connection.execute("SELECT sequencename FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename")],
         'functions':[r[0] for r in connection.execute("SELECT proname FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY proname")]}
-    if objects['functions']!=['immutable_shadow']:raise RuntimeError('Unexpected legacy functions; reset refused')
+    extension_functions=[list(r) for r in connection.execute("SELECT p.proname,e.extname FROM pg_proc p JOIN pg_depend d ON d.classid='pg_proc'::regclass AND d.objid=p.oid AND d.deptype='e' JOIN pg_extension e ON e.oid=d.refobjid WHERE p.pronamespace='public'::regnamespace ORDER BY p.proname")]
+    if sorted(set(objects['functions'])-{r[0] for r in extension_functions})!=['immutable_shadow']:
+        raise RuntimeError('Unexpected non-extension legacy functions; reset refused')
+    objects['extension_functions_retained']=extension_functions
+    objects['public_views_retained']=[list(r) for r in connection.execute("SELECT viewname,definition FROM pg_views WHERE schemaname='public' ORDER BY viewname")]
     persisted=[list(r) for r in connection.execute("SELECT schemaname,tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND schemaname NOT LIKE 'pg_temp_%' ORDER BY schemaname,tablename")]
     if any(s!='public' for s,t in persisted):raise RuntimeError('Unexpected persisted research schema; reset refused')
     capture_files=[str(p) for p in Path('/capture').rglob('*') if p.is_file()]
@@ -52,9 +56,17 @@ def main(plan_path,execute=False):
             for t in TABLES:c.execute('LOCK TABLE public.'+t+' IN ACCESS EXCLUSIVE MODE')
         before=inspect(c)
         if before['watermark_sha256']!=inventory['watermark_sha256']:raise RuntimeError('Archive/source watermark mismatch')
+        actual_functions=[list(r) for r in c.execute("SELECT proname,pg_get_functiondef(oid) FROM pg_proc WHERE pronamespace='public'::regnamespace ORDER BY proname")]
+        if actual_functions!=inventory['pre_reset']['schema']['functions']:
+            raise RuntimeError('Archived/source function definition mismatch')
+        deleted={k:before['objects'][k] for k in ('tables','indexes','triggers','sequences')}
+        deleted['functions']=['immutable_shadow()']
+        retained={'system_objects':'PostgreSQL system schemas, roles, installed extensions and dedicated service credentials',
+            'extension_functions':before['objects']['extension_functions_retained'],'public_views':before['objects']['public_views_retained'],
+            'runtime_files':'verified build model/config/runtime files; no legacy research rows'}
         if not execute:
             result={'mode':'PREFLIGHT_ONLY','status':'PASS','source':before,'archive_inventory_sha256':plan['archive_inventory_sha256'],
-                'exact_reset_plan':{'delete':before['objects'],'retain':['PostgreSQL system schemas and dedicated credentials','frozen model/config/code in the verified build'],
+                'exact_reset_plan':{'delete':deleted,'retain':retained,
                     'create':['compact canonical mb_* store','durable epoch/reset receipt','initial capture pause']},
                 'planned_build_commit':plan['build_commit'],'planned_epoch':plan['epoch_id'],'execution_enabled':False}
             print(json.dumps(result,sort_keys=True));return
@@ -67,7 +79,7 @@ def main(plan_path,execute=False):
         receipt={'service':'meta-brain-shadow-v1','reset_transaction_recorded_at_ms':at,'boot':boot,'pre_reset':before,
             'archive_inventory_sha256':plan['archive_inventory_sha256'],'archive_watermark_sha256':inventory['watermark_sha256'],
             'archive_inventory':inventory['archives'],'external_directory':inventory['external_directory'],
-            'exact_objects_deleted':before['objects'],'exact_objects_retained':['PostgreSQL system schemas, roles and dedicated service credentials','verified build model/config/runtime files'],
+            'exact_objects_deleted':deleted,'exact_objects_retained':retained,
             'new_tables':[r[0] for r in c.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")],
             'min_service_mutated':False,'execution_enabled':False}
         checksum=digest(receipt);receipt['receipt_sha256']=checksum;receipt['boot']['reset_receipt_sha256']=checksum
