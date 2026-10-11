@@ -103,27 +103,34 @@ async def inventory(conn):
 
 
 def make_handlers():
-    gate = asyncio.Lock()
+    gate = asyncio.Lock();cached=None
+    async def frozen_inventory(conn):
+        nonlocal cached
+        if cached is None:cached=await inventory(conn)
+        else:
+            counts={t:(await (await conn.execute('SELECT count(*) FROM public.'+t)).fetchone())[0] for t in TABLES}
+            if counts!=cached['watermark']['counts']:raise RuntimeError('Frozen historical population changed')
+        return {**cached,'export_read_snapshot':(await (await conn.execute('SELECT pg_current_snapshot()::text')).fetchone())[0]}
     async def status(request):
         if gate.locked(): raise web.HTTPTooManyRequests(text='An archive export is running')
         async with gate, readonly() as conn:
-            return web.json_response(await inventory(conn))
+            return web.json_response(await frozen_inventory(conn))
 
     async def download(request):
         date = request.match_info['date']
         if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date): raise web.HTTPBadRequest()
         if gate.locked(): raise web.HTTPTooManyRequests(text='An archive export is running')
         async with gate, readonly() as conn:
-            info = await inventory(conn)
+            info = await frozen_inventory(conn)
             if date not in info['dates']: raise web.HTTPNotFound()
             if request.query.get('watermark') != info['watermark_sha256']:
                 raise web.HTTPConflict(text='Export watermark mismatch')
-            try:part=int(request.query.get('part','0'))
-            except ValueError:raise web.HTTPBadRequest(text='Part must be 1..8')
-            if part not in range(9):raise web.HTTPBadRequest(text='Part must be 1..8')
+            try:part=int(request.query.get('part','0'));number=int(request.query.get('parts','8'))
+            except ValueError:raise web.HTTPBadRequest(text='Invalid part')
+            if number not in (8,24) or part not in range(number+1):raise web.HTTPBadRequest(text='Invalid part')
             lower=int(datetime.fromisoformat(date).replace(tzinfo=COLOMBO).timestamp()*1000)
             upper=lower+86400000
-            if part:lower+=(part-1)*10800000;upper=lower+10800000
+            if part:lower+=(part-1)*(86400000//number);upper=lower+86400000//number
             suffix=('-part'+str(part).zfill(2)) if part else ''
             response = web.StreamResponse(headers={'Content-Type': 'application/zip',
                 'Content-Disposition': 'attachment; filename="META_BRAIN_FULL_' + date + suffix+'.zip"', 'Cache-Control': 'no-store'})
@@ -142,7 +149,8 @@ def make_handlers():
                     condition=CLocks[table]+' >= %s AND '+CLocks[table]+' < %s'
                     expected = (await (await conn.execute('SELECT count(*) FROM public.' + table + ' WHERE '+condition, (lower,upper))).fetchone())[0]
                     entry_info = zipfile.ZipInfo(table + '.ndjson')
-                    entry_info.compress_type = zipfile.ZIP_STORED if table == 'capture_chunks' else zipfile.ZIP_DEFLATED
+                    entry_info.compress_type = zipfile.ZIP_DEFLATED
+                    entry_info._compresslevel=1
                     with archive.open(entry_info, 'w', force_zip64=True) as entry:
                         async with conn.cursor(name='archive_' + table) as cur:
                             await cur.execute('SELECT * FROM public.' + table + ' WHERE '+condition, (lower,upper))
@@ -183,7 +191,7 @@ def make_handlers():
                     await drain()
                 coverage = {t: {'utc': [datetime.fromtimestamp(v / 1000, timezone.utc).isoformat() for v in pair],
                                 'colombo': [datetime.fromtimestamp(v / 1000, COLOMBO).isoformat() for v in pair]} for t, pair in clocks.items()}
-                manifest = {**info, 'date': date,'part':part or 1,'parts':8 if part else 1,
+                manifest = {**info, 'date': date,'part':part or 1,'parts':number if part else 1,
                             'partition':{'start_ms':lower,'end_ms_exclusive':upper,'clock':'table owner clock'},
                             'files': files, 'stream_counts': stream_counts, 'coverage': coverage,
                             'dependencies': dependencies, 'label_join': 'labels.id references predictions.id across the archive set',

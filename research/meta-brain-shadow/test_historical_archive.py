@@ -15,7 +15,10 @@ class Cursor:
     def __init__(self, db): self.db=db; self.rows=[]
     async def __aenter__(self): return self
     async def __aexit__(self,*args): pass
-    async def execute(self,sql,args):
+    async def execute(self,sql,args=()):
+        if 'pg_current_snapshot' in sql:
+            async def snapshot():return ('qualification',)
+            return type('Snapshot',(),{'fetchone':lambda s:snapshot()})()
         table=sql.split('FROM public.')[1].split()[0]
         self.rows=list(self.db.rows[table]);self.description=[type('Column',(),{'name':key}) for key in self.rows[0]] if self.rows else []
     async def fetchmany(self,n): out=self.rows[:n];self.rows=self.rows[n:];return [tuple(r.values()) for r in out]
@@ -23,7 +26,10 @@ class Cursor:
 class DB:
     def __init__(self, rows):self.rows=rows
     def cursor(self,**kw):return Cursor(self)
-    async def execute(self,sql,args):
+    async def execute(self,sql,args=()):
+        if 'pg_current_snapshot' in sql:
+            async def snapshot():return ('qualification',)
+            return type('Snapshot',(),{'fetchone':lambda s:snapshot()})()
         table=sql.split('FROM public.')[1].split()[0]
         return type('Count',(),{'fetchone':lambda s: self.count(table)})()
     async def count(self,t):return (len(self.rows[t]),)
