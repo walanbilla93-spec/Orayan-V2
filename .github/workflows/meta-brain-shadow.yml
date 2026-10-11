@@ -20,3 +20,10 @@ jobs:
           OPENBLAS_NUM_THREADS: '1'
           EXECUTION_ENABLED: 'false'
           SHADOW_ONLY: 'true'
+      - run: python -m unittest -v test_capacity_pause test_research_api
+        working-directory: research/meta-brain-shadow
+        env:
+          OMP_NUM_THREADS: '1'
+          OPENBLAS_NUM_THREADS: '1'
+          EXECUTION_ENABLED: 'false'
+          SHADOW_ONLY: 'true'

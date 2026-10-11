@@ -41,9 +41,11 @@ class Observer:
         self.boundary=self.store.boundary();self.store.export_boundary()
         if self.boundary and (self.boundary['config_hash']!=digest(config) or self.boundary['model_lock_hash']!=digest(self.base.lock) or self.boundary['git_commit_sha']!=self.sha):
             raise RuntimeError('prospective boundary belongs to a different lock/config/build; use a new evidence root')
-        self.restore_minutes()
+        # Check pressure before restoring warmup, with HTTP already available.
+        self.restored=False;self.capture_pause=None;self.capture_gap=None
         self.first_live_event_ms=None;self.heartbeat_ms=self.started_ms;self.last_snapshot={};self.task_errors=[]
-        self.store.status('service_start',{'mode':self.mode,'git_commit_sha':self.sha,'deployment_id':self.deployment,'execution_enabled':False})
+        if self.store.capacity()['allowed']:
+            self.store.status('service_start',{'mode':self.mode,'git_commit_sha':self.sha,'deployment_id':self.deployment,'execution_enabled':False})
 
     def restore_minutes(self):
         # Restore actual prospective provenance before adding bootstrap warmup bars.
@@ -60,6 +62,13 @@ class Observer:
                 for line in f:
                     rec=json.loads(line)
                     if int(rec['payload']['start'])>=cutoff:self.restore_minute_record(rec)
+
+    async def restore_minutes_async(self):
+        if not hasattr(self.store,'restored_minutes'):
+            self.restore_minutes();return
+        for rec in self.store.restored_minutes(self.at()-7*86400000):
+            self.restore_minute_record(rec)
+            self.heartbeat_ms=self.at();await asyncio.sleep(0)
 
     def restore_minute_record(self,rec):
         d=rec['payload'];s=rec['symbol'];t=int(d['start']);at=rec['receipt_ms']
@@ -91,19 +100,71 @@ class Observer:
     async def bootstrap(self):
         # OHLC is indicator warmup only. No REST public-trades or book history is fetched.
         for s in self.config['symbols']:
-            end=self.at()//60000*60000-1;allrows=[]
-            for _ in range(6):
-                body,at=await self.public_get('/v5/market/kline',{'category':'linear','symbol':s,'interval':'1','limit':'1000','end':str(end)})
+            end=self.at()//60000*60000-60000;start=end-5999*60000
+            # Reuse durable warmup and live bars, retaining first provenance.
+            if hasattr(self.store,'bootstrap_records'):
+                for rec in self.store.bootstrap_records(start,s):
+                    for r in rec['payload']['result']['list']:
+                        if start<=int(r[0])<=end:self.bootstrap_minute(s,r,rec['receipt_ms'])
+                    await asyncio.sleep(0);self.heartbeat_ms=self.at()
+            missing=[t for t in range(start,end+1,60000) if t not in self.base.minutes[s]]
+            while missing:
+                await self.wait_capacity()
+                # Only fetch a contiguous missing range, bounded to 1000 bars.
+                upper=missing[-1];lower=upper;count=1
+                while count<min(1000,len(missing)) and missing[-count-1]==lower-60000:
+                    lower-=60000;count+=1
+                body,at=await self.public_get('/v5/market/kline',{'category':'linear','symbol':s,'interval':'1','limit':str(count),'start':str(lower),'end':str(upper+59999)})
                 rows=body['result']['list']
                 if not rows:break
-                self.raw('bootstrap_ohlc',s,body,at,0);allrows.extend(rows);end=min(int(r[0]) for r in rows)-1
+                # Retain one page during pressure; no refetch or publication
+                # before the source has been durably committed.
+                while True:
+                    try:self.raw('bootstrap_ohlc',s,body,at,0);break
+                    except OSError as error:
+                        if not self.is_capacity_pressure(error):raise
+                        await self.wait_capacity(str(error))
+                if hasattr(self.store,'flush'):self.store.flush()
+                added=0
+                for r in sorted(rows,key=lambda r:int(r[0])):
+                    if lower<=int(r[0])<=upper:self.bootstrap_minute(s,r,at);added+=1
+                if not added:raise RuntimeError('bootstrap response made no progress')
+                # Exchange gaps remain missing; do not repeatedly request them.
+                missing=[t for t in missing if t<lower]
                 await asyncio.sleep(.15)
-            for r in sorted(allrows,key=lambda r:int(r[0])):
-                t=int(r[0]);row={'timestamp_ms':t,'open':float(r[1]),'high':float(r[2]),'low':float(r[3]),'close':float(r[4]),
-                  'open_raw':r[1],'high_raw':r[2],'low_raw':r[3],'close_raw':r[4],'volume_base':float(r[5]),'turnover_quote':float(r[6]),
-                  'receipt_ms':at,'cohort':'historical_bootstrap'}
-                if t+60000<=at:self.base.minute(s,row)
-            self.counters['bootstrap_minutes']+=len(allrows)
+
+    def bootstrap_minute(self,s,r,at):
+        t=int(r[0])
+        if t in self.base.minutes[s] or t+60000>at:return
+        row={'timestamp_ms':t,'open':float(r[1]),'high':float(r[2]),'low':float(r[3]),'close':float(r[4]),
+          'open_raw':r[1],'high_raw':r[2],'low_raw':r[3],'close_raw':r[4],'volume_base':float(r[5]),'turnover_quote':float(r[6]),
+          'receipt_ms':at,'cohort':'historical_bootstrap'}
+        self.base.minute(s,row);self.counters['bootstrap_minutes']+=1
+
+    @staticmethod
+    def is_capacity_pressure(error):
+        return isinstance(error,OSError) and str(error) in ['CAPTURE_PAUSED_DATABASE_PRESSURE','CAPTURE_PAUSED_STORAGE_PRESSURE']
+
+    async def wait_capacity(self,reason=None):
+        delay=1
+        while not self.stopping and (reason or not self.store.capacity()['allowed']):
+            if self.capture_pause is None:
+                self.capture_pause={'reason':reason or 'CAPTURE_PAUSED_DATABASE_PRESSURE','since_ms':self.at()}
+                self.connected=False;self.subscription_ok=False;self.healthy_since=None
+                self.capture_gap=dict(self.capture_pause)
+                print(packed({'kind':'capture_paused',**self.capture_pause,'gap':True,'execution_enabled':False}),flush=True)
+            self.heartbeat_ms=self.at()
+            # Refresh liveness each second even at the maximum poll backoff.
+            for _ in range(delay):
+                if self.stopping:raise asyncio.CancelledError()
+                self.heartbeat_ms=self.at();await asyncio.sleep(1)
+            delay=min(30,delay*2);reason=None
+        if self.stopping:raise asyncio.CancelledError()
+        if self.capture_pause is not None:
+            gap={**self.capture_pause,'until_ms':self.at(),'gap':True,'recovery':'fresh feed required'}
+            self.store.status('capture_pressure_gap',gap)
+            self.capture_gap=gap;self.capture_pause=None
+            print(packed({'kind':'capture_resumed',**gap}),flush=True)
 
     async def ws_loop(self):
         delay=1
@@ -157,10 +218,11 @@ class Observer:
                         except (ValueError,KeyError,TypeError):
                             self.counters['malformed']+=1;raise RuntimeError('malformed_message_resync')
             except (OSError,RuntimeError,websockets.exceptions.WebSocketException,asyncio.TimeoutError) as error:
+                if self.is_capacity_pressure(error):raise
                 self.connected=False;self.subscription_ok=False;self.healthy_since=None;self.counters['reconnects']+=1
                 self.store.status('feed_gap',{'reason':type(error).__name__,'message':str(error)[:120],'connection_id':self.flow.epoch,'gap':True})
                 self.flow.reconnect(self.at());self.last.clear()
-                if not self.store.capacity()['allowed']:self.stopping=True;raise
+                if not self.store.capacity()['allowed']:raise OSError('CAPTURE_PAUSED_DATABASE_PRESSURE')
                 await asyncio.sleep(delay+random.random());delay=min(60,delay*2)
 
     async def aux_loop(self):
@@ -198,7 +260,7 @@ class Observer:
         freshness=all(at-self.last.get('publicTrade.'+s,0)<30000 and self.flow.books[s].valid and
            at-self.flow.books[s].receipt_ms<10000 for s in self.config['symbols'])
         ordered_clocks=bool(self.lags) and all(lag>=0 for lag in list(self.lags)[-100:])
-        return self.connected and self.subscription_ok and freshness and ordered_clocks and self.store.capacity()['allowed'] and not self.task_errors and \
+        return self.capture_pause is None and self.connected and self.subscription_ok and freshness and ordered_clocks and self.store.capacity()['allowed'] and not self.task_errors and \
           self.clock_offset_ms is not None and abs(self.clock_offset_ms)<1000 and self.clock_uncertainty_ms<2000
 
     async def maintenance(self):
@@ -260,7 +322,8 @@ class Observer:
           'clock_adjusted_p50_estimate':lags[len(lags)//2]+self.clock_offset_ms if lags and self.clock_offset_ms is not None else None},
           'clock_offset_ms':self.clock_offset_ms,'clock_uncertainty_ms':self.clock_uncertainty_ms,'storage':self.store.capacity(),
           'write_errors':self.store.write_errors,'trade_duplicates':self.flow.duplicates,'sequence_regressions':self.flow.regressions,
-          'feature_pipeline':self.last_snapshot,'task_errors':self.task_errors,'heartbeat_age_ms':at-self.heartbeat_ms}
+          'feature_pipeline':self.last_snapshot,'task_errors':self.task_errors,'heartbeat_age_ms':at-self.heartbeat_ms,
+          'capture_pause':self.capture_pause,'capture_gap':self.capture_gap,'research_revision':os.environ.get('RESEARCH_REVISION')}
 
     async def endpoint(self,request):
         if request.path=='/healthz':return web.json_response(self.health(),status=200 if self.healthy(self.at()) else 503)
@@ -273,14 +336,30 @@ class Observer:
         self.http=aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20),headers={'User-Agent':'OrayanShadow/1'},trust_env=False)
         tasks=[]
         try:
+            await self.wait_capacity()
+            if not self.restored:
+                await self.restore_minutes_async();self.restored=True
             await self.bootstrap()
             tasks=[asyncio.create_task(f()) for f in [self.ws_loop,self.aux_loop,self.clock_loop,self.maintenance]]
             deadline=time.monotonic()+duration if duration else None
             while not self.stopping:
-                for task in tasks:
-                    if task.done():
-                        error=task.exception();self.task_errors.append(type(error).__name__ if error else 'unexpected_task_exit')
-                        self.store.status('fatal_task',{'error':str(error)[:160]});raise RuntimeError('capture task terminated')
+                # Never conceal an unrelated concurrent fatal failure behind a
+                # recoverable pressure exception from another producer.
+                errors=[asyncio.CancelledError() if t.cancelled() else t.exception() for t in tasks if t.done()]
+                for error in errors:
+                    if not self.is_capacity_pressure(error):
+                        self.task_errors.append(type(error).__name__ if error else 'unexpected_task_exit')
+                        if self.store.capacity()['allowed']:self.store.status('fatal_task',{'error':str(error)[:160]})
+                        raise RuntimeError('capture task terminated')
+                if errors:
+                    for running in tasks:running.cancel()
+                    await asyncio.gather(*tasks,return_exceptions=True)
+                    # Retain accepted buffers; stop every producer. Reset feed
+                    # freshness/flow after recovery, not the immutable ledgers.
+                    await self.wait_capacity(str(errors[0]))
+                    self.flow.reconnect(self.at());self.last.clear();self.lags.clear()
+                    self.clock_offset_ms=None;self.clock_uncertainty_ms=None
+                    tasks=[asyncio.create_task(f()) for f in [self.ws_loop,self.aux_loop,self.clock_loop,self.maintenance]]
                 if deadline and time.monotonic()>=deadline:break
                 await asyncio.sleep(1)
         finally:

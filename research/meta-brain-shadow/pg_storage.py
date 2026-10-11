@@ -1,5 +1,5 @@
 """Durable gzip partitions and immutable ledgers in the included private PostgreSQL addon."""
-import os,json,time,gzip,hashlib,uuid
+import os,json,time,gzip,hashlib,uuid,io
 from pathlib import Path
 from storage import packed,utc
 
@@ -32,8 +32,9 @@ class PgStore:
             if not exists:self.connection.execute(f'CREATE TRIGGER guard_{table} BEFORE UPDATE OR DELETE ON {table} FOR EACH ROW EXECUTE FUNCTION immutable_shadow()')
         self.buffers={};self.rows=0;self.bytes=0;self.write_errors=0;self.last_flush=time.monotonic()
         self.database_bytes=0;self.capacity_at=0
-        self.status('storage_session_start',{'durability':'PostgreSQL synchronous commits','unflushed_tail_max_seconds':1,
-            'restart_gap':True,'last_durable_receipt_ms':self.connection.execute('SELECT max(last_ms) FROM capture_chunks').fetchone()[0]})
+        if self.capacity()['allowed']:
+            self.status('storage_session_start',{'durability':'PostgreSQL synchronous commits','unflushed_tail_max_seconds':1,
+                'restart_gap':True,'last_durable_receipt_ms':self.connection.execute('SELECT max(last_ms) FROM capture_chunks').fetchone()[0]})
 
     def capacity(self):
         if time.monotonic()-self.capacity_at>10:
@@ -85,11 +86,26 @@ class PgStore:
         if row:(self.root/'prospective_start_manifest.json').write_text(packed(row)+'\n',encoding='utf8')
 
     def restored_minutes(self,since):
-        rows=self.connection.execute("SELECT sha256,payload FROM capture_chunks WHERE stream='live_ohlc' AND last_ms>=%s ORDER BY first_ms",(since,))
-        for sha,payload in rows:
-            payload=bytes(payload)
-            if hashlib.sha256(payload).hexdigest()!=sha:raise RuntimeError('capture partition hash mismatch')
-            for line in gzip.decompress(payload).splitlines():yield json.loads(line)
+        yield from self.capture_records('live_ohlc',since)
+
+    def bootstrap_records(self,since,symbol):
+        yield from self.capture_records('bootstrap_ohlc',since,symbol)
+
+    def capture_records(self,stream,since,symbol=None):
+        # A normal psycopg cursor buffers the entire result in libpq. Fetch one
+        # durable chunk at a time instead, and decode individual gzip lines.
+        sql='SELECT sha256,payload FROM capture_chunks WHERE stream=%s AND last_ms>=%s'
+        args=[stream,since]
+        if symbol is not None:sql+=' AND symbol=%s';args.append(symbol)
+        sql+=' ORDER BY first_ms,id'
+        with self.connection.transaction():
+            with self.connection.cursor(name='restore_'+uuid.uuid4().hex) as rows:
+                rows.itersize=1;rows.execute(sql,args)
+                for sha,payload in rows:
+                    payload=bytes(payload)
+                    if hashlib.sha256(payload).hexdigest()!=sha:raise RuntimeError('capture partition hash mismatch')
+                    with gzip.GzipFile(fileobj=io.BytesIO(payload)) as decoded:
+                        for line in decoded:yield json.loads(line)
 
     def audit(self):
         self.flush()

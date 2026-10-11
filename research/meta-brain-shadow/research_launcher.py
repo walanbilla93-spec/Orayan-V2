@@ -1,4 +1,4 @@
-"""Additive launcher: original observer provenance remains explicit and unmodified."""
+"""Research launcher: boundary lineage and runtime implementation are explicit."""
 import asyncio
 import hashlib
 import json
@@ -12,11 +12,12 @@ ROOT = Path(__file__).resolve().parent
 
 
 async def main():
-    # Refuse to start the overlay against a different observer implementation.
+    # Verify the reviewed implementation, including the pressure repair. Model,
+    # config and boundary hashes remain frozen; runtime is RESEARCH_REVISION.
     manifest = json.loads((ROOT / 'research_overlay_lock.json').read_text())
     for name, expected in manifest['observer_files'].items():
         if hashlib.sha256((ROOT / name).read_bytes()).hexdigest() != expected:
-            raise RuntimeError('Observer source differs from the frozen overlay base.')
+            raise RuntimeError('Observer source differs from the reviewed runtime manifest.')
     if os.environ.get('GIT_COMMIT') != manifest['observer_commit']:
         raise RuntimeError('Keep GIT_COMMIT at the original observer revision; record overlay revision separately.')
     if os.environ.get('EXECUTION_ENABLED', 'false').lower() != 'false':
