@@ -1,0 +1,15 @@
+{
+  "schema": "meta-brain-decision-first-2.0",
+  "capture_enabled": true,
+  "orayan_feed_enabled": true,
+  "execution_enabled": false,
+  "shadow_only": true,
+  "direction_policy": "confirmed-structure-direction-0.1_EXPERIMENTAL_UNVALIDATED",
+  "current_hours": 30,
+  "completed_daily_archives": 7,
+  "archive_timezone": "Asia/Colombo",
+  "retention_requires_verified_external_receipt": true,
+  "working_symbols_limit": 4,
+  "online_weight_changes": false,
+  "raw_tick_depth_persistence": false
+}
