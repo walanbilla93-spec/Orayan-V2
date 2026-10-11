@@ -9,7 +9,7 @@ import aiohttp,websockets
 from aiohttp import web
 from decision_store import CompactStore,SCHEMA,WINDOW,boundaries,day,digest,packed
 from decision_learning import EpisodeConsumer
-from orayan_feed import URL as ORAYAN_URL,ingest_export
+from orayan_feed import URL as ORAYAN_URL,ingest_export_async
 from structural_policy import DEFINITION as STRUCTURE_DEFINITION,context_from_base,decide_structure,mature_structure
 from research_memory import snapshot as memory_snapshot,trim_unused
 
@@ -36,10 +36,15 @@ class DecisionRuntime:
             'adaptation':'durable bounded performance statistics; no online model changes','execution_enabled':False}
         with store.transaction():
             prior=store.state('lineage')
-            if prior and prior!=self.lineage:raise RuntimeError('New config/build requires explicit epoch migration')
+            if prior and prior!=self.lineage:
+                amendment=store.state('deployment_amendment') or {}
+                if amendment.get('new_source_commit')!=policy.get('deployment_source_commit') or amendment.get('previous_lineage_sha256')!=digest(prior):
+                    raise RuntimeError('New config/build requires explicit epoch migration')
             store.set_state('lineage',self.lineage)
             store.set_state('epoch',{'id':store.epoch,'schema':SCHEMA,'started_ms':self.started})
-            store.add('definitions',store.epoch+':definitions',None,self.started,self.started,self.lineage)
+            self.definition_id=store.epoch+':definitions:'+digest(self.lineage)[:16]
+            definition_at=self.now()
+            store.add('definitions',self.definition_id,None,definition_at,definition_at,self.lineage)
             store.add('registered_experiment',store.epoch+':structure-definition',None,self.started,self.started,STRUCTURE_DEFINITION)
         checkpoint=store.state('working_checkpoint')
         if checkpoint and self.now()-checkpoint['at']<WINDOW:
@@ -166,7 +171,7 @@ class DecisionRuntime:
         cached=self.snapshots.get(symbol)
         base={'decision_ms':at,'action':'ABSTAIN','confidence':None,'abstention_reason':'DIRECTIONAL_POLICY_UNCONFIGURED',
             'model_version':'phase3a-fold3-frozen','model_lock_sha256':self.lineage['model_lock_sha256'],
-            'model_definition_id':self.store.epoch+':definitions','no_trade':True,'orayan_inputs_used':False}
+            'model_definition_id':self.definition_id,'no_trade':True,'orayan_inputs_used':False}
         clock_ok=bool(self.last_clock and at-self.last_clock['observed_ms']<180000 and
                       abs(self.last_clock['offset_ms'])+self.last_clock['uncertainty_ms']<2000)
         if not clock_ok or not cached or at-cached['at']>90000 or at-self.last_minute.get(symbol,0)>120000:
@@ -205,7 +210,7 @@ class DecisionRuntime:
                     file.seek(0)
                     from orayan_feed import selected_events
                     manifest,rows=selected_events(file)
-                    self.last_feed=ingest_export(self.store,self.consumer,file,self.now(),validated=(manifest,rows),clock=self.now)
+                    self.last_feed=await ingest_export_async(self.store,self.consumer,file,self.now(),validated=(manifest,rows),clock=self.now)
                     # Keep BTC as the anchor, prioritizing eligible native candidates.
                     # Outside this bounded universe, independent abstentions are
                     # retained with an explicit input-coverage reason.
@@ -216,8 +221,13 @@ class DecisionRuntime:
                         self.last_interest[s]=self.now()
                         if s not in self.symbols and len(self.symbols)<self.active_limit and re.fullmatch('[A-Z0-9]{2,24}USDT',s):
                             self.symbols.append(s);self.base.minutes[s]={};await self.bootstrap_symbol(s)
-            except (aiohttp.ClientError,ValueError,RuntimeError,zipfile.BadZipFile,KeyError,asyncio.TimeoutError):
-                self.note('orayan_feed_gap',{'reason':'READ_ONLY_CANONICAL_FEED_UNAVAILABLE_OR_INCOMPLETE','no_execution_authority':True})
+            except (aiohttp.ClientError,ValueError,RuntimeError,zipfile.BadZipFile,KeyError,asyncio.TimeoutError) as error:
+                self.note('orayan_feed_gap',{'reason':'READ_ONLY_CANONICAL_FEED_UNAVAILABLE_OR_INCOMPLETE',
+                    'error_type':type(error).__name__,'diagnostic_code':str(error)[:160],'no_execution_authority':True})
+            finally:
+                # Do not retain yesterday's projection while constructing the next one.
+                manifest=rows=candidates=None
+                trim_unused()
             await asyncio.sleep(120)
 
     async def maintenance(self):

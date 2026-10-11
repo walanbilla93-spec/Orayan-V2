@@ -92,7 +92,7 @@ def selected_events(file):
                         seen.add(key);normalized=normalize(source,meta['sha256'])
                         if normalized:
                             projected_bytes+=len(json.dumps(normalized).encode())
-                            if projected_bytes>32*1024*1024:raise ValueError('Canonical projection memory bound')
+                            if projected_bytes>48*1024*1024:raise ValueError('Canonical projection memory bound')
                             result.append(normalized)
             if parts or h.hexdigest()!=expected['sha256'] or size!=expected['bytes']:raise ValueError('Incomplete/corrupt canonical entry')
         wanted={m['eventId'] for m in manifest['events'] if m['stream'] in ('decisions','lifecycle','outcomes','experiments','ai_calls')}
@@ -100,7 +100,7 @@ def selected_events(file):
         if len(result)>25000:raise ValueError('Canonical population bound')
         return manifest,sorted(result,key=lambda r:r['sequence'])
 
-def ingest_export(store,consumer,file,observed_ms,validated=None,clock=None):
+def prepare_intake(store,file,observed_ms,validated=None):
     manifest,events=validated if validated is not None else selected_events(file)
     epochs={r['epochId'] for r in events}
     if len(epochs)>1:raise ValueError('Mixed canonical epoch')
@@ -120,13 +120,30 @@ def ingest_export(store,consumer,file,observed_ms,validated=None,clock=None):
                        (r['kind']=='order_outcome' and (r.get('outcomeComplete') or r.get('event') in
                         ('CLOSED','CANCELLED','CANCELED','EXPIRED','NO_ORDER','NO_FILL','REJECTED','CENSORED')))}
     new=[r for r in events if r['sequence']>last]
-    for offset in range(0,len(new),64):
-        with store.transaction():
-            for source in new[offset:offset+64]:
+    return manifest,events,new,terminal_episodes,reference,epoch
+
+def intake_batch(store,consumer,batch,observed_ms,clock,terminal_episodes,reference,epoch,manifest):
+    with store.transaction():
+            for source in batch:
                 # Decision formation uses its actual clock, never the start of a
                 # potentially long batch. This matters for pre-outcome validity.
                 current=clock() if clock else observed_ms
                 consumer.ingest(source,current,reference,resolved_before_observation=source.get('episodeId') in terminal_episodes)
                 store.set_state('orayan_cursor',{'epoch':epoch,'sequence':source['sequence'],'watermark':manifest['watermark'],'observed_ms':current})
+
+def intake_result(manifest,events,epoch):
     return {'source_epoch':epoch,'watermark':manifest['watermark'],'selected_events':len(events),
             'intake':'READ_ONLY_CANONICAL_EXPORT','source_population_complete':(manifest.get('integrity') or {}).get('populationComplete')}
+
+def ingest_export(store,consumer,file,observed_ms,validated=None,clock=None):
+    manifest,events,new,terminal,reference,epoch=prepare_intake(store,file,observed_ms,validated)
+    for offset in range(0,len(new),64):intake_batch(store,consumer,new[offset:offset+64],observed_ms,clock,terminal,reference,epoch,manifest)
+    return intake_result(manifest,events,epoch)
+
+async def ingest_export_async(store,consumer,file,observed_ms,validated=None,clock=None):
+    import asyncio
+    manifest,events,new,terminal,reference,epoch=prepare_intake(store,file,observed_ms,validated)
+    for offset in range(0,len(new),64):
+        intake_batch(store,consumer,new[offset:offset+64],observed_ms,clock,terminal,reference,epoch,manifest)
+        await asyncio.sleep(0)
+    return intake_result(manifest,events,epoch)

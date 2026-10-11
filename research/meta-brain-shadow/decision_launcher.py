@@ -63,7 +63,8 @@ def create_app(store,health,resume_callback=None):
     app.router.add_post('/research/api/resume',resume)
     async def reset_receipt(request):
         authorized(request);return web.json_response({'receipt':store.state('destructive_reset_receipt'),
-            'commit_confirmation':store.state('destructive_reset_commit_confirmation')})
+            'commit_confirmation':store.state('destructive_reset_commit_confirmation'),
+            'deployment_amendment':store.state('deployment_amendment')})
     app.router.add_get('/research/api/reset-receipt',reset_receipt)
     return app
 
@@ -85,10 +86,20 @@ async def main():
     if boot.get('historical_archive_verification')!='VERIFIED_EXTERNAL_COPY' or not boot.get('reset_receipt_sha256'):
         raise RuntimeError('Verified reset receipt required')
     policy=json.loads((ROOT/'decision_policy.json').read_text())
-    for name,checksum in boot.get('build_files_sha256',{}).items():
+    spec=None
+    if (ROOT/'source_deployment_amendment.json').exists():
+        spec=json.loads((ROOT/'source_deployment_amendment.json').read_text())
+        from deployment_amendment import validate
+        validate(receipt,spec)
+    expected=spec['files'] if spec else boot.get('build_files_sha256',{})
+    for name,checksum in expected.items():
         if hashlib.sha256((ROOT/name).read_bytes()).hexdigest()!=checksum:raise RuntimeError('Reset/deployment source hash mismatch')
     policy.update(epoch_started_ms=boot['epoch_started_ms'],deployment_source_commit=boot['build_commit'])
     store=CompactStore.production(boot['epoch_id'])
+    if spec:
+        from deployment_amendment import apply
+        amendment=apply(store,receipt,spec,os.environ.get('NF_DEPLOYMENT_SHA'))
+        policy['deployment_source_commit']=amendment['new_source_commit']
     from decision_runtime import DecisionRuntime
     runtime=DecisionRuntime(store,policy)
     app=create_app(store,runtime.health,runtime.resume);health=web.Application()

@@ -1,5 +1,5 @@
 {
-  "runtime_source_commit": "76cb7e432afbab2e0c2cf53fb3560133f8f7805d",
+  "sealed_reset_source_commit": "76cb7e432afbab2e0c2cf53fb3560133f8f7805d",
   "epoch": "ac5ce9dc-bd2d-429e-9e9f-a45399fe1105",
   "files": {
     ".dockerignore": "b7593a90e5702380112c1b512b368f90f5c4914db95f09505285105a576547d7",
@@ -11,10 +11,10 @@
     "audit_research_storage.py": "9c480adf12c81ab1140ae412934b2c5780ac569590bc3bfc7eb37ed1aef5a686",
     "base.py": "12f5d26ff89c1f67a92f4ff07ff5ba17d2c27c633520b81aee1a7df22530b8d1",
     "config.json": "fa51ed20a90727e3fc2de80045c72e25ce8cb2364f5fa2e7bb2e87221bd9e6df",
-    "decision_launcher.py": "dd131bf2a28cafd310a46864965ddf506b2a6ae3509d6570542b070ff3e09c3a",
+    "decision_launcher.py": "4402161ca5851a56fb2516de7012b0e3e40e1ac5e8819ee86f9a352a71cc9df8",
     "decision_learning.py": "bee0c8503e458d90d82053036f782638060ecbf9eb93278d9196fc91e530fafa",
     "decision_policy.json": "b0a286f94357c0cdfef2afffdde98dcb7d72755b7f1cfaf9c0980eae4f240c0d",
-    "decision_runtime.py": "9499cef71372f0d8de97b486483d5fd8d5e4a0a4ebdd8ef5bb891b4f75ee5422",
+    "decision_runtime.py": "bdffe9ad667ff8fa3ae0d3fe728501933b9ed10c519028942bd7cde9389d496b",
     "decision_store.py": "8c25377ca5d6802dd62e1c84610652bbd43ea1bc202d729bdb978c243048423b",
     "feature_source_manifest.json": "5169a29fc08d20558d1786f5d70bd401d56e790f27bf6f898cba1a014b837d81",
     "flow.py": "0cb9f081138871f680a59ba558f3ca9862db2563f1f59a0b2648d76b2386c0c7",
@@ -38,7 +38,7 @@
     "models/fold3_C_locked.json": "1ec272059b883e92524b6eb829f003615e5520eb4340781a695d9dfbddd44e0c",
     "models/fold3_D_references.json": "322488ef4bc4e2ae3daacdf024d19eb5f712623c194299560ecc17a956d5050b",
     "northflank_config_snapshot.json": "b5201afc15dc8e36646bc086166657d4c8ce5f95666ea611213f5025b3b95c95",
-    "orayan_feed.py": "7ffa2fd1d9423b6f4645b65b01ad2da4c8e7f5b436be8d40a47148514562dfdf",
+    "orayan_feed.py": "7df633156d1022108bd835aaa8b96d9bc5aa63b577b2520a03643f078d5a472a",
     "orderflow_feature_contract.md": "d54e07aaa8dad8d56c0025fb1c3450526db759a3ed258fe163c32db8e9be8489",
     "pg_storage.py": "b062dde65ae3cd0fad73c1864b8eb9cbd6cd0b73944ca1bf56367ba9a6821e7b",
     "phase3a_locked_feature_set.csv": "10c0a215bfd87bc705c0cb85070ad44cf890c3a08457b4f5bb06c34c23dec186",
@@ -67,6 +67,7 @@
     "test_orayan_feed.py": "d799663fc6a31427730d5cb97c240112ad36ee0c57c2219ef20c3e548f2043f0",
     "test_research_api.py": "5c497539b1eeed0e26f9f429b0501e4497b829b531d9c7dd6119dbb6a5948879",
     "test_shadow.py": "13ddac4097fd1426af5c452ee6c0b5c8f8a476cc4272fb21deb8a78f40ef534e",
-    "test_structural_policy.py": "7b4dcc8c609d9867fcc23a8e86fb6ecc9eb76da30e9e76277097ab645f0d80f6"
+    "test_structural_policy.py": "7b4dcc8c609d9867fcc23a8e86fb6ecc9eb76da30e9e76277097ab645f0d80f6",
+    "deployment_amendment.py": "57017813b8ecf30958c09e11343d595b8907a08b6db1ae2a061916c52f8aa6b7"
   }
 }
