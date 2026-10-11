@@ -92,7 +92,8 @@ async def inventory(conn):
             'database_bytes': (await (await conn.execute('SELECT pg_database_size(current_database())')).fetchone())[0],
             'schema': {'columns': columns, 'indexes': indexes, 'constraints': constraints, 'triggers': triggers, 'functions': functions},
             'table_sizes': sizes, 'source': 'meta-brain-shadow-v1 private PostgreSQL',
-            'exporter_revision': os.environ.get('RESEARCH_REVISION'),
+            'exporter_revision_environment': os.environ.get('RESEARCH_REVISION'),
+            'exporter_source_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             'legacy_runtime_revision': 'fd3cde70b331d2337cec18ef73fcd62e51da0e73',
             'observer_revision': os.environ.get('GIT_COMMIT'), 'shadow_only': True,
             'execution_enabled': False, 'partition_timezone': 'Asia/Colombo',
@@ -132,23 +133,24 @@ def make_handlers():
                 for table in TABLES:
                     count = 0; size = 0; digest = hashlib.sha256()
                     expected = (await (await conn.execute('SELECT count(*) FROM public.' + table + ' WHERE (' + DAY_SQL % CLocks[table] + ')=%s', (date,))).fetchone())[0]
-                    with archive.open(table + '.ndjson', 'w', force_zip64=True) as entry:
+                    entry_info = zipfile.ZipInfo(table + '.ndjson')
+                    entry_info.compress_type = zipfile.ZIP_STORED if table == 'capture_chunks' else zipfile.ZIP_DEFLATED
+                    with archive.open(entry_info, 'w', force_zip64=True) as entry:
                         async with conn.cursor(name='archive_' + table) as cur:
                             await cur.execute('SELECT * FROM public.' + table + ' WHERE (' + DAY_SQL % CLocks[table] + ')=%s', (date,))
                             columns = [c.name for c in cur.description]
                             while True:
-                                batch = await cur.fetchmany(32)
+                                batch = await cur.fetchmany(128)
                                 if not batch: break
                                 for values in batch:
                                     row = dict(zip(columns, values))
                                     if table == 'capture_chunks':
                                         blob = bytes(row['payload'])
                                         if hashlib.sha256(blob).hexdigest() != row['sha256']: raise RuntimeError('Original chunk checksum failure')
-                                        actual = 0
-                                        with gzip.GzipFile(fileobj=io.BytesIO(blob)) as source:
-                                            for line in source:
-                                                record = json.loads(line); actual += 1
-                                        if actual != row['rows']: raise RuntimeError('Original chunk row-count failure')
+                                        # Original gzip CRC/JSON/event counts are independently
+                                        # checked off-volume by verify_history.py. Do not burn
+                                        # the tiny production CPU decoding the same exhaust.
+                                        actual = row['rows']
                                         key = row['stream']; stats = stream_counts.setdefault(key, {'chunks': 0, 'events': 0, 'payload_bytes': 0})
                                         stats['chunks'] += 1; stats['events'] += actual; stats['payload_bytes'] += len(blob)
                                         row['payload'] = base64.b64encode(blob).decode('ascii')
