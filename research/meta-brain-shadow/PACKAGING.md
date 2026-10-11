@@ -1,0 +1,5 @@
+The verified runtime is sealed by the durable reset receipt. The original image recipe excludes `test*` files while the receipt also seals qualification sources. The decision build recipe uses repository-root context with a Dockerfile-specific ignore file that includes only `research/meta-brain-shadow/`, including all sealed files. It copies no Orayan trading code and changes no Orayan service configuration.
+
+Configure this Meta Brain service only: Docker workdir `/`, Dockerfile `/research/meta-brain-shadow/decision_build.Dockerfile`. The build checks every sealed file against `decision_build_manifest.json` before it succeeds. Runtime/model/config source bytes remain exactly those identified by the original receipt; the additional packaging commit identifies the image recipe separately. No repeat reset or alteration of the destructive receipt is necessary.
+
+Dockerfile-specific ignore precedence is documented by [Docker](https://docs.docker.com/build/concepts/context/#filename-and-location).
