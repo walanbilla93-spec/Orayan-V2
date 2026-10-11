@@ -13,4 +13,4 @@ ENV RESEARCH_REVISION=${GIT_COMMIT} GIT_COMMIT=6b99b620435717bc360d3d9b5ca4d42b8
 LABEL org.opencontainers.image.revision=${RESEARCH_REVISION}
 EXPOSE 8080 8081
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/livez')"
-CMD ["python", "research_launcher.py"]
+CMD ["python", "historical_launcher.py"]
