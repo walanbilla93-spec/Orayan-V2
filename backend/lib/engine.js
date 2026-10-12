@@ -77,10 +77,14 @@ function persistEngineControl() {
 }
 
 
-function persistTrades() {
+function persistedTradeRows() {
   // Unresolved live obligations must survive history trimming and process restart.
   const retained=trades.slice(0,-5000).filter(t=>t.mode==='live'&&t.privateOutcome);
-  const saved=store.write('trades',[...retained,...trades.slice(-5000)]);
+  return [...retained,...trades.slice(-5000)];
+}
+
+function persistTrades() {
+  const saved=store.write('trades',persistedTradeRows());
   if(captureSafety.total){const keep=Math.max(0,5000-trades.length),cutoff=Math.max(0,captureSafety.total-keep);
     store.write('captureSafetyClosed',{total:Math.min(captureSafety.total,keep),closed:captureSafety.closed.filter(x=>x.index>=cutoff).map(x=>({...x,index:x.index-cutoff}))},false);}
   return saved;
@@ -1005,7 +1009,7 @@ function clearLastSignals() {
 // MAINTENANCE_CHECKPOINT_BEGIN: publish existing working state without changing RUN intent.
 function maintenanceCheckpoint() {
   const path=require('path'),atomic=require('./researchStore').atomic;
-  atomic(path.join(store.DATA_DIR,'trades.json'),trades.slice(-5000));
+  atomic(path.join(store.DATA_DIR,'trades.json'),persistedTradeRows());
   atomic(path.join(store.DATA_DIR,'marciShadowTrades.json'),shadowTrades.slice(-5000));
   atomic(path.join(store.DATA_DIR,'engineControl.json'),engineControl);
   if(captureSafety.total) {

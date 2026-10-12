@@ -46,7 +46,7 @@ function harness(initial=[]) {
     }
     now=target;await flush();
   }
-  function engine(mode='live') {
+  function engine(mode='live', extras={}) {
     const noop=new Proxy({},{get:()=>()=>null});
     const capture={...noop,outcome:(id,event,t)=>events.push({id,event,trade:t}),watch(){},tickerDynamics:()=>new Map(),
       settingsHash:()=>null,candidateLink:()=>null,birth:()=>null};
@@ -59,7 +59,7 @@ function harness(initial=[]) {
       './researchCapture':capture,'./marciIndependent':{buildSignal:()=>({ok:false})},
       './locationResearch':noop,'./marciShadow':noop,'./symbolStats':noop,'./researchSupplement':noop,
       './earlyEntryShadow':noop,'./groqShadowProducer':noop,'./alibabaShadowProducer':noop,'./v3Shadow':noop,
-      './researchRuntime':{canAdmit:()=>true}});
+      './researchRuntime':{canAdmit:()=>true},'./maintenance':{fenced:()=>false},...extras});
   }
   function exchange(fn) {
     fetchFn=(url,opts)=>{
@@ -269,6 +269,76 @@ test('history retention cannot trim an old unresolved obligation',async()=>{
   const history=Array.from({length:5001},(_,i)=>({id:`old-${i}`,mode:'paper',status:'CLOSED'}));
   const h=harness([t,...history]),engine=h.engine();await engine.panicClose();
   assert.equal(h.disk.trades.length,5001);assert.equal(h.disk.trades[0].id,t.id);assert.ok(h.disk.trades[0].privateOutcome);
+});
+
+test('maintenance checkpoint preserves an accepted UNKNOWN obligation beyond 5000 rows and fences restart',async(t)=>{
+  const h=harness(),original=trade(),exchangeOrders=new Map();h.trades.push(original);
+  h.exchange((endpoint,params)=>{
+    if (endpoint==='/v5/order/create') {
+      exchangeOrders.set(params.orderLinkId,order(original));
+      return new Promise(()=>{}); // Accepted at the exchange; acknowledgement never arrives.
+    }
+    return Promise.resolve(response());
+  });
+  const placed=observe(h.executor.placeLiveOrder({trade:original,settings,trades:h.trades,persist:h.persist}));
+  await h.advance(60100);assert.equal((await placed).error.reasonCode,'UNKNOWN_PRIVATE_OUTCOME');
+  const obligation=JSON.parse(JSON.stringify(original.privateOutcome));
+  h.trades.push(...Array.from({length:5001},(_,i)=>({id:`later-${i}`,mode:'paper',status:'CLOSED',
+    createdAt:1000000+i,closedAt:1000000+i,netPnl:0})));
+  assert.equal(h.persist(),true);
+
+  // Use the actual checkpoint's atomic serializer and JSON files, then load a fresh engine.
+  const dir=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'orayan-checkpoint-'));
+  const files=['trades','marciShadowTrades','engineControl'];
+  t.after(()=>{
+    for (const key of files) for (const suffix of ['.json','.json.tmp']) fs.rmSync(path.join(dir,key+suffix),{force:true});
+    fs.rmdirSync(dir);
+  });
+  const durable={DATA_DIR:dir,
+    read:(key,dflt)=>fs.existsSync(path.join(dir,`${key}.json`))?
+      JSON.parse(fs.readFileSync(path.join(dir,`${key}.json`),'utf8')):dflt,
+    write:(key,value)=>{fs.writeFileSync(path.join(dir,`${key}.json`),JSON.stringify(value));return true;}};
+  durable.write('trades',h.disk.trades);
+  durable.write('marciShadowTrades',[{id:'shadow',mode:'paper',status:'CLOSED'}]);
+  const control={desiredRunning:true,lastStartSource:'checkpoint-regression'};
+  durable.write('engineControl',control);
+  const engine=h.engine('live',{'./store':durable});
+  assert.equal(engine.resetTrades().ok,false);
+  engine.maintenanceCheckpoint();
+  const checkpoint=durable.read('trades',[]);
+  assert.equal(checkpoint.length,5001); // 5000 ordinary rows plus the older obligation.
+  assert.equal(checkpoint.filter(row=>row.mode==='paper').length,5000);
+  assert.equal(checkpoint.some(row=>row.id==='later-0'),false);
+  assert.equal(checkpoint.filter(row=>row.id===original.id).length,1);
+  assert.deepEqual(checkpoint.find(row=>row.id===original.id).privateOutcome,obligation);
+  assert.equal(checkpoint[0].privateOutcome.orderLinkId,original.id);
+  assert.deepEqual(durable.read('engineControl',{}),control);
+  assert.equal(durable.read('marciShadowTrades',[])[0].id,'shadow');
+
+  const restarted=harness(checkpoint);
+  restarted.exchange((endpoint,params,opts)=>{
+    if (opts.method==='POST') {
+      if (endpoint==='/v5/order/create') exchangeOrders.set(params.orderLinkId,{...params});
+      return Promise.resolve(response({orderId:'conflicting-replacement'}));
+    }
+    // Empty read-only evidence cannot resolve the original accepted exchange order.
+    return Promise.resolve(response({list:[]}));
+  });
+  const fresh=restarted.engine('live',{'./store':durable,'./maintenance':{fenced:()=>false}});
+  assert.equal(restarted.executor.hasUnresolvedLiveOutcome(fresh.getTrades({limit:Infinity})),true);
+  assert.equal(fresh.resetTrades().ok,false);
+  const scan=fresh.scanOnce();await restarted.advance(2000);await scan;
+  assert.equal(fresh.state.lastError,null);
+  assert.ok(restarted.queries.some(q=>q.params.orderLinkId===original.id));
+  assert.equal(restarted.executor.hasUnresolvedLiveOutcome(fresh.getTrades({limit:Infinity})),true);
+  assert.equal(restarted.posts.length,0,'restart must not submit any replacement mutation');
+  const replacement=trade('replacement');
+  const result=await observe(restarted.executor.placeLiveOrder({trade:replacement,settings,
+    trades:fresh.getTrades({limit:Infinity}),persist:()=>true}));
+  assert.equal(result.error.reasonCode,'LIVE_ADMISSION_FENCED');
+  assert.equal(restarted.posts.length,0);
+  assert.equal(exchangeOrders.size,1);assert.ok(exchangeOrders.has(original.id));
+  t.diagnostic('5001 later PAPER rows -> checkpoint: 5000 PAPER + 1 original UNKNOWN; restart fenced; replacement mutations: 0; original exchange order: 1');
 });
 
 test('tiny PAPER/risk smoke: normal paper admission, risk sizing and ambiguous candle resolves as loss',async()=>{
