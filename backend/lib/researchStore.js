@@ -400,6 +400,7 @@ class ResearchStore {
     this.state.earliestAt ??= meta.at;
   }
   emit(stream, record, options = {}) {
+    require('./maintenance').beforeAppend();
     const canonical = STREAMS[stream] || stream,
       optional = canonical === "telemetry";
     if (
@@ -636,12 +637,14 @@ class ResearchStore {
   }
   canAdmit(mode) {
     if (String(mode).toUpperCase() === "LIVE") return true;
+    if (require('./maintenance').fenced()) return false;
     return !this.state.captureHalted && !this.pressured();
   }
   canDispatch() {
     return this.canAdmit("SHADOW");
   }
   nativeState(key, value) {
+    require('./maintenance').beforeAppend();
     if (
       JSON.stringify(this.state.nativeEpisodeIndex[key]) ===
       JSON.stringify(value)

@@ -150,9 +150,15 @@ async function advise(snapshot,options={}){
     const stale=require('../../../backend/lib/researchPayload').staleReasons(snapshot,dispatchNow,config.maxDeferAgeMs);
     if(stale.length){const at=new Date(dispatchNow).toISOString(),record={...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'LOCAL_ABSTAIN'}),completed_at_utc:at,available_to_system_at_utc:at,latency_ms:0,tokens:null,decision:abstainDecision(stale,'DATA_STALE')};await index.append(record,dispatchNow);return record;}
   }
+  if (require('../../../backend/lib/maintenance').fenced()) return researchAI.maintenanceDeferred('Alibaba',snapshot);
   await index.append({...baseRecord({recordType:'REQUEST_STARTED',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,
     status:'REQUEST_STARTED'}),request_hash:requestHash,estimated_tokens_reserved:estimatedTokens,
     estimated_cost_usd_reserved:estimatedCostReserved,completion_tokens_reserved:completionReserveTokens},nowMs);
+  if (require('../../../backend/lib/maintenance').fenced()) {
+    await index.append({...baseRecord({recordType:'SHADOW_DECISION',requestId,snapshot,inputHash:compact.inputHash,config,nowIso,status:'MAINTENANCE_FENCED'}),
+      completed_at_utc:new Date().toISOString(),decision:abstainDecision(['MAINTENANCE_FENCED'],'MAINTENANCE_FENCED')},Date.now());
+    return researchAI.maintenanceDeferred('Alibaba',snapshot);
+  }
   const aiContext=researchAI.begin('Alibaba',snapshot,request,requestId,[config.apiKey]);
   const started=Date.now();
   let api;try{api=options.mode==='mock'?await options.mockTransport(request):await postAlibaba(request,{apiKey:config.apiKey,
@@ -191,3 +197,8 @@ class BoundedShadowQueue{
 }
 
 module.exports={configFromEnv,buildLegacyRequest,buildRequest,estimatePromptTokens,estimateTokens,estimatedCostUsd,advise,BoundedShadowQueue,abstainDecision};
+module.exports.advise = (...args) => {
+  const maintenance = require('../../../backend/lib/maintenance');
+  if (maintenance.fenced()) return Promise.resolve({status:'MAINTENANCE_FENCED',persisted:false});
+  return maintenance.run('provider','qwen-advisor',() => advise(...args));
+};

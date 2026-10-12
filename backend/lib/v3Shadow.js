@@ -12,6 +12,7 @@ const m34=require('./v34Measurements'),t34=require('./v34Trades'),control34=requ
 const r35=require('./v34bResearch'),{Holdout}=require('./v34bHoldout'),{classify,CHANNELS}=require('./v34bCapture');
 const {MeasurementCache}=require('./v34Cache');
 const minuteCache=new MeasurementCache();
+let minuteCacheManagement=false;
 const {Archive,ROW_BYTES,TRADE_ROW_BYTES}=require('./v3Archive');
 const corrected=require('./signals_trend_v30');
 const location=require('./locationResearch');
@@ -403,6 +404,8 @@ class ShadowJournal {
         'Budget skips are explicit capture gaps','Raw data is available in separate compressed downloads']};
   }
   async advance(now=Date.now(),get=require('./bybit').researchGetStamped) {
+    if (!require('./maintenance').current().context.getStore())
+      return require('./maintenance').run('management', 'v3', () => this.advance(now,get));
     if(this.tradeWorkerBusy || now-this.tradePollAt<15000 || process.env.ORAYAN_V3_SHADOW_ENABLED==='false')return;
     this.tradeWorkerBusy=true;this.tradePollAt=now;
     try {
@@ -540,11 +543,55 @@ class ShadowJournal {
   }
 }
 let instance;
+function managementSymbols(j=instance) {
+  return j ? [...new Set([...j.activeTrades.values(),...j.armWorkers.values()].map(t=>t.symbol))] : [];
+}
+async function refreshManagementContext(settings,getBtcRegime,j=instance) {
+  const symbols=managementSymbols(j);
+  if (!symbols.length || process.env.ORAYAN_V3_SHADOW_ENABLED==='false') return;
+  return require('./maintenance').run('management','v3-context',async()=>{
+    const market=require('./marketData');
+    const tickers=await market.getTickers({testnet:settings.testnet});
+    const instruments=await market.getInstruments({testnet:settings.testnet});
+    const btcRegime=await getBtcRegime();
+    for(const symbol of symbols) {
+      try {
+        const candles=await market.getCandles(symbol,settings.timeframe,200,{testnet:settings.testnet});
+        // Reuse the existing evaluator and receipt policy; do not call record/admit.
+        const row=evaluate({symbol,candles,ticker:tickers.find(t=>t.symbol===symbol),instrument:instruments.get(symbol),
+          btcRegime,settings,decisionAt:Date.now(),v2Signals:[]});
+        j.receipts(row,Date.now());
+      }catch(e){j.captureError(e,{symbol,subsystem:'MANAGEMENT_CONTEXT',retry:'NEXT_SCAN'});}
+    }
+    j.saveCheckpoint();
+  });
+}
+function advanceMinuteCache() {
+  if (!require('./maintenance').fenced())
+    return minuteCache.advance(undefined,(e,c)=>instance.captureError(e,c));
+  if (minuteCache.busy) return;
+  minuteCache.watch(managementSymbols(),require('./settings').effective().testnet);
+  minuteCacheManagement=true;
+  return require('./maintenance').run('management','v3-minute-cache',()=>minuteCache.advance(undefined,(e,c)=>instance.captureError(e,c)))
+    .finally(()=>{minuteCacheManagement=false;});
+}
 function journal(){if(!instance){const root=require('./store').DATA_DIR;
   instance=new ShadowJournal(path.join(root,'v3-shadow-compact-v1'),{legacyDir:path.join(root,'v3-shadow')});
   const timer=setInterval(()=>{instance.advance().catch(e=>instance.captureError(e,{subsystem:'TRADE_WORKER'}));
-    minuteCache.advance(undefined,(e,c)=>instance.captureError(e,c));},15000);timer.unref();}return instance;}
+    advanceMinuteCache();},15000);timer.unref();}return instance;}
 function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,btcRegime,settings,signals,marketSnapshot}) {
+  if (require('./maintenance').fenced()) {
+    if (!instance || process.env.ORAYAN_V3_SHADOW_ENABLED==='false') return;
+    return require('./maintenance').run('management','v3-context',()=>{
+      for(const symbol of managementSymbols()) {
+        const candles=candlesBySymbol.get(symbol);if(!candles)continue;
+        const row=evaluate({symbol,candles,ticker:tickerBySymbol.get(symbol),instrument:instruments?.get(symbol),
+          btcRegime,settings,decisionAt:Date.now(),v2Signals:[]});
+        instance.receipts(row,Date.now());
+      }
+      instance.saveCheckpoint();
+    });
+  }
   if(process.env.ORAYAN_V3_SHADOW_ENABLED==='false')return;
   if(minimal.enabled())minimal.config(settings,hash(settings));
   const j=journal();
@@ -583,4 +630,15 @@ function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,b
   j.advance().catch(e=>j.captureError(e,{subsystem:'TRADE_WORKER'}));
 }
 module.exports={VERSION,BENCHMARK,evaluate,ShadowJournal,observeProviders,observeScan,status:()=>({...journal().status(),lastScanErrors:journal().lastScanErrors??null}),
+  initializeManagement: () => { journal(); },
+  maintenanceCheckpoint: () => {
+    if (!instance) return;
+    instance.saveCheckpoint();
+    const atomic=require('./researchStore').atomic;
+    atomic(instance.checkpoint,JSON.parse(fs.readFileSync(instance.checkpoint,'utf8')));
+    atomic(instance.holdout.file,instance.holdout.state);
+  },
+  refreshManagementContext,
+  maintenanceStatus: () => ({ busy: !!instance?.tradeWorkerBusy || (minuteCache.busy&&minuteCacheManagement), researchBusy: minuteCache.busy&&!minuteCacheManagement,
+    obligations: (instance?.activeTrades.size || 0) + (instance?.armWorkers.size || 0) }),
   summary:generation=>generation?journal().archive.sessions.get(generation)?.status||journal().summary():journal().summary(),cohort:()=>journal().cohort(),daily:day=>journal().dailyExport(day),download:(channel,generation)=>journal().export(channel||'v3',generation)};

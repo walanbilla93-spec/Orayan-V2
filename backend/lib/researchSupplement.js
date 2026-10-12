@@ -30,6 +30,7 @@ function files(date='all') {
     (date==='all'||x.startsWith(`supplement-${date}-`))).sort().map(x=>path.join(DIR,x));
 }
 function prune(now=Date.now()) {
+  if (require('./maintenance').fenced()) return;
   if (!fs.existsSync(DIR)) return;
   const cutoff=now-RETENTION_MS;
   for (const file of files()) {
@@ -223,6 +224,8 @@ async function fetchBars(symbol,start,end,testnet) {
     .filter(x=>x.ts!==null&&x.high!==null&&x.low!==null&&x.close!==null).sort((a,b)=>a.ts-b.ts);
 }
 async function resolveDue(limit=8) {
+  if (require('./maintenance').current().context.getStore()?.lane !== 'management')
+    return require('./maintenance').run('management','supplement-outcomes',()=>resolveDue(limit));
   if (resolving) return;
   resolving=true;
   try {
@@ -243,6 +246,7 @@ async function resolveDue(limit=8) {
   } finally {resolving=false;}
 }
 module.exports={VERSION,STOP_VERSION,observeStructure,observeStop,resolveDue,files,prune,structureLabel,stopLabel,
+  maintenanceStatus: () => ({busy: resolving, obligations: pendingStructure.size + pendingStops.size}),
   causalEvents:(symbol,at)=>[...pendingStructure.values()].filter(r=>r.symbol===symbol&&r.at<=at&&r.breakTs<=at)
     .map(r=>({eventId:r.eventId,type:r.structureType,direction:r.side,breakPrice:r.breakLevel,
       displacementAtr:r.displacementATR,displacementDefinition:'EXISTING_EVENT_BODY_OVER_EVENT_ATR14',

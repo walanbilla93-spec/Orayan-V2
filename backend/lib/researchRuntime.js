@@ -53,6 +53,7 @@ function enabled() {
   return require("./minimalCapture").researchEnabled();
 }
 function canAdmit(mode) {
+  if (String(mode).toUpperCase() !== 'LIVE' && require('./maintenance').fenced()) return false;
   if (String(mode).toUpperCase() === "LIVE") return true;
   if (!enabled()) return true;
   try {
@@ -64,7 +65,7 @@ function canAdmit(mode) {
 function start() {
   if (timer) return;
   const tick = async () => {
-    if (busy || !enabled()) return;
+    if (busy || !enabled() || require('./maintenance').fenced()) return;
     busy = true;
     try {
       await require("./researchArchive").tick(current());
@@ -81,6 +82,7 @@ function start() {
   timer.unref();
 }
 async function downloadCurrent(options = {}) {
+  require('./maintenance').current().assertStart('archive');
   const c = current(),
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), "orayan-export-")),
     file = path.join(scratch, "current.zip");
@@ -125,6 +127,7 @@ function providerExportMetadata(provider) {
   };
 }
 async function daily(day) {
+  require('./maintenance').current().assertStart('archive');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day))
     throw Object.assign(Error("INVALID_ARCHIVE_DATE"), { statusCode: 400 });
   const c = current(),
@@ -193,6 +196,7 @@ function status() {
   }
 }
 module.exports = {
+  maintenanceStatus: () => ({ busy }),
   status,
   current,
   enabled,

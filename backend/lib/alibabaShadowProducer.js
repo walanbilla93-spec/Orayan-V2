@@ -315,6 +315,7 @@ class DurableShadowRuntime {
   }
 
   async process(item) {
+    if (require('./maintenance').fenced()) return require('./researchAI').maintenanceDeferred('Alibaba',item.snapshot);
     const {id,snapshot} = item;
     await appendAudit(this.cfg,{record_type:'PROCESSING_EVENT',handoff_id:id,
       candidate_id:snapshot.candidate_id,processing_status:'PROCESSING'});
@@ -322,6 +323,7 @@ class DurableShadowRuntime {
     if (!this.cfg.allowLive) result=await advise(snapshot,{config:this.cfg,mode:'live'});
     else {
       do {
+        if (require('./maintenance').fenced()) return require('./researchAI').maintenanceDeferred('Alibaba',snapshot);
         result=await advise(snapshot,{config:this.cfg,mode:testTransport?'mock':'live',
           ...(testTransport?{mockTransport:testTransport}:{})});
         if (result?.status === 'BUDGET_DEFERRED') {
@@ -387,6 +389,9 @@ function getRuntime(cfg) {
 }
 
 async function initialize(env = process.env) {
+  return require('./maintenance').run('provider', 'qwen-initialize', () => initializeWork(env));
+}
+async function initializeWork(env) {
   const cfg=config(env);
   const [recovery] = await Promise.all([
     getRuntime(cfg).ready,
@@ -396,6 +401,7 @@ async function initialize(env = process.env) {
 }
 
 function observeBirth(signal, birth, context = {}) {
+  if (require('./maintenance').fenced()) return false;
   if(minimal.enabled()&&!minimal.researchEnabled())return null;
   if(minimal.researchEnabled()&&!minimal.current().canDispatch())return false;
   if (!birth || birth.kind !== 'candidate_birth' || birth.engine !== 'NEW_ORAYAN') return false;
@@ -465,6 +471,9 @@ async function status(env = process.env) {
 }
 
 module.exports = { observeEnvironment, observeBirth, buildSnapshot, status, config, initialize,
+  maintenanceStatus: () => ({queueDepth: runtime?.queue.pending.length || 0, inFlight: runtime?.queue.active ? 1 : 0,
+    reserved: runtime?.reserved || 0, initializing: !!runtime && !runtime.recoveryDone,
+    openRequests: 0}),
   _test: { environment, baselineFor, h2Decision, withinDataRoot, handoffId,
     setTransport:value=>{testTransport=value;}, getRuntime,
     reset: () => { environment.length = 0; seenBirths.clear(); runtime = null; runtimeConfigKey = null; testTransport = null; } } };

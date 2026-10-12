@@ -257,6 +257,7 @@ function liquidationWindowTotals(rows,breakTs,from,to,asOf=Date.now()) {
 }
 function candidateLink(candidateId) { return candidateKeysById.get(candidateId) || null; }
 function ingest(message, receivedAt = Date.now()) {
+  if (require('./maintenance').fenced()) return;
   if (!message?.topic?.startsWith('allLiquidation.') || !Array.isArray(message.data)) return;
   lastMessageAt = receivedAt;
   for (const x of message.data) {
@@ -463,6 +464,8 @@ function appendOrderFlowTerminal(compact,flow) {
   return true;
 }
 async function pumpOrderFlow() {
+  if (require('./maintenance').current().context.getStore()?.lane !== 'management')
+    return require('./maintenance').run('management','order-flow-outcomes',()=>pumpOrderFlow());
   if (orderFlowPumping) return;
   orderFlowPumping=true;
   try {
@@ -570,6 +573,8 @@ function computeForwardLabel(birth, bars) {
     fillAuditMethod:'1M_OHLC_PRICE_CROSS_ONLY_NOT_QUEUE_OR_SPREAD_GUARANTEE',barsEvaluated:usable.length};
 }
 async function resolveDueForwardLabels(limit=8) {
+  if (require('./maintenance').current().context.getStore()?.lane !== 'management')
+    return require('./maintenance').run('management','forward-outcomes',()=>resolveDueForwardLabels(limit));
   if (forwardResolving) return;
   forwardResolving=true;
   try {
@@ -605,6 +610,7 @@ function startForwardResolver() {
   if (forwardTimer.unref) forwardTimer.unref();
 }
 function birth(signal, context) {
+  if (require('./maintenance').fenced()) return null;
   const {scanId, scanAt, ticker, candles, settings, snapshot, btc, universe, tickerDynamic} = context;
   const entry=n(signal.entry), sl=n(signal.sl), tp=n(signal.tp), price=n(ticker?.markPrice);
   const risk=entry!=null&&sl!=null?Math.abs(entry-sl):null;
@@ -769,6 +775,7 @@ function exportFiles(date = 'all', raw = false) {
     .map(name => path.join(dir, name));
 }
 module.exports={VERSION,COMPACT_VERSION,watch,stop,birth,outcome,features,ingest,liquidationFeatures,tickerDynamics,previewCandidateLink,
+  maintenanceStatus: () => ({busy: forwardResolving || orderFlowPumping, obligations: pendingForward.size + pendingOrderFlow.length}),
   settingsHash,computeForwardLabel,resolveDueForwardLabels,exportFiles,prune,
   liquidationWindows,liquidationWindowTotals,candidateLink,researchGet,
   _test:{orderFlowFailureReason,appendOrderFlowTerminal,scheduleOrderFlowLabel,pumpOrderFlow,

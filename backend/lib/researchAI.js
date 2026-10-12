@@ -29,6 +29,7 @@ function context(provider, snapshot, requestId, model) {
   };
 }
 function begin(provider, snapshot, request, requestId, secrets = []) {
+  require('./maintenance').current().assertStart('provider');
   const c = capture();
   if (!c) return null;
   if (!c.canDispatch()) throw Error("RESEARCH_CAPTURE_HALTED");
@@ -237,6 +238,13 @@ function notRequested(provider, birth, candidateId, reason) {
   );
 }
 module.exports = {
+  maintenanceDeferred(provider, snapshot) {
+    const c = capture();
+    if (c) persist(c, { provider, event: 'DISPATCH_DISPOSITION', disposition: 'NOT_REQUESTED',
+      reason: 'MAINTENANCE_FENCED', sourceEpisodeId: snapshot.candidate_episode_id || snapshot.candidate_id,
+      snapshot: clean(snapshot, c.secrets), at: Date.now() });
+    return { status: 'MAINTENANCE_FENCED', persisted: !!c };
+  },
   begin,
   raw,
   finish,

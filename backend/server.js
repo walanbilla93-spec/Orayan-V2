@@ -18,6 +18,8 @@ const journal = require('./lib/journal');
 const runtime = require('./lib/runtimeIdentity');
 const groqShadowProducer = require('./lib/groqShadowProducer');
 const alibabaShadowProducer = require('./lib/alibabaShadowProducer');
+// Restore checkpointed outcome workers even when research admissions stay fenced at boot.
+if (require('./lib/maintenance').fenced()) require('./lib/v3Shadow').initializeManagement();
 
 const PORT = Number(process.env.PORT) || 8080;
 const FRONTEND_DIR = path.resolve(__dirname, '..', 'frontend');
@@ -101,6 +103,13 @@ const server = http.createServer(async (req, res) => {
     const handler = routes[key];
     if (!handler) return send(res, 404, { error: `No route for ${key}` });
     try {
+      if (req.method === 'GET' && /export|\.zip$|\/api\/v3\/(cohort|daily)$/.test(url.pathname)) {
+        const maintenance = require('./lib/maintenance');
+        let release;
+        const done = new Promise(resolve=>{release=resolve;});
+        maintenance.run('archive','http-reader',()=>done);
+        res.once('close',release); res.once('finish',release);
+      }
       const body = req.method === 'POST' ? await readBody(req) : {};
       const query = Object.fromEntries(url.searchParams.entries());
       const result = await handler({ body, query, req });

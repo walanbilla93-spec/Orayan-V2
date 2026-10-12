@@ -353,6 +353,15 @@ async function scanOnce() {
   const settings = settingsMod.effective();
 
   try {
+    if (require('./maintenance').fenced()) {
+      await require('./maintenance').run('management', 'engine', async () => {
+        await manageOpenTrades(settings);
+        await manageShadowTrades(settings);
+        await manageMarciCounterfactuals(settings);
+        await v3Shadow.refreshManagementContext(settings, () => getBtcRegime(settings));
+      });
+      return;
+    }
     if (Date.now()-lastStopRecoveryBackfillAt >= 3600000) {
       lastStopRecoveryBackfillAt = Date.now();
       for (const trade of closedTrades()) {
@@ -363,6 +372,11 @@ async function scanOnce() {
     await manageOpenTrades(settings);
     await manageShadowTrades(settings);
     await manageMarciCounterfactuals(settings);
+
+    if (require('./maintenance').fenced()) {
+      await v3Shadow.refreshManagementContext(settings, () => getBtcRegime(settings));
+      return;
+    }
 
     if (Date.now() - state.universeBuiltAt > settings.universeRefreshMin * 60000 || !state.universe.length) {
       await buildUniverse(settings);
@@ -969,7 +983,21 @@ function clearLastSignals() {
   return { ok: true };
 }
 
+// MAINTENANCE_CHECKPOINT_BEGIN: publish existing working state without changing RUN intent.
+function maintenanceCheckpoint() {
+  const path=require('path'),atomic=require('./researchStore').atomic;
+  atomic(path.join(store.DATA_DIR,'trades.json'),trades.slice(-5000));
+  atomic(path.join(store.DATA_DIR,'marciShadowTrades.json'),shadowTrades.slice(-5000));
+  atomic(path.join(store.DATA_DIR,'engineControl.json'),engineControl);
+  if(captureSafety.total) {
+    const keep=Math.max(0,5000-trades.length),cutoff=Math.max(0,captureSafety.total-keep);
+    atomic(path.join(store.DATA_DIR,'captureSafetyClosed.json'),{total:Math.min(captureSafety.total,keep),
+      closed:captureSafety.closed.filter(x=>x.index>=cutoff).map(x=>({...x,index:x.index-cutoff}))});
+  }
+}
+// MAINTENANCE_CHECKPOINT_END
 module.exports = {
+  maintenanceCheckpoint,
   start, stop, shouldAutoResume, scanOnce, panicClose, releaseKillSwitch, clearHalt,
   getState, getTrades, getShadowTrades, resetTrades, resetShadowTrades, clearLastSignals,
   summary, shadowSummary, state,

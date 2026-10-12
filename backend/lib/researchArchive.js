@@ -679,3 +679,7 @@ module.exports = {
   collectGarbage,
   compactIndex,
 };
+for (const name of ['build','closeDay','retention','tick','collectGarbage','compactIndex']) {
+  const work = module.exports[name];
+  module.exports[name] = (...args) => require('./maintenance').run('archive','canonical',() => work(...args));
+}
