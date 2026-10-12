@@ -358,10 +358,18 @@ function statOrNull(file) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
+async function recoverForMaintenance(env = process.env) {
+  const cfg = config(env);
+  if (runtime) await runtime.ready;
+  // Drain has completed. Ledger reconciliation never constructs a dispatch runtime.
+  const index = await ledgerIndex(cfg.ledger, Date.now(), {allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Groq')});
+  if (index.openRequests.size) throw Error('GROQ_LEDGER_OPEN_REQUESTS');
+}
+
 async function status(env = process.env) {
   const cfg = config(env);
   const audit = statOrNull(cfg.snapshotAudit);
-  const state = await ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Groq')});
+  const state = await ledgerIndex(cfg.ledger,Date.now(),{readOnly:require('./maintenance').current().state === 'SEALED',allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Groq')});
   return {
     enabled: cfg.allowLive,
     model: cfg.model || DEFAULT_MODEL,
@@ -373,7 +381,7 @@ async function status(env = process.env) {
   };
 }
 
-module.exports = { observeEnvironment, observeBirth, buildSnapshot, status, config, initialize,
+module.exports = { recoverForMaintenance, observeEnvironment, observeBirth, buildSnapshot, status, config, initialize,
   maintenanceStatus: () => ({queueDepth: runtime?.queue.pending.length || 0, inFlight: runtime?.queue.active ? 1 : 0,
     reserved: runtime?.reserved || 0, initializing: !!runtime && !runtime.recoveryDone,
     openRequests: 0}),

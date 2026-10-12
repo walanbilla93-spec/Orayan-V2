@@ -9,7 +9,7 @@ function fixture(extra={}) {
     pendingRows:0,pendingBytes:0,captureHalted:false,pendingFailure:null}, providers:{groq:{queueDepth:0},qwen:{queueDepth:0}},
     archiveIdle:true,scanResearchBusy:false,managementBusy:false,managementObligations:{total:0},journalBytes:0,walFiles:0};
   let saved, flushes=0;
-  const m = new Maintenance({load:()=>null,save:value=>{saved=value;},inspect:()=>detail,
+  const m = new Maintenance({load:()=>undefined,save:value=>{saved=value;},inspect:()=>detail,
     flush:()=>{flushes++;detail.journalBytes=0;detail.walFiles=0;detail.capture.pendingRows=0;detail.capture.pendingBytes=0;},...extra});
   return {m,detail,get saved(){return saved;},get flushes(){return flushes;}};
 }
@@ -103,13 +103,13 @@ test('enter/exit cycles preserve external run intent and never create workers or
   }finally{clearInterval(timer);}
 });
 test('persisted active flag and unreadable flag restart fenced with no stale seal',()=>{
-  for(const load of [()=>({maintenance:true,state:'SEALED'}),()=>{throw Error('bad JSON');}]) {
+  for(const load of [()=>({maintenance:true,state:'FAILED',maintenanceEpoch:'00000000-0000-4000-8000-000000000001',processBootId:'00000000-0000-4000-8000-000000000002'}),()=>{throw Error('bad JSON');}]) {
     const f=fixture({load});assert.equal(f.m.state,'FAILED');assert.equal(f.m.fenced(),true);
     assert.equal(f.m.sealedWatermark,null);assert.match(f.m.reason,/RESTART_REQUIRES_RESEAL|MAINTENANCE_FLAG_UNREADABLE/);
   }
 });
 test('explicit retry reseals after restart without opening an admission window',async()=>{
-  const f=fixture({load:()=>({maintenance:true,state:'SEALED'})});
+  const f=fixture({load:()=>({maintenance:true,state:'FAILED',maintenanceEpoch:'00000000-0000-4000-8000-000000000001',processBootId:'00000000-0000-4000-8000-000000000002'})});
   assert.equal((await f.m.enter()).state,'FAILED');
   const reseal=f.m.enter({retry:true});assert.equal(f.m.fenced(),true);
   assert.throws(()=>f.m.run('research','birth',()=>{}),/MAINTENANCE_FENCED/);

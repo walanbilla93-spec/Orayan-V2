@@ -18,16 +18,29 @@ class Maintenance {
     this.operation = null;
     let saved;
     try { saved = hooks.load(); }
-    catch { saved = {maintenance:true,reason:'MAINTENANCE_FLAG_UNREADABLE'}; }
-    if (saved?.maintenance) {
-      this.state = 'FAILED';
-      this.reason = saved.reason === 'MAINTENANCE_FLAG_UNREADABLE' ? saved.reason : 'RESTART_REQUIRES_RESEAL';
-      this.sealedWatermark = null;
+    catch { this.state = 'FAILED'; this.reason = 'MAINTENANCE_FLAG_UNREADABLE'; return; }
+    // Only undefined means absent. JSON null is an existing invalid control file.
+    if (saved !== undefined) {
+      const states = ['RUNNING','ENTERING','SEALED','EXITING','FAILED'];
+      const identity = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+      const valid = saved && typeof saved === 'object' && !Array.isArray(saved) &&
+        states.includes(saved.state) && typeof saved.maintenance === 'boolean' &&
+        saved.maintenance === (saved.state !== 'RUNNING') &&
+        (!saved.maintenance || (identity(saved.maintenanceEpoch) && identity(saved.processBootId))) &&
+        (saved.state !== 'RUNNING' || (!saved.sealedWatermark && !saved.fullSealed && !saved.fullWatermark)) &&
+        (saved.state !== 'SEALED' || (saved.sealedWatermark && typeof saved.sealedWatermark.epoch === 'string' &&
+          ['sequence','attempted','accepted','persisted','lost'].every(k => Number.isInteger(saved.sealedWatermark[k]) && saved.sealedWatermark[k] >= 0) &&
+          saved.sealedWatermark.attempted === saved.sealedWatermark.accepted &&
+          saved.sealedWatermark.accepted === saved.sealedWatermark.persisted && saved.sealedWatermark.lost === 0));
+      if (!valid || saved.maintenance) {
+        this.state = 'FAILED';
+        this.reason = valid ? 'RESTART_REQUIRES_RESEAL' : 'MAINTENANCE_FLAG_INVALID';
+      }
     }
   }
   fenced() { return this.state !== 'RUNNING'; }
   save() { this.hooks.save({ maintenance: this.fenced(), state: this.state, reason: this.reason,
-    maintenanceEpoch: this.maintenanceEpoch || null, sealedWatermark: this.sealedWatermark }); }
+    processBootId: require('./runtimeIdentity').processBootId, maintenanceEpoch: this.maintenanceEpoch || null, sealedWatermark: this.sealedWatermark }); }
   assertStart(lane) {
     if (lane === 'archive' && this.context.getStore()?.lane === 'archive') return;
     if (this.fenced() && lane !== 'management')
@@ -68,13 +81,31 @@ class Maintenance {
     return { maintenance: this.fenced(), state: this.state, sealScope: 'RESEARCH_SEALED_MANAGEMENT_OPEN',
       admissionsFenced: this.fenced(), providersFenced: this.fenced(), archiveFenced: this.fenced(),
       activeSections: Object.fromEntries(this.active), ...detail,
+      providerRecoveryPending: !!this.recoveryPending, providerRecoveryFailure: this.recoveryFailure || null,
       writerFlushState: this.flushState, sealedWatermark: this.sealedWatermark,
       managementWatermark: this.watermark(detail.capture), fullSealed: this.fullSealed,
       fullWatermark: this.fullWatermark || null,
-      snapshotSafe: this.state === 'SEALED' && this.fullSealed && !detail.managementBusy && !detail.scanResearchBusy &&
-        detail.archiveIdle && detail.managementObligations.total === 0 && !detail.capture.pendingRows &&
-        !detail.capture.pendingBytes && !detail.capture.captureHalted && !detail.capture.pendingFailure,
+      fullSymbolStatsVersion: this.fullSymbolStatsVersion ?? null,
+      snapshotSafe: this.state === 'SEALED' && this.fullSealed && this.flushState === 'COMMITTED' && !this.reason &&
+        this.fullBoundaryClean(detail) && !!this.fullWatermark &&
+        this.fullSymbolStatsVersion === detail.symbolStats?.version &&
+        Object.entries(this.watermark(detail.capture)).every(([key,value]) => this.fullWatermark[key] === value),
       reason: this.reason, timestamp: new Date().toISOString(), epoch: detail.capture.epochId };
+  }
+  fullBoundaryClean(d) {
+    const c = d.capture, native = d.symbolStats || {};
+    return !this.active.size && !this.recoveryPending && !this.recoveryFailure && !this.blockers(d).length &&
+      !d.managementBusy && d.managementObligations.total === 0 &&
+      !d.exportReaders && !d.archiveBuildActivity && !native.pending && !native.dirty && !native.failure &&
+      !c.pendingRows && !c.pendingBytes && !d.journalBytes && !d.walFiles &&
+      c.attemptedRows === c.acceptedRows && c.acceptedRows === c.persistedRows && c.lostRows === 0 &&
+      !c.captureHalted && !c.pendingFailure;
+  }
+  async recoverProviders() {
+    this.recoveryPending = true; this.recoveryFailure = null;
+    try { await this.hooks.recoverProviders?.(); }
+    catch (error) { this.recoveryFailure = 'PROVIDER_RECOVERY_FAILED:' + error.message; throw Error(this.recoveryFailure); }
+    finally { this.recoveryPending = false; }
   }
   blockers(detail) {
     const names = [...this.active].filter(([k]) => !k.startsWith('management:')).map(([k,v]) => k + '=' + v);
@@ -103,6 +134,7 @@ class Maintenance {
           if (Date.now() >= deadline) throw Error('DRAIN_TIMEOUT:' + blockers.join(';'));
           await new Promise(resolve => setTimeout(resolve, Math.min(20, deadline - Date.now())));
         }
+        await this.recoverProviders();
         this.flushState = 'FLUSHING';
         await this.hooks.flush();
         if (Date.now() > deadline) throw Error('DRAIN_TIMEOUT:writer flush');
@@ -114,7 +146,8 @@ class Maintenance {
         this.flushState = 'COMMITTED';
         this.sealedWatermark = this.watermark(c);
         this.state = 'SEALED';
-        this.fullSealed = detail.managementObligations.total === 0 && !detail.managementBusy;
+        this.fullSealed = this.fullBoundaryClean(detail);
+        this.fullSymbolStatsVersion = this.fullSealed ? detail.symbolStats?.version : null;
         this.fullWatermark = this.fullSealed ? this.watermark(c) : null;
         this.save();
       } catch (e) {
@@ -128,9 +161,10 @@ class Maintenance {
   fullSeal({timeoutMs=30000}={}) {
     if (this.operation) return this.operation;
     if (this.state !== 'SEALED') throw Object.assign(Error('RESEARCH_SEAL_REQUIRED'),{statusCode:409});
-    if (this.fullSealed) return Promise.resolve(this.status());
+    if (this.fullSealed && this.status().snapshotSafe) return Promise.resolve(this.status());
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000)
       throw Object.assign(Error('INVALID_DRAIN_TIMEOUT'),{statusCode:400});
+    this.fullSealed = false;
     const deadline = Date.now()+timeoutMs;
     this.operation = Promise.resolve().then(async () => {
       try {
@@ -141,14 +175,16 @@ class Maintenance {
           if (Date.now() >= deadline) throw Error('FULL_SEAL_TIMEOUT:management obligations/activity:' + JSON.stringify(d.managementObligations));
           await new Promise(resolve=>setTimeout(resolve,20));
         }
+        await this.recoverProviders();
         this.flushState = 'FLUSHING';
         await this.hooks.flush();
         const d = this.hooks.inspect(), c = d.capture;
-        if (Date.now()>deadline || this.state !== 'SEALED' || d.managementBusy || d.managementObligations.total || this.blockers(d).length ||
+        if (Date.now()>deadline || this.state !== 'SEALED' || !this.fullBoundaryClean(d) ||
           c.captureHalted || c.pendingFailure || c.pendingRows || c.pendingBytes || d.journalBytes || d.walFiles ||
           c.attemptedRows !== c.acceptedRows || c.acceptedRows !== c.persistedRows || c.lostRows)
           throw Error('FULL_BOUNDARY_NOT_CLEAN');
-        this.fullSealed=true; this.fullWatermark=this.watermark(c); this.flushState='COMMITTED'; this.save();
+        this.fullSealed=true; this.fullWatermark=this.watermark(c);
+        this.fullSymbolStatsVersion=d.symbolStats?.version; this.flushState='COMMITTED'; this.save();
       } catch(e) { this.state='FAILED'; this.fullSealed=false; this.reason=e.message; this.flushState='FAILED'; this.save(); }
       return this.status();
     }).finally(()=>{this.operation=null;});
@@ -173,8 +209,12 @@ function current() {
   if (singleton) return singleton;
   const file = path.join(require('./store').DATA_DIR, 'maintenance-control.json');
   singleton = new Maintenance({
-    load: () => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null,
+    load: () => fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : undefined,
     save: value => { fs.mkdirSync(path.dirname(file), { recursive: true }); require('./researchStore').atomic(file, value); },
+    recoverProviders: async () => {
+      await require('./groqShadowProducer').recoverForMaintenance();
+      await require('./alibabaShadowProducer').recoverForMaintenance();
+    },
     prepare: () => require('./v3Shadow').initializeManagement(),
     inspect: () => {
       const c = require('./researchRuntime').current(), capture = c.status();
@@ -200,9 +240,11 @@ function current() {
         scanResearchBusy: engine.state.scanning || v3.researchBusy || legacy.some(x=>x.busy), managementBusy: v3.busy || [...current().active.keys()].some(k => k.startsWith('management:')),
         managementObligations: { native, counterfactuals, v3: v3.obligations, canonicalUnresolved: unresolved,
           legacyObligations, total: native + counterfactuals + v3.obligations + unresolved + legacyObligations },
+        symbolStats: require('./symbolStats').maintenanceStatus(),
         journalBytes: capture.indexJournalBytes, walFiles: fs.readdirSync(c.wal).length };
     },
     flush: () => {
+      require('./symbolStats').maintenanceCheckpoint();
       require('./journal').flush(); require('./engine').maintenanceCheckpoint();
       require('./v3Shadow').maintenanceCheckpoint();
       const c = require('./researchRuntime').current(); c.recover(); c.flush();

@@ -137,3 +137,34 @@ no manual terminalization is authorized. Linux filesystem durability, Northflank
 handoff/shell persistence and private snapshot transfer require live verification.
 This patch does not remove the old initial shutdown race, provide a backup transport,
 expand storage, or prove compatibility with the future disk-index candidate.
+
+## Three-defect correction qualification
+
+The follow-up maintenance patch checkpoints `symbolStats.json` through the existing
+durable atomic writer, consumes its delayed timer, and exposes pending/dirty/failure
+and version state. Full snapshot safety also requires the published native version
+to remain unchanged. Write/fsync errors retain dirty state and fail maintenance closed.
+
+After existing provider activity drains, maintenance explicitly reconciles both
+provider ledgers before publishing either boundary. This operation does not construct
+a dispatch runtime or retry an uncertain request. Existing uncertainty records and
+reserved usage/cost accounting are retained. SEALED provider polling uses a read-only
+ledger load, including cold-cache and day-rollover reads; missing recovery is an error
+instead of a publication from polling.
+
+An absent control file alone permits normal first boot. Existing JSON is validated for
+state/maintenance consistency, active epoch/boot UUIDs and seal watermark shape/counts.
+Unreadable or invalid files restart FAILED and fenced. Valid active flags also restart
+fenced, with no trusted seal; explicit retry reseals without reopening admissions.
+
+`snapshotSafe` rechecks full seal and committed flush, all active sections, research and
+management obligations, provider drain/recovery, archive builds/readers, native writers,
+pending rows/bytes, WAL/journal, attempted=accepted=persisted, zero loss, capture failure,
+and equality of current epoch/sequence/counters/native version to the published boundary.
+An invalidation reason prevents snapshot safety.
+
+This correction does not establish the first deployment from the old baseline. Before
+any future production action, separately prove the outgoing old process's durable
+producer handoff, stop-before-start single-writer volume ownership, complete private
+snapshot verification and restoration of management obligations. No distributed lock,
+platform deployment behavior, memory/UI candidate or Meta Brain change is included here.
