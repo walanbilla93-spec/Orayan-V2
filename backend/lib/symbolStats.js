@@ -57,13 +57,35 @@ try {
 }
 
 let saveTimer = null;
+let dirty = false, persistenceFailure = null;
+let version = 0;
 function persist() {
+  version++;
+  dirty = true;
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    store.write('symbolStats', stats);
+    if (store.write('symbolStats', stats)) { dirty = false; persistenceFailure = null; }
+    else persistenceFailure = 'SYMBOL_STATS_WRITE_FAILED';
   }, 2000);
   if (saveTimer.unref) saveTimer.unref();
+}
+
+function maintenanceCheckpoint() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  // Even an earlier ordinary write needs a durable checkpoint at the boundary.
+  try {
+    const fs = require('fs'), path = require('path');
+    fs.mkdirSync(store.DATA_DIR, {recursive:true});
+    require('./researchStore').atomic(path.join(store.DATA_DIR, 'symbolStats.json'), stats);
+    dirty = false; persistenceFailure = null;
+  } catch (error) {
+    dirty = true; persistenceFailure = 'SYMBOL_STATS_CHECKPOINT_FAILED:' + error.message;
+    throw Error(persistenceFailure);
+  }
+}
+function maintenanceStatus() {
+  return {pending:!!saveTimer, dirty, failure:persistenceFailure, version};
 }
 
 function entry(symbol) {
@@ -172,7 +194,10 @@ function snapshot() {
 
 function reset() {
   stats = {};
-  store.write('symbolStats', stats);
+  version++;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  dirty = !store.write('symbolStats', stats);
+  persistenceFailure = dirty ? 'SYMBOL_STATS_WRITE_FAILED' : null;
 }
 
-module.exports = { recordClose, check, snapshot, reset, evaluate };
+module.exports = { maintenanceCheckpoint, maintenanceStatus, recordClose, check, snapshot, reset, evaluate };

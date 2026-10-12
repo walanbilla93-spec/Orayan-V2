@@ -47,6 +47,12 @@ function requireAlibabaExportAuth(req,env=process.env){
 }
 
 function requireResearchExportAuth(req,env=process.env){requireGroqExportAuth(req,env);requireAlibabaExportAuth(req,env);}
+function requireMaintenanceAuth(req, env = process.env) {
+  if (!env.GROQ_SHADOW_EXPORT_TOKEN && !env.ALIBABA_SHADOW_EXPORT_TOKEN)
+    throw Object.assign(Error('MAINTENANCE_OPERATOR_AUTH_NOT_CONFIGURED'), { statusCode: 503 });
+  // Reuse both existing protected export credentials, never fail open when absent.
+  requireResearchExportAuth(req,env);
+}
 function researchExportPlan(files=[]) {
   const watermarkAt=Date.now();
   const plan=files.map(file=>({path:file,size:fs.existsSync(file)?fs.statSync(file).size:0}));
@@ -95,6 +101,23 @@ async function withFloatingPnl(trades) {
 
 /** Route table: 'METHOD /path' -> async (ctx) => body */
 const routes = {
+  'POST /api/maintenance/enter': async ({req,body={}}) => {
+    requireMaintenanceAuth(req);
+    if (!require('../lib/minimalCapture').researchEnabled())
+      throw Object.assign(Error('CANONICAL_RESEARCH_CAPTURE_REQUIRED'), {statusCode:409});
+    if (String(settingsMod.effective().mode).toUpperCase() === 'LIVE')
+      throw Object.assign(Error('MAINTENANCE_PAPER_SHADOW_ONLY'), {statusCode:409});
+    return require('../lib/maintenance').current().enter(body);
+  },
+  'GET /api/maintenance/status': async ({req}) => {
+    requireMaintenanceAuth(req); return require('../lib/maintenance').current().status();
+  },
+  'POST /api/maintenance/exit': async ({req}) => {
+    requireMaintenanceAuth(req); return require('../lib/maintenance').current().exit();
+  },
+  'POST /api/maintenance/seal': async ({req,body={}}) => {
+    requireMaintenanceAuth(req); return require('../lib/maintenance').current().fullSeal(body);
+  },
   'GET /api/capture/receipt':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'),'utf8')):({complete:false}),
   'GET /api/capture/reset-audit':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'),'utf8')):({available:false}),
   'GET /api/capture/status':async()=>require('../lib/minimalCapture').researchEnabled()?require('../lib/researchRuntime').status():require('../lib/minimalCapture').enabled()?require('../lib/minimalCapture').current().status():({enabled:false}),
@@ -337,4 +360,18 @@ const routes = {
   },
 };
 
-module.exports = { routes, _test:{requireGroqExportAuth,requireAlibabaExportAuth,requireResearchExportAuth} };
+// Preserve RUN intent/config during maintenance. Emergency management remains available.
+for (const key of Object.keys(routes)) {
+  if (!key.startsWith('POST ') || key.includes('/maintenance/')) continue;
+  const handler = routes[key];
+  routes[key] = async context => {
+    const maintenance = require('../lib/maintenance');
+    if (key === 'POST /api/control/panic') {
+      if (maintenance.fenced()) requireMaintenanceAuth(context.req);
+      return maintenance.run('management','panic',() => handler(context));
+    }
+    maintenance.current().assertStart('operator mutation');
+    return handler(context);
+  };
+}
+module.exports = { routes, _test:{requireGroqExportAuth,requireAlibabaExportAuth,requireResearchExportAuth,requireMaintenanceAuth} };

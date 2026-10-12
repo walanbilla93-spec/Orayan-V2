@@ -40,6 +40,7 @@ function files(date='all') {
     (date==='all'||name.startsWith(`early-entry-${date}-`))).sort().map(name=>path.join(DIR,name));
 }
 function prune(now=Date.now()) {
+  if (require('./maintenance').fenced()) return;
   if (fs.existsSync(DIR)) {
     const cutoff=now-RETENTION_MS;
     for (const file of files()) {
@@ -196,6 +197,7 @@ function frozenSettings(settings) {
     maxNotionalUsdt:finite(settings?.maxNotionalUsdt),leverage:finite(settings?.leverage),testnet:!!settings?.testnet};
 }
 function observeCandidate(signal,context={}) {
+  if (require('./maintenance').fenced()) return null;
   const link=capture.candidateLink(signal?.id);
   if (!link||link.engine!=='NEW_ORAYAN'||link.isBirth!==true) return null;
   const assessment=evaluateEligibility({signal,link,context});
@@ -236,6 +238,7 @@ function quoteFromResult(result,symbol) {
   return {bid:finite(x?.bid1Price),ask:finite(x?.ask1Price),last:finite(x?.lastPrice),mark:finite(x?.markPrice)};
 }
 async function acquireQuote(assessment) {
+  if (require('./maintenance').fenced()) return;
   if (!pendingQuotes.has(assessment.experimentId)||pending.has(assessment.experimentId)||
     quoteInFlight.has(assessment.experimentId)||quoteInFlight.size>=4) return;
   if (Date.now()-assessment.decisionAt>60000) {
@@ -399,6 +402,8 @@ function labelPair(pair,bars) {
     ambiguityOrIncomplete:early.ambiguity||control.ambiguity||early.incompleteData||control.incompleteData};
 }
 async function resolveDue(limit=2) {
+  if (require('./maintenance').current().context.getStore()?.lane !== 'management')
+    return require('./maintenance').run('management','early-outcomes',()=>resolveDue(limit));
   if (resolving) return;
   resolving=true;
   try {
@@ -449,4 +454,5 @@ function start() {
 function stop() {if (timer) clearInterval(timer);timer=null;}
 
 module.exports={VERSION,observeCandidate,evaluateEligibility,labelPair,armOutcome,resolveDue,files,prune,start,stop,
+  maintenanceStatus: () => ({busy: resolving || quoteInFlight.size > 0, obligations: pending.size + pendingQuotes.size}),
   _test:{researchDirectionContext,exactBreadthPercentile,structureTag,birthStructure,btcBuyPermission}};

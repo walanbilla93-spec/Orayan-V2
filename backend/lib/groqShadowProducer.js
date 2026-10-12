@@ -236,6 +236,7 @@ class DurableShadowRuntime {
   }
 
   async process(item) {
+    if (require('./maintenance').fenced()) return require('./researchAI').maintenanceDeferred('Groq',item.snapshot);
     const {id,snapshot} = item;
     await appendAudit(this.cfg,{record_type:'PROCESSING_EVENT',handoff_id:id,
       candidate_id:snapshot.candidate_id,processing_status:'PROCESSING'});
@@ -243,6 +244,7 @@ class DurableShadowRuntime {
     if (!this.cfg.allowLive) result={status:'LIVE_DISABLED',persisted:false};
     else {
       do {
+        if (require('./maintenance').fenced()) return require('./researchAI').maintenanceDeferred('Groq',snapshot);
         result=await advise(snapshot,{config:this.cfg,mode:testTransport?'mock':'live',
           ...(testTransport?{mockTransport:testTransport}:{})});
         if (result?.status === 'BUDGET_DEFERRED') {
@@ -304,6 +306,9 @@ function getRuntime(cfg) {
 }
 
 async function initialize(env = process.env) {
+  return require('./maintenance').run('provider', 'groq-initialize', () => initializeWork(env));
+}
+async function initializeWork(env) {
   const cfg=config(env);
   const [recovery] = await Promise.all([
     getRuntime(cfg).ready,
@@ -313,6 +318,7 @@ async function initialize(env = process.env) {
 }
 
 function observeBirth(signal, birth, context = {}) {
+  if (require('./maintenance').fenced()) return false;
   if(minimal.enabled()&&!minimal.researchEnabled())return null;
   if(minimal.researchEnabled()&&!minimal.current().canDispatch())return false;
   if (!birth || birth.kind !== 'candidate_birth' || birth.engine !== 'NEW_ORAYAN') return false;
@@ -352,10 +358,18 @@ function statOrNull(file) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 
+async function recoverForMaintenance(env = process.env) {
+  const cfg = config(env);
+  if (runtime) await runtime.ready;
+  // Drain has completed. Ledger reconciliation never constructs a dispatch runtime.
+  const index = await ledgerIndex(cfg.ledger, Date.now(), {allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Groq')});
+  if (index.openRequests.size) throw Error('GROQ_LEDGER_OPEN_REQUESTS');
+}
+
 async function status(env = process.env) {
   const cfg = config(env);
   const audit = statOrNull(cfg.snapshotAudit);
-  const state = await ledgerIndex(cfg.ledger,Date.now(),{allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Groq')});
+  const state = await ledgerIndex(cfg.ledger,Date.now(),{readOnly:require('./maintenance').current().state === 'SEALED',allowedRoot:cfg.allowedRoot,canonical:require('./researchAI').canonical('Groq')});
   return {
     enabled: cfg.allowLive,
     model: cfg.model || DEFAULT_MODEL,
@@ -367,7 +381,10 @@ async function status(env = process.env) {
   };
 }
 
-module.exports = { observeEnvironment, observeBirth, buildSnapshot, status, config, initialize,
+module.exports = { recoverForMaintenance, observeEnvironment, observeBirth, buildSnapshot, status, config, initialize,
+  maintenanceStatus: () => ({queueDepth: runtime?.queue.pending.length || 0, inFlight: runtime?.queue.active ? 1 : 0,
+    reserved: runtime?.reserved || 0, initializing: !!runtime && !runtime.recoveryDone,
+    openRequests: 0}),
   _test: { environment, baselineFor, h2Decision, withinDataRoot, handoffId,
     setTransport:value=>{testTransport=value;}, getRuntime,
     reset: () => { environment.length = 0; seenBirths.clear(); runtime = null; runtimeConfigKey = null; testTransport = null; } } };

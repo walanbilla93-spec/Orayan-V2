@@ -208,12 +208,13 @@ class LedgerIndex {
     this.recentRequests = this.recentRequests.filter(item => item.at >= cutoff && item.at <= nowMs);
   }
 
-  async load(nowMs) {
+  async load(nowMs, readOnly = false) {
     const recovering = !this.initialized;
     const day = new Date(nowMs).toISOString().slice(0,10);
     this.clear(day);
     scanCount += 1;
     if(this.canonical) await this.canonical.read(row=>this.apply(row,nowMs)); else await readRecords(this.file, row => this.apply(row, nowMs));
+    if (readOnly && this.openRequests.size) throw Error('PROVIDER_RECOVERY_REQUIRED');
     for (const started of recovering ? [...this.openRequests.values()] : []) {
       const completedIso = new Date(nowMs).toISOString();
       const interrupted = {
@@ -239,10 +240,10 @@ class LedgerIndex {
     this.initialized = true;
   }
 
-  async ensure(nowMs) {
+  async ensure(nowMs, readOnly = false) {
     const day = new Date(nowMs).toISOString().slice(0,10);
     if (this.initialized && this.day === day) { this.pruneRecent(nowMs); return this; }
-    if (!this.loading) this.loading = this.load(nowMs).finally(() => { this.loading = null; });
+    if (!this.loading) this.loading = this.load(nowMs, readOnly).finally(() => { this.loading = null; });
     await this.loading;
     return this;
   }
@@ -277,7 +278,7 @@ async function ledgerIndex(file, nowMs = Date.now(), options = {}) {
     index = new LedgerIndex(key, options);
     caches.set(key, index);
   } else if (options.allowedRoot) index.allowedRoot = options.allowedRoot;
-  await index.ensure(nowMs);
+  await index.ensure(nowMs, options.readOnly === true);
   return index;
 }
 

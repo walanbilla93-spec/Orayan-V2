@@ -6,6 +6,12 @@ module.exports=function(source,file){let s=source.replace(/\r\n/g,'\n');
  if(file==='executor.js')s=s.replace('async function stepPaperTrade(trade, settings, observeMinute) {','async function stepPaperTrade(trade, settings) {').replace('    try { if(observeMinute)observeMinute(trade,c); } catch (_) { /* Observation cannot alter execution. */ }\n','');
  if(['groqShadowProducer.js','alibabaShadowProducer.js'].includes(file))s=s.replace("const minimal=require('./minimalCapture');\n\n",'').replace('  if(minimal.enabled())return null;\n','');
  if(file==='engine.js'){
+  s=s.replace(/\/\/ MAINTENANCE_CHECKPOINT_BEGIN:[\s\S]*?\/\/ MAINTENANCE_CHECKPOINT_END\n/,'')
+    .replace('  maintenanceCheckpoint,\n','');
+  s=s.replace("        await v3Shadow.refreshManagementContext(settings, () => getBtcRegime(settings));\n",'');
+  s=s.replace("\n    if (require('./maintenance').fenced()) {\n      await v3Shadow.refreshManagementContext(settings, () => getBtcRegime(settings));\n      return;\n    }\n",'');
+  s=s.replace("    if (require('./maintenance').fenced()) {\n      await require('./maintenance').run('management', 'engine', async () => {\n        await manageOpenTrades(settings);\n        await manageShadowTrades(settings);\n        await manageMarciCounterfactuals(settings);\n      });\n      return;\n    }\n",'')
+    .replace("\n\n    if (require('./maintenance').fenced()) return;\n",'');
   s=s.replaceAll(", require('./researchExcursions').observeMinute",'');
   s=s.replace("        if (!require('./researchRuntime').canAdmit(settings.mode)) break;\n",'')
     .replace("        if (!require('./researchRuntime').canAdmit(settings.mode)) break;\n",'')
