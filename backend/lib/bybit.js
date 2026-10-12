@@ -23,8 +23,14 @@ const MIN_GAP_MS = 100;
 const RESEARCH_GAP_MS = 350;
 const MAX_RESEARCH_QUEUE = 16;
 const MAX_CRITICAL_QUEUE = 128;
+// Critical: 3 x 15s attempts + 400/800ms backoffs, with 13.8s headroom.
+const CRITICAL_EXECUTION_DEADLINE_MS = 60000;
+const RESEARCH_EXECUTION_DEADLINE_MS = 10000; // One 7s attempt + 3s headroom.
+const CRITICAL_QUEUE_WAIT_DEADLINE_MS = 120000;
+const RESEARCH_QUEUE_WAIT_DEADLINE_MS = 30000;
 const criticalQueue = [], researchQueue = [];
 let pumping = false, globalResearchCooldownUntil = 0;
+let activeJob = null;
 const researchCooldownByEndpoint = new Map();
 let lastCallAt = 0;
 let operationalSink = null;
@@ -50,11 +56,61 @@ function applyRateLimitCooldown(e,endpoint) {
     cooldownScope:endpointScoped?'ENDPOINT':'GLOBAL',endpointCooldownUntil:cooldownUntil(endpoint)});
 }
 function operationalEvent(type, detail = {}) {
-  const event = { type, at:Date.now(), researchCooldownUntil:maxCooldownUntil(),
-    criticalQueueDepth:criticalQueue.length, researchQueueDepth:researchQueue.length, ...detail };
+  const event = { ...getOperationalState(), type, at:Date.now(), ...detail };
   try { operationalSink?.(event); } catch (_) { /* telemetry must never affect transport */ }
 }
 function taggedError(message,reasonCode) {const error=new Error(message);error.reasonCode=reasonCode;return error;}
+
+function expireQueuedJob(job) {
+  const elapsedMs=Date.now()-job.enqueuedAt;
+  const deadlineMs=job.research?RESEARCH_QUEUE_WAIT_DEADLINE_MS:CRITICAL_QUEUE_WAIT_DEADLINE_MS;
+  if (elapsedMs<deadlineMs) return false;
+  operationalEvent('QUEUE_WAIT_EXPIRED',{reasonCode:'QUEUE_WAIT_EXPIRED',endpoint:job.endpoint,
+    requestClass:job.research?'research':'critical',elapsedMs,deadlineMs});
+  job.reject(taggedError('Bybit queue wait deadline exceeded','QUEUE_WAIT_EXPIRED'));
+  return true;
+}
+
+async function executeJob(job) {
+  const deadlineMs=job.research?RESEARCH_EXECUTION_DEADLINE_MS:CRITICAL_EXECUTION_DEADLINE_MS;
+  const execution={expired:false,abort:null};
+  const active={endpoint:job.endpoint,requestClass:job.research?'research':'critical',startedAt:Date.now()};
+  activeJob=active;
+  let timer;
+  const watchdog=new Promise((_,reject)=>{
+    timer=setTimeout(()=>{
+      execution.expired=true;
+      operationalEvent('EXECUTION_DEADLINE_EXCEEDED',{reasonCode:'EXECUTION_DEADLINE_EXCEEDED',
+        endpoint:job.endpoint,requestClass:active.requestClass,
+        elapsedMs:Date.now()-active.startedAt,deadlineMs});
+      reject(taggedError('Bybit execution deadline exceeded','EXECUTION_DEADLINE_EXCEEDED'));
+      // Best effort cancellation; settlement does not depend on fetch honoring abort.
+      execution.abort?.();
+    },deadlineMs);
+  });
+  try {
+    // Promise.race observes late rejection without allowing a second queue settlement.
+    return await Promise.race([Promise.resolve().then(()=>job.fn(execution)),watchdog]);
+  } finally {clearTimeout(timer);activeJob=null;}
+}
+
+function assertExecutionLive(execution) {
+  if (execution?.expired) throw taggedError('Bybit execution deadline exceeded','EXECUTION_DEADLINE_EXCEEDED');
+}
+
+function getOperationalState() {
+  const now=Date.now();
+  return {researchCooldownUntil:maxCooldownUntil(),globalResearchCooldownUntil,
+    researchCooldownByEndpoint:Object.fromEntries(researchCooldownByEndpoint),pumping,
+    activeEndpoint:activeJob?.endpoint??null,activeClass:activeJob?.requestClass??null,
+    activeStartedAt:activeJob?.startedAt??null,activeAgeMs:activeJob?Math.max(0,now-activeJob.startedAt):null,
+    criticalQueueDepth:criticalQueue.length,researchQueueDepth:researchQueue.length,
+    criticalOldestQueuedAgeMs:criticalQueue.length?Math.max(0,now-criticalQueue[0].enqueuedAt):null,
+    researchOldestQueuedAgeMs:researchQueue.length?Math.max(0,now-researchQueue[0].enqueuedAt):null,
+    criticalQueueCapacity:MAX_CRITICAL_QUEUE,researchQueueCapacity:MAX_RESEARCH_QUEUE,
+    criticalExecutionDeadlineMs:CRITICAL_EXECUTION_DEADLINE_MS,researchExecutionDeadlineMs:RESEARCH_EXECUTION_DEADLINE_MS,
+    criticalQueueWaitDeadlineMs:CRITICAL_QUEUE_WAIT_DEADLINE_MS,researchQueueWaitDeadlineMs:RESEARCH_QUEUE_WAIT_DEADLINE_MS};
+}
 
 async function pump() {
   if (pumping) return;
@@ -62,6 +118,7 @@ async function pump() {
   try {
     while (criticalQueue.length || researchQueue.length) {
       const job=criticalQueue.shift() || researchQueue.shift();
+      if (expireQueuedJob(job)) continue;
       const jobCooldownUntil=cooldownUntil(job.endpoint);
       if (job.research && Date.now()<jobCooldownUntil) {
         operationalEvent('RESEARCH_COOLDOWN_REJECTED',{reasonCode:'COOLDOWN_ACTIVE',endpoint:job.endpoint,
@@ -74,8 +131,9 @@ async function pump() {
       // A trading request may arrive while a research request waits for its
       // longer gap. Give that newly arrived request the next transport slot.
       if(job.research && criticalQueue.length){researchQueue.unshift(job);continue;}
+      if (expireQueuedJob(job)) continue;
       lastCallAt=Date.now();
-      try {job.resolve(await job.fn());}
+      try {job.resolve(await executeJob(job));}
       catch(e) {
         if (job.research && (e.status===429 || e.retCode===10006 || /rate.limit/i.test(e.message||'')))
           applyRateLimitCooldown(e,job.endpoint);
@@ -100,7 +158,7 @@ function schedule(fn,{research=false,endpoint=null}={}) {
     return Promise.reject(new Error('Bybit critical request queue capacity exceeded'));
   }
   return new Promise((resolve,reject)=>{
-    (research?researchQueue:criticalQueue).push({fn,resolve,reject,research,endpoint});
+    (research?researchQueue:criticalQueue).push({fn,resolve,reject,research,endpoint,enqueuedAt:Date.now()});
     pump();
   });
 }
@@ -127,7 +185,8 @@ function sign(timestamp, payload) {
 const quoteStamps=new Map();
 const quoteHistory=new Map();
 const klineStamps=new Map();
-async function request(method, path, params, { testnet = true, auth = false, timeoutMs = 15000, stamped=false } = {}) {
+async function request(method, path, params, { testnet = true, auth = false, timeoutMs = 15000, stamped=false, execution } = {}) {
+  assertExecutionLive(execution);
   const url = new URL(path, base(testnet));
   let body;
   let payload = '';
@@ -155,10 +214,14 @@ async function request(method, path, params, { testnet = true, auth = false, tim
   }
 
   const ctrl = new AbortController();
+  if (execution) execution.abort=()=>ctrl.abort();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(url.toString(), { method, headers, body, signal: ctrl.signal });
+    assertExecutionLive(execution);
     const text = await res.text();
+    // Expired requests must not update market stamps or return late results.
+    assertExecutionLive(execution);
     let json;
     try {
       json = JSON.parse(text);
@@ -192,16 +255,19 @@ async function request(method, path, params, { testnet = true, auth = false, tim
     return stamped?{result:json.result,sourceAt,receivedAt}:json.result;
   } finally {
     clearTimeout(timer);
+    if (execution) execution.abort=null;
   }
 }
 
 /** Retry only on transport/rate errors — never blindly on a rejected order. */
-async function withRetry(fn, { attempts = 3, label = 'bybit' } = {}) {
+async function withRetry(fn, { attempts = 3, label = 'bybit', execution } = {}) {
   let lastErr;
   for (let i = 1; i <= attempts; i++) {
+    assertExecutionLive(execution);
     try {
       return await fn();
     } catch (e) {
+      assertExecutionLive(execution);
       lastErr = e;
       if (e.status===429 || e.retCode===10006) applyRateLimitCooldown(e,label);
       const retriable = e.name === 'AbortError'
@@ -217,19 +283,19 @@ async function withRetry(fn, { attempts = 3, label = 'bybit' } = {}) {
 }
 
 const publicGet = (path, params, testnet) =>
-  schedule(() => withRetry(() => request('GET', path, params, { testnet, auth: false }), { label: path }),{endpoint:path});
+  schedule(execution => withRetry(() => request('GET', path, params, { testnet, auth: false, execution }), { label: path, execution }),{endpoint:path});
 
 // Best effort only. Research has a bounded, lower-priority queue and no retry burst.
 const researchGet = (path, params, testnet) =>
-  schedule(() => request('GET',path,params,{testnet,auth:false,timeoutMs:7000}),{research:true,endpoint:path});
+  schedule(execution => request('GET',path,params,{testnet,auth:false,timeoutMs:7000,execution}),{research:true,endpoint:path});
 const researchGetStamped = (path,params,testnet) =>
-  schedule(()=>request('GET',path,params,{testnet,auth:false,timeoutMs:7000,stamped:true}),{research:true,endpoint:path});
+  schedule(execution=>request('GET',path,params,{testnet,auth:false,timeoutMs:7000,stamped:true,execution}),{research:true,endpoint:path});
 
 const privateGet = (path, params, testnet) =>
-  schedule(() => withRetry(() => request('GET', path, params, { testnet, auth: true }), { label: path }),{endpoint:path});
+  schedule(execution => withRetry(() => request('GET', path, params, { testnet, auth: true, execution }), { label: path, execution }),{endpoint:path});
 
 const privatePost = (path, params, testnet) =>
-  schedule(() => withRetry(() => request('POST', path, params, { testnet, auth: true }), { attempts: 2, label: path }),{endpoint:path});
+  schedule(execution => withRetry(() => request('POST', path, params, { testnet, auth: true, execution }), { attempts: 2, label: path, execution }),{endpoint:path});
 
 /** Align local clock with Bybit's so signed requests are not rejected for timestamp drift. */
 async function syncClock(testnet) {
@@ -258,11 +324,9 @@ module.exports = {
   privateGet,
   privatePost,
   setOperationalSink: sink => { operationalSink = typeof sink === 'function' ? sink : null; },
-  getOperationalState: () => ({researchCooldownUntil:maxCooldownUntil(),
-    globalResearchCooldownUntil,researchCooldownByEndpoint:Object.fromEntries(researchCooldownByEndpoint),
-    criticalQueueDepth:criticalQueue.length,researchQueueDepth:researchQueue.length}),
+  getOperationalState,
   getClockOffset: () => clockOffsetMs,
   _test:{schedule,cooldownUntil,applyRateLimitCooldown,
-    reset:()=>{criticalQueue.length=0;researchQueue.length=0;pumping=false;lastCallAt=0;
+    reset:()=>{criticalQueue.length=0;researchQueue.length=0;pumping=false;activeJob=null;lastCallAt=0;
       globalResearchCooldownUntil=0;researchCooldownByEndpoint.clear();operationalSink=null;}},
 };
