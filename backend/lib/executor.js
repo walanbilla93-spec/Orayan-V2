@@ -231,20 +231,72 @@ function floatingPnl(trade, markPrice, settings) {
 
 // ── Live execution ────────────────────────────────────────────────────────────────────────
 
-async function placeLiveOrder({ trade, settings, instrument }) {
-  if (!bybit.keySet()) throw new Error('Cannot place a live order: Bybit API credentials are not set.');
+let entryInFlight=false;
+function hasUnresolvedLiveOutcome(trades) {
+  return trades.some(t=>t.mode==='live'&&t.privateOutcome);
+}
+function unknownError(trade) {
+  const e=new Error('Live mutation requires reconciliation before further admission');
+  e.reasonCode='UNKNOWN_PRIVATE_OUTCOME';e.context={...trade.privateOutcome};return e;
+}
+async function submitLiveMutation({trade,settings,persist,endpoint,params,purpose}) {
+  if (trade.privateOutcome) throw unknownError(trade);
+  const obligation={reasonCode:'UNKNOWN_PRIVATE_OUTCOME',purpose,endpoint,
+    orderLinkId:params.orderLinkId||null,orderId:params.orderId||null,
+    symbol:trade.symbol,testnet:settings.testnet!==false,startedAt:Date.now()};
+  trade.privateOutcome=obligation;
+  // Write intent before any possible send. On restart it is conservatively unknown.
+  if (typeof persist!=='function'||persist()!==true) {
+    delete trade.privateOutcome;
+    const e=new Error('Live mutation intent could not be persisted; request not sent');
+    e.reasonCode='PRIVATE_REQUEST_NOT_SENT';throw e;
+  }
+  try {
+    const res=await bybit.privatePost(endpoint,params,obligation.testnet);
+    if (purpose==='entry') {
+      if (!res?.orderId) throw unknownError(trade);
+      trade.exchangeOrderId=res.orderId;
+    }
+    delete trade.privateOutcome;
+    if (persist()!==true) {trade.privateOutcome=obligation;throw unknownError(trade);}
+    return res;
+  } catch (e) {
+    if (!['PROVEN_PRIVATE_REJECTION','PRIVATE_REQUEST_NOT_SENT','QUEUE_WAIT_EXPIRED','CRITICAL_QUEUE_CAPACITY'].includes(e.reasonCode)) {
+      trade.privateOutcome=obligation;
+      e=unknownError(trade);
+    } else {
+      delete trade.privateOutcome;
+    }
+    if (persist()!==true) {trade.privateOutcome=obligation;throw unknownError(trade);}
+    throw e;
+  }
+}
 
-  const testnet = settings.testnet;
+async function placeLiveOrder({ trade, settings, instrument, trades, persist }) {
+  if (!Array.isArray(trades)||entryInFlight||hasUnresolvedLiveOutcome(trades)) {
+    const e=new Error('Live entry admission fenced by an unresolved mutation');
+    e.reasonCode='LIVE_ADMISSION_FENCED';throw e;
+  }
+  entryInFlight=true;
+  try {return await placeLiveOrderImpl({trade,settings,instrument,persist});}
+  finally {entryInFlight=false;}
+}
+async function placeLiveOrderImpl({ trade, settings, instrument, persist }) {
+  if (!bybit.keySet()) {
+    const e=new Error('Cannot place a live order: Bybit API credentials are not set.');
+    e.reasonCode='PRIVATE_REQUEST_NOT_SENT';throw e;
+  }
 
   // Leverage is per-symbol on Bybit and silently persists between sessions.
   try {
-    await bybit.privatePost('/v5/position/set-leverage', {
+    await submitLiveMutation({trade,settings,persist,purpose:'leverage',endpoint:'/v5/position/set-leverage',params:{
       category: 'linear',
       symbol: trade.symbol,
       buyLeverage: String(settings.leverage),
       sellLeverage: String(settings.leverage),
-    }, testnet);
+    }});
   } catch (e) {
+    if (trade.privateOutcome||e.reasonCode==='PRIVATE_REQUEST_NOT_SENT') throw e;
     // retCode 110043 = leverage already at this value; not an error.
     if (e.retCode !== 110043) {
       logger.warn('executor', `Could not set leverage on ${trade.symbol}`, { error: e.message });
@@ -269,29 +321,33 @@ async function placeLiveOrder({ trade, settings, instrument }) {
     reduceOnly: false,
   };
 
-  const res = await bybit.privatePost('/v5/order/create', params, testnet);
-  trade.exchangeOrderId = res?.orderId || null;
+  await submitLiveMutation({trade,settings,persist,purpose:'entry',endpoint:'/v5/order/create',params});
   logger.info('executor', `Live order placed on ${trade.symbol} ${trade.side}`, { orderId: trade.exchangeOrderId });
   return trade;
 }
 
-async function cancelLiveOrder({ trade, settings }) {
+async function cancelLiveOrder({ trade, settings, persist }) {
+  if (trade.privateOutcome) throw unknownError(trade);
   if (!trade.exchangeOrderId) return;
   try {
-    await bybit.privatePost('/v5/order/cancel', {
+    await submitLiveMutation({trade,settings,persist,purpose:'cancel',endpoint:'/v5/order/cancel',params:{
       category: 'linear',
       symbol: trade.symbol,
       orderId: trade.exchangeOrderId,
-    }, settings.testnet);
+      orderLinkId:trade.id,
+    }});
     logger.info('executor', `Cancelled resting order on ${trade.symbol}`);
   } catch (e) {
     logger.warn('executor', `Could not cancel order on ${trade.symbol}`, { error: e.message });
+    throw e;
   }
 }
 
-async function closeLivePosition({ trade, settings }) {
+async function closeLivePosition({ trade, settings, persist }) {
+  if (trade.privateOutcome) throw unknownError(trade);
+  trade.closeAttempt=(trade.closeAttempt||0)+1;
   try {
-    await bybit.privatePost('/v5/order/create', {
+    await submitLiveMutation({trade,settings,persist,purpose:'close',endpoint:'/v5/order/create',params:{
       category: 'linear',
       symbol: trade.symbol,
       side: trade.side === 'BUY' ? 'Sell' : 'Buy',
@@ -299,7 +355,8 @@ async function closeLivePosition({ trade, settings }) {
       qty: String(trade.qty),
       reduceOnly: true,
       timeInForce: 'IOC',
-    }, settings.testnet);
+      orderLinkId:`${trade.id}-c${trade.closeAttempt}`,
+    }});
     logger.warn('executor', `Sent market close for ${trade.symbol}`);
   } catch (e) {
     logger.error('executor', `Could not close position on ${trade.symbol}`, { error: e.message });
@@ -311,13 +368,68 @@ async function closeLivePosition({ trade, settings }) {
  * Reconcile local live trades against the exchange. The exchange is always the source of truth —
  * local state is a cache and is assumed wrong whenever the two disagree.
  */
-async function syncLiveTrades(trades, settings) {
+async function reconcilePrivateOutcome(trade) {
+  const o=trade.privateOutcome;
+  if (!o) return false;
+  // Leverage ambiguity precedes entry submission: verifying the setting proves no entry
+  // was submitted by this intent. Never submit the abandoned entry during reconciliation.
+  if (o.purpose==='leverage') {
+    const r=await bybit.privateGet('/v5/position/list',{category:'linear',symbol:o.symbol},o.testnet);
+    if (!r?.list?.length||!r.list.every(p=>p.symbol===o.symbol&&Number(p.leverage)===Number(trade.leverage))) return false;
+    trade.status='CANCELLED';trade.closedAt=Date.now();trade.closeReason='Leverage reconciled; entry was not submitted';
+    trade.netPnl=0;trade.grossPnl=0;trade.fees=0;delete trade.privateOutcome;return true;
+  }
+  const params={category:'linear',symbol:o.symbol,orderLinkId:o.orderLinkId||undefined,orderId:o.orderId||undefined};
+  let order;
+  for (const endpoint of ['/v5/order/realtime','/v5/order/history']) {
+    const r=await bybit.privateGet(endpoint,params,o.testnet);
+    order=r?.list?.find(x=>x.symbol===o.symbol&&x.orderId&&
+      (!o.orderLinkId||x.orderLinkId===o.orderLinkId)&&(!o.orderId||x.orderId===o.orderId));
+    if (order) break;
+  }
+  // An empty eventually-consistent query is not proof of absence or rejection.
+  if (!order) return false;
+  const qty=order.cumExecQty!==''&&order.cumExecQty!=null?Number(order.cumExecQty):NaN;
+  const terminal=['Rejected','Cancelled','Deactivated'].includes(order.orderStatus);
+  if (o.purpose==='close') {
+    if (terminal&&qty===0) {delete trade.privateOutcome;return true;}
+    // Partial close P&L is not proof that the whole position is gone.
+    if (order.orderStatus==='Filled'&&qty>=num(trade.qty)&&qty>0) {
+      trade.closeExchangeOrderId=order.orderId;return true;
+    }
+    return false;
+  }
+  trade.exchangeOrderId=order.orderId;
+  trade.reconciledEntryOrderId=order.orderId;
+  if (terminal&&qty===0) {
+    trade.status=order.orderStatus==='Rejected'?'REJECTED':'CANCELLED';
+    trade.closedAt=Number(order.updatedTime)||Date.now();trade.closeReason=`Exchange order ${order.orderStatus}`;
+    trade.netPnl=0;trade.grossPnl=0;trade.fees=0;
+  } else if ((order.orderStatus==='Filled'||terminal)&&qty>0&&Number(order.avgPrice)>0) {
+    trade.status='OPEN';trade.fillPrice=Number(order.avgPrice);
+    trade.filledAt=Number(order.createdTime)||Date.now();
+  } else if (o.purpose==='entry'&&order.orderStatus==='New'&&qty===0) {
+    trade.status='PENDING';
+  } else return true; // Partial fills/unrecognised states retain the fence.
+  delete trade.privateOutcome;return true;
+}
+
+async function syncLiveTrades(trades, settings, persist) {
   if (!bybit.keySet()) return { changed: 0 };
   const testnet = settings.testnet;
   let changed = 0;
+  for (const t of trades.filter(t=>t.mode==='live'&&t.privateOutcome)) {
+    try {
+      const obligation=t.privateOutcome;
+      if (await reconcilePrivateOutcome(t)) {
+        changed++;
+        if (typeof persist!=='function'||persist()!==true) t.privateOutcome=obligation;
+      }
+    } catch (e) {logger.warn('executor',`Private outcome still unresolved on ${t.symbol}`,{error:e.message});}
+  }
 
   const live = trades.filter((t) => t.mode === 'live' && ['PENDING', 'OPEN'].includes(t.status));
-  if (!live.length) return { changed: 0 };
+  if (!live.length) return { changed };
 
   let positions = [];
   let closedPnls = [];
@@ -328,12 +440,14 @@ async function syncLiveTrades(trades, settings) {
     closedPnls = pnlRes?.list || [];
   } catch (e) {
     logger.warn('executor', 'Could not sync live state from Bybit', { error: e.message });
-    return { changed: 0 };
+    return { changed };
   }
 
   const posBySymbol = new Map(positions.filter((p) => num(p.size) > 0).map((p) => [p.symbol, p]));
 
   for (const t of live) {
+    // Never expire an uncertain entry/cancel, or infer a fill from another same-symbol order.
+    if (t.privateOutcome && !(t.privateOutcome.purpose==='close'&&t.closeExchangeOrderId)) continue;
     const pos = posBySymbol.get(t.symbol);
 
     if (t.status === 'PENDING' && pos) {
@@ -367,7 +481,9 @@ async function syncLiveTrades(trades, settings) {
     if (t.status === 'OPEN' && !pos) {
       // Position is gone from the exchange — find the settled P&L record for it.
       const rec = closedPnls
-        .filter((c) => c.symbol === t.symbol)
+        .filter((c) => c.symbol === t.symbol && (t.privateOutcome
+          ? c.orderId===t.closeExchangeOrderId
+          : !t.reconciledEntryOrderId||c.orderId===t.reconciledEntryOrderId))
         .sort((a, b) => num(b.updatedTime) - num(a.updatedTime))[0];
       if (rec) {
         t.status = 'CLOSED';
@@ -391,6 +507,10 @@ async function syncLiveTrades(trades, settings) {
         t.unrealisedRR = null;
         const risk = Math.abs(num(t.fillPrice) - num(t.sl)) * num(t.qty);
         t.realisedRR = risk > 0 ? t.netPnl / risk : null;
+        if (t.privateOutcome?.purpose==='close') {
+          const obligation=t.privateOutcome;delete t.privateOutcome;
+          if (typeof persist!=='function'||persist()!==true) {t.privateOutcome=obligation;t.status='OPEN';}
+        }
         changed++;
         logger.info('executor', `Live close reconciled for ${t.symbol}: net ${t.netPnl}`);
       }
@@ -398,7 +518,8 @@ async function syncLiveTrades(trades, settings) {
     }
 
     if (t.status === 'PENDING' && Date.now() > t.expiresAt) {
-      await cancelLiveOrder({ trade: t, settings });
+      try {await cancelLiveOrder({ trade: t, settings, persist });}
+      catch (_) {changed++;continue;} // Failed/unknown cancellation cannot prove expiry.
       t.status = 'EXPIRED';
       t.closedAt = Date.now();
       t.closeReason = 'Entry window passed without a fill';
@@ -421,4 +542,5 @@ module.exports = {
   cancelLiveOrder,
   closeLivePosition,
   syncLiveTrades,
+  hasUnresolvedLiveOutcome,
 };

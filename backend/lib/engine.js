@@ -78,9 +78,12 @@ function persistEngineControl() {
 
 
 function persistTrades() {
-  store.write('trades', trades.slice(-5000));
+  // Unresolved live obligations must survive history trimming and process restart.
+  const retained=trades.slice(0,-5000).filter(t=>t.mode==='live'&&t.privateOutcome);
+  const saved=store.write('trades',[...retained,...trades.slice(-5000)]);
   if(captureSafety.total){const keep=Math.max(0,5000-trades.length),cutoff=Math.max(0,captureSafety.total-keep);
     store.write('captureSafetyClosed',{total:Math.min(captureSafety.total,keep),closed:captureSafety.closed.filter(x=>x.index>=cutoff).map(x=>({...x,index:x.index-cutoff}))},false);}
+  return saved;
 }
 
 function persistShadowTrades() {
@@ -163,7 +166,7 @@ async function manageOpenTrades(settings) {
     // statuses first and reconcile after, otherwise the symbol tracker would only ever learn
     // from paper trades and would sit permanently blind in live mode.
     const beforeStatus = new Map(trades.map((t) => [t.id, t.status]));
-    const r = await executor.syncLiveTrades(trades, settings);
+    const r = await executor.syncLiveTrades(trades, settings, persistTrades);
     if (r.changed) changed = true;
     for (const t of trades) {
       if (beforeStatus.get(t.id) && beforeStatus.get(t.id) !== t.status)
@@ -618,6 +621,7 @@ async function scanOnce() {
       }
     } else {
       for (const signal of candidates) {
+        if (settings.mode==='live'&&executor.hasUnresolvedLiveOutcome(trades)) break;
         if (!require('./researchRuntime').canAdmit(settings.mode)) break;
         const openNow = [...openTrades(), ...pendingTrades()];
         if (openNow.length >= settings.maxOpenPositions) break;
@@ -658,17 +662,28 @@ async function scanOnce() {
         if (!require('./researchRuntime').canAdmit(settings.mode)) break;
 
         if (settings.mode === 'live') {
+          trades.push(trade);
           try {
-            await executor.placeLiveOrder({ trade, settings, instrument });
+            await executor.placeLiveOrder({ trade, settings, instrument, trades, persist:persistTrades });
           } catch (e) {
-            researchCapture.outcome(signal.id, 'ORDER_REJECTED', trade, { reason:e.message });
+            if (trade.privateOutcome||e.reasonCode==='UNKNOWN_PRIVATE_OUTCOME') {
+              persistTrades();
+              researchCapture.outcome(signal.id, 'UNKNOWN_PRIVATE_OUTCOME', trade, { reason:e.reasonCode });
+              orderResolved.add(signal.id);
+              logger.error('engine', `Live admission fenced for ${signal.symbol}; reconciliation required`, { reasonCode:e.reasonCode });
+              break;
+            }
+            trades.splice(trades.indexOf(trade),1);
+            persistTrades();
+            const event=e.reasonCode==='PROVEN_PRIVATE_REJECTION'?'ORDER_REJECTED':'ORDER_NOT_SENT';
+            researchCapture.outcome(signal.id, event, trade, { reason:e.message,reasonCode:e.reasonCode });
             orderResolved.add(signal.id);
-            logger.error('engine', `Live order rejected for ${signal.symbol}`, { error: e.message });
+            logger.error('engine', `Live order ${event==='ORDER_REJECTED'?'rejected':'not sent'} for ${signal.symbol}`, { error: e.message,reasonCode:e.reasonCode });
             continue;
           }
         }
 
-        trades.push(trade);
+        if (settings.mode!=='live') trades.push(trade);
         researchCapture.outcome(signal.id, 'ORDER_ACK', trade, { mode:settings.mode });
         orderResolved.add(signal.id);
         funnel.placed++;
@@ -813,7 +828,10 @@ async function panicClose() {
   const errors = [];
 
   for (const t of pendingTrades()) {
-    if (t.mode === 'live') await executor.cancelLiveOrder({ trade: t, settings });
+    if (t.mode === 'live') {
+      try {await executor.cancelLiveOrder({ trade: t, settings, persist:persistTrades });}
+      catch(e) {errors.push(`${t.symbol}: ${e.message}`);continue;}
+    }
     t.status = 'CANCELLED';
     t.closedAt = Date.now();
     t.closeReason = 'Cancelled by kill switch';
@@ -824,7 +842,7 @@ async function panicClose() {
   for (const t of openTrades()) {
     try {
       if (t.mode === 'live') {
-        await executor.closeLivePosition({ trade: t, settings });
+        await executor.closeLivePosition({ trade: t, settings, persist:persistTrades });
         t.status = 'CLOSED';
         t.closedAt = Date.now();
         t.closeReason = 'Closed by kill switch';
@@ -955,6 +973,7 @@ function resetShadowTrades() {
 }
 
 function resetTrades() {
+  if (executor.hasUnresolvedLiveOutcome(trades)) return {ok:false,reason:'Unresolved live mutation must be reconciled before clearing history'};
   trades = [];
   persistTrades();
   logger.warn('engine', 'Trade history cleared by operator');

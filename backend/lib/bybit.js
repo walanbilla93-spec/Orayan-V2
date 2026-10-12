@@ -7,6 +7,13 @@ const { sleep } = require('./util');
 const MAINNET = 'https://api.bybit.com';
 const TESTNET = 'https://api-testnet.bybit.com';
 const RECV_WINDOW = '10000';
+// Explicit validation/authentication/admission failures. Unrecognised mutation errors
+// fail closed too: a numeric retCode alone is not proof that no mutation occurred.
+const PROVEN_PRIVATE_REJECTION_CODES = new Set([
+  10001,10002,10003,10004,10005,10006,10007,10008,10009,10010,10017,10024,10027,10028,10029,100028,
+  110001,110003,110004,110006,110007,110009,110012,110013,110017,110018,110019,110020,110021,
+  110023,110032,110036,110038,110043,110044,110045,110049,110051,110052,110053,110074,110094,
+]);
 
 // The ONLY environment variables this project reads. Everything else is set from the UI.
 const API_KEY = process.env.BYBIT_API_KEY || '';
@@ -60,6 +67,11 @@ function operationalEvent(type, detail = {}) {
   try { operationalSink?.(event); } catch (_) { /* telemetry must never affect transport */ }
 }
 function taggedError(message,reasonCode) {const error=new Error(message);error.reasonCode=reasonCode;return error;}
+function unknownPrivateOutcome(execution) {
+  const error=taggedError('Bybit private mutation outcome is unknown; reconcile before further admission','UNKNOWN_PRIVATE_OUTCOME');
+  error.context={...execution.mutation};
+  return error;
+}
 
 function expireQueuedJob(job) {
   const elapsedMs=Date.now()-job.enqueuedAt;
@@ -80,10 +92,11 @@ async function executeJob(job) {
   const watchdog=new Promise((_,reject)=>{
     timer=setTimeout(()=>{
       execution.expired=true;
-      operationalEvent('EXECUTION_DEADLINE_EXCEEDED',{reasonCode:'EXECUTION_DEADLINE_EXCEEDED',
+      operationalEvent('EXECUTION_DEADLINE_EXCEEDED',{reasonCode:execution.sent&&execution.mutation?'UNKNOWN_PRIVATE_OUTCOME':'EXECUTION_DEADLINE_EXCEEDED',
         endpoint:job.endpoint,requestClass:active.requestClass,
         elapsedMs:Date.now()-active.startedAt,deadlineMs});
-      reject(taggedError('Bybit execution deadline exceeded','EXECUTION_DEADLINE_EXCEEDED'));
+      reject(execution.sent&&execution.mutation?unknownPrivateOutcome(execution):
+        taggedError('Bybit execution deadline exceeded','EXECUTION_DEADLINE_EXCEEDED'));
       // Best effort cancellation; settlement does not depend on fetch honoring abort.
       execution.abort?.();
     },deadlineMs);
@@ -155,7 +168,7 @@ function schedule(fn,{research=false,endpoint=null}={}) {
   }
   if (!research && criticalQueue.length>=MAX_CRITICAL_QUEUE) {
     operationalEvent('CRITICAL_QUEUE_CAPACITY',{reasonCode:'CRITICAL_QUEUE_CAPACITY',endpoint});
-    return Promise.reject(new Error('Bybit critical request queue capacity exceeded'));
+    return Promise.reject(taggedError('Bybit critical request queue capacity exceeded','CRITICAL_QUEUE_CAPACITY'));
   }
   return new Promise((resolve,reject)=>{
     (research?researchQueue:criticalQueue).push({fn,resolve,reject,research,endpoint,enqueuedAt:Date.now()});
@@ -216,7 +229,10 @@ async function request(method, path, params, { testnet = true, auth = false, tim
   const ctrl = new AbortController();
   if (execution) execution.abort=()=>ctrl.abort();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let definitive=false;
   try {
+    // Fetch invocation is the last observable boundary before possible exchange acceptance.
+    if (execution?.mutation) execution.sent=true;
     const res = await fetch(url.toString(), { method, headers, body, signal: ctrl.signal });
     assertExecutionLive(execution);
     const text = await res.text();
@@ -239,8 +255,12 @@ async function request(method, path, params, { testnet = true, auth = false, tim
       const err = new Error(`Bybit ${path} failed: ${json.retMsg || 'unknown'} (retCode ${json.retCode})`);
       err.retCode = json.retCode;
       err.retMsg = json.retMsg;
+      if (execution?.mutation && PROVEN_PRIVATE_REJECTION_CODES.has(json.retCode)) {
+        definitive=true;err.reasonCode='PROVEN_PRIVATE_REJECTION';
+      }
       throw err;
     }
+    definitive=true;
     const receivedAt=Date.now(),sourceAt=Number.isFinite(Number(json.time))?Number(json.time):null;
     if(path==='/v5/market/tickers'&&!auth) {
       for(const t of json.result?.list||[]) {
@@ -253,6 +273,9 @@ async function request(method, path, params, { testnet = true, auth = false, tim
     if(path==='/v5/market/kline'&&!auth){klineStamps.set(`${testnet!==false}:${params.symbol}:${params.interval}`,{sourceAt,receivedAt});
       while(klineStamps.size>200)klineStamps.delete(klineStamps.keys().next().value);}
     return stamped?{result:json.result,sourceAt,receivedAt}:json.result;
+  } catch (e) {
+    if (execution?.mutation && execution.sent && !definitive) throw unknownPrivateOutcome(execution);
+    throw e;
   } finally {
     clearTimeout(timer);
     if (execution) execution.abort=null;
@@ -295,7 +318,15 @@ const privateGet = (path, params, testnet) =>
   schedule(execution => withRetry(() => request('GET', path, params, { testnet, auth: true, execution }), { label: path, execution }),{endpoint:path});
 
 const privatePost = (path, params, testnet) =>
-  schedule(execution => withRetry(() => request('POST', path, params, { testnet, auth: true, execution }), { attempts: 2, label: path, execution }),{endpoint:path});
+  schedule(execution => {
+    execution.mutation={endpoint:path,orderLinkId:params?.orderLinkId||null,
+      orderId:params?.orderId||null,symbol:params?.symbol||null,testnet:testnet!==false};
+    // A mutation is never replayed after a possible send, including the per-attempt abort.
+    return request('POST',path,params,{testnet,auth:true,execution}).catch(e=>{
+      if (!execution.sent) e.reasonCode='PRIVATE_REQUEST_NOT_SENT';
+      throw e;
+    });
+  },{endpoint:path});
 
 /** Align local clock with Bybit's so signed requests are not rejected for timestamp drift. */
 async function syncClock(testnet) {
