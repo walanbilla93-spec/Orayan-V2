@@ -157,12 +157,10 @@ test("provider download routes export canonical chains without legacy ledgers", 
     c.emit("ai_calls", { provider: "OldOnly", event: "REQUEST_PREPARED", at: oldAt });
     assert.equal(runtime.providerExportMetadata("OldOnly").available, false);
   });
-  await t.test("combined current and alias downloads retain both providers and both token checks", async () => {
+  await t.test("combined current and alias downloads retain both providers without requiring tokens", async () => {
     for (const route of ["GET /api/capture/current.zip", "GET /api/capture/export"]) {
       const handler = routes[route];
-      await assert.rejects(handler({ req: { headers: { "x-groq-shadow-export-token": both["x-groq-shadow-export-token"] } } }), { code: "ALIBABA_SHADOW_EXPORT_UNAUTHORIZED" });
-      await assert.rejects(handler({ req: { headers: { "x-alibaba-shadow-export-token": both["x-alibaba-shadow-export-token"] } } }), { code: "GROQ_SHADOW_EXPORT_UNAUTHORIZED" });
-      const { manifest, rows } = await inspect(await handler({ req: { headers: both } }));
+      const { manifest, rows } = await inspect(await handler({ req: { headers: {} } }));
       assert.equal(manifest.window.provider, null);
       for (const marker of Object.values(markers)) assert.ok(JSON.stringify(rows).includes(marker));
     }

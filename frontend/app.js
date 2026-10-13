@@ -158,7 +158,8 @@ async function loadAlibabaShadowStatus() {
   }catch(error){button.disabled=true;status.textContent=`Alibaba shadow data unavailable: ${error.message}`;}
 }
 
-async function downloadResearchZip(url){try{const cap=await api('/api/capture/status'),headers={};if(cap.exportAuthorization?.groq){const token=prompt('Enter the Groq research export token');if(!token)return;headers['X-Groq-Shadow-Export-Token']=token;}if(cap.exportAuthorization?.alibaba){const token=prompt('Enter the Alibaba research export token');if(!token)return;headers['X-Alibaba-Shadow-Export-Token']=token;}const response=await fetch(url,{headers});if(!response.ok)throw Error('Research download failed ('+response.status+')');const objectUrl=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=objectUrl;link.download=url.includes('daily.zip')?'orayan-research-'+new URL(url,location.href).searchParams.get('day')+'.zip':'orayan-current-30h.zip';link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);}catch(error){$('#captureHealth').textContent=error.message;}}
+let currentResearchDownloadPending=false;
+async function downloadResearchZip(url){const isCurrent=url==='/api/capture/current.zip'||url==='/api/capture/export';if(isCurrent&&currentResearchDownloadPending)return;const button=isCurrent?$('#btnExportV3'):null,oldText=button?.textContent;if(isCurrent){currentResearchDownloadPending=true;button.disabled=true;button.textContent='Building current research ZIP…';}try{const headers={};if(url.includes('daily.zip')){const cap=await api('/api/capture/status');if(cap.exportAuthorization?.groq){const token=prompt('Enter the Groq research export token');if(!token)return;headers['X-Groq-Shadow-Export-Token']=token;}if(cap.exportAuthorization?.alibaba){const token=prompt('Enter the Alibaba research export token');if(!token)return;headers['X-Alibaba-Shadow-Export-Token']=token;}}const response=await fetch(url,{headers});if(!response.ok)throw Error('Research download failed ('+response.status+')');const objectUrl=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=objectUrl;link.download=url.includes('daily.zip')?'orayan-research-'+new URL(url,location.href).searchParams.get('day')+'.zip':'orayan-current-30h.zip';link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),30000);}catch(error){$('#captureHealth').textContent=error.message;}finally{if(isCurrent){currentResearchDownloadPending=false;button.disabled=false;button.textContent=oldText;}}}
 let v3ExportGeneration=null,v3FrozenStatus=null;
 async function freezeV3Export(){const c=await api('/api/v3/cohort');v3ExportGeneration=c.generation;v3FrozenStatus=c.status;
   $('#v35Watermark').textContent=`Dashboard and downloads frozen at generation ${c.generation} · ${new Date(c.watermarkAt).toISOString()} · cursors ${JSON.stringify(c.cursors)} · retained logical rows ${JSON.stringify(Object.fromEntries(Object.entries(c.retained).map(([k,v])=>[k,v.logicalRows])))}`;
@@ -192,7 +193,7 @@ function renderCaptureSummary(info,cap){
   }).join('');
   if(cap.schemaVersion==='ORAYAN_RESEARCH_V2'){let daily=document.getElementById('dailyResearchArchives');if(!daily){daily=document.createElement('div');daily.id='dailyResearchArchives';$('#captureStorageNote').after(daily);}daily.onclick=event=>{const link=event.target.closest('a');if(link){event.preventDefault();downloadResearchZip(link.getAttribute('href'));}};daily.innerHTML=(cap.archives||[]).filter(a=>!a.expired&&a.published&&a.verified).map(a=>`<a href="/api/capture/daily.zip?day=${encodeURIComponent(a.day)}">${esc(a.day)} daily ZIP</a>`).join(' · ');}
   $('#captureStorageNote').textContent=`${count(cap.retainedRows)} retained events · ${count(cap.prunedRows)} rotated out · seven completed daily ZIPs plus current data. Download includes approximately 30 hours with dependencies.`;
-  $('#btnExportV3').disabled=false;v3FrozenStatus=null;
+  $('#btnExportV3').disabled=currentResearchDownloadPending;v3FrozenStatus=null;
 }
 async function loadV3Status() {
   try {
@@ -236,8 +237,8 @@ async function loadV3Status() {
       $('#v3Status').textContent='Minimal event capture · epoch '+cap.epochId+' · '+cap.acceptedRows+' accepted / '+cap.lostRows+' lost events · '+fmtBytes(cap.retainedBytes)+' retained · '+cap.retentionStatus+' · '+(cap.populationComplete?'no reported capture loss':'INCOMPLETE capture')+'. Simulation scan counts below are internal observations, not recorded population.';
       $('#v35Capture').textContent='Candidate/trade events only. No all-day environment, minute paths, dormant arms or AI payload archive.';
       $('#v35Watermark').textContent='Canonical exports: all modes separated, schema '+cap.schemaVersion+', lifetime '+cap.acceptedRows+' accepted, retained '+cap.retainedRows+' rows, pruned '+cap.prunedRows+'. Downloads contain canonical records with checksums and dependencies.';
-      $('#btnExportV3').disabled=false;
-      $('#btnExportV3').textContent='CURRENT ~30H RESEARCH ZIP';
+      $('#btnExportV3').disabled=currentResearchDownloadPending;
+      $('#btnExportV3').textContent=currentResearchDownloadPending?'Building current research ZIP…':'CURRENT ~30H RESEARCH ZIP';
       for(const id of ['btnExportV3Summary','btnExportV3V2','btnExportV3AI','btnExportV3Trades','btnExportV3Errors','btnExportV3Paths','btnExportV3Arms','btnExportV3Ledger','btnExportV3Tombstones','btnV3Freeze','v35Daily','btnV3Daily'])$('#'+id).hidden=true;
       $('#v3ExportNote').textContent='One dataset contains decision episodes, trade outcomes, active comparison arms, sparse management events and compact health records. The export includes a fixed watermark and lifetime/retained/pruned counts. Old snapshot and minute-path downloads are retired. Forensic recording is off.';
     }

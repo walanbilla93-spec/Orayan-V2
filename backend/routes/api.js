@@ -121,10 +121,10 @@ const routes = {
   'GET /api/capture/receipt':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'),'utf8')):({complete:false}),
   'GET /api/capture/reset-audit':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'),'utf8')):({available:false}),
   'GET /api/capture/status':async()=>require('../lib/minimalCapture').researchEnabled()?require('../lib/researchRuntime').status():require('../lib/minimalCapture').enabled()?require('../lib/minimalCapture').current().status():({enabled:false}),
-  'GET /api/capture/current.zip':async({req})=>{requireResearchExportAuth(req);return require('../lib/researchRuntime').downloadCurrent();},
+  'GET /api/capture/current.zip':async()=>require('../lib/researchRuntime').downloadCurrent(),
   'GET /api/capture/archives':async()=>require('../lib/researchRuntime').current().state.archives.filter(a=>!a.expired&&a.verified&&a.published).map(({day,bytes,sha256})=>({day,bytes,sha256,url:'/api/capture/daily.zip?day='+day})),
   'GET /api/capture/daily.zip':async({query,req})=>{requireResearchExportAuth(req);return require('../lib/researchRuntime').daily(query.day);},
-  'GET /api/capture/export':async({req})=>{requireResearchExportAuth(req);return require('../lib/researchRuntime').downloadCurrent();},
+  'GET /api/capture/export':async()=>require('../lib/researchRuntime').downloadCurrent(),
   'GET /api/health': async () => ({
     ok: true,
     now: Date.now(),

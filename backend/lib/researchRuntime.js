@@ -81,7 +81,38 @@ function start() {
   timer = setInterval(tick, 15000);
   timer.unref();
 }
+let currentExportFlight = null;
+// Share only the combined Current 30h export; provider exports keep their own path.
 async function downloadCurrent(options = {}) {
+  require('./maintenance').current().assertStart('archive');
+  if (Object.keys(options).length) return buildCurrent(options);
+  let flight = currentExportFlight;
+  if (!flight) {
+    flight = { waiters: 0, artifact: null };
+    currentExportFlight = flight;
+    flight.promise = buildCurrent().then(artifact => {
+      flight.artifact = artifact;
+      return artifact;
+    }).finally(() => {
+      if (currentExportFlight === flight) currentExportFlight = null;
+    });
+  }
+  // Reserve a lease before awaiting: the first response may finish before others stream.
+  flight.waiters++;
+  try {
+    const artifact = await flight.promise;
+    let released = false;
+    return { ...artifact, cleanup: () => {
+      if (released) return;
+      released = true;
+      if (--flight.waiters === 0) artifact.cleanup();
+    } };
+  } catch (error) {
+    flight.waiters--;
+    throw error;
+  }
+}
+async function buildCurrent(options = {}) {
   require('./maintenance').current().assertStart('archive');
   const c = current(),
     scratch = fs.mkdtempSync(path.join(os.tmpdir(), "orayan-export-")),
