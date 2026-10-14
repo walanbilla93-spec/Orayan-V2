@@ -717,7 +717,9 @@ function birth(signal, context) {
   // scalar current features and both clocks; omit only bulky arrays from trendMomentum.
   const update = continuing ? {...compact,trendMomentum:Object.fromEntries(
     Object.entries(compact.trendMomentum||{}).filter(([,v])=>!Array.isArray(v)))} : compact;
-  if(minimal.enabled())minimal.native(signal,compact,settings);
+  const birthResearch = compact.kind === 'candidate_birth' && compact.engine === 'NEW_ORAYAN'
+    ? context.birthResearch?.(compact) : null;
+  if(minimal.enabled())minimal.native(signal,compact,settings,birthResearch);
   append('compact',update,scanAt);
   if (compact.kind === 'candidate_birth'&&!minimal.enabled()) {
     pendingForward.set(episodeId,compact);

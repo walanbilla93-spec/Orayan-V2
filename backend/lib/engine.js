@@ -585,25 +585,36 @@ async function scanOnce() {
       .map(x => Math.log1p(x.r12)).sort((a,b) => a-b);
     const universeResearch = { r12Median:r12s.length ? r12s[Math.floor(r12s.length/2)] : null };
     for (const signal of journalSignals) {
-      let birth = null;
-      try { birth = researchCapture.birth(signal, { scanId, scanAt, ticker:tickerBySymbol.get(signal.symbol),
-        candles:researchCandles.get(signal.symbol) || [], settings, snapshot:marketSnapshot,
-        btc:{r12:btcObservation?.r12 == null ? null : Math.log1p(btcObservation.r12)}, universe:universeResearch,
-        tickerDynamic:tickerResearch.get(signal.symbol) }); }
-      catch (e) { logger.warn('research', 'Birth capture failed', { error:e.message, symbol:signal.symbol }); }
-      // Fire-and-forget shadow research at the exact native birth point. The producer writes its
-      // causal audit before queueing; its result is deliberately unavailable to execution.
-      let sharedPacket = null;
+      // One birth packet feeds Meta-Lite and both providers. Pure calculation is
+      // embedded in the existing birth append: no extra I/O, queue or async work.
+      let birth = null, sharedPacket = null;
       const birthContext = {scanAt,settings,marketSnapshot,
         ticker:tickerBySymbol.get(signal.symbol),btcRegime,
         openPositions:[...openTrades(),...pendingTrades()]};
-      try {
-        if (require('./minimalCapture').researchEnabled()) sharedPacket = require('./researchPayload').sharedBirth(
-          signal,birth,birthContext,require('./minimalCapture').current().state.epochId);
-       } catch (e) {
-        logger.warn('research','Shared birth packet unavailable',{code:e.code,error:e.message});
+      const birthResearch = row => {
+        const minimal = require('./minimalCapture');
+        if (!minimal.researchEnabled() || row.kind !== 'candidate_birth' || row.engine !== 'NEW_ORAYAN') return null;
+        const epoch = minimal.current().state.epochId;
+        try {
+          sharedPacket = require('./researchPayload').sharedBirth(signal,row,birthContext,epoch);
+        } catch (e) {
+          logger.warn('research','Shared birth packet unavailable',{code:e.code,error:e.message});
+          return require('./metaLite').unavailable(row,epoch);
+        }
+        try { return require('./metaLite').evaluate(sharedPacket); }
+        catch (e) {
+          logger.warn('research','Meta-Lite evaluation censored',{code:e.code});
+          return require('./metaLite').unavailable(row,epoch,'EVALUATOR_ERROR',sharedPacket);
+        }
+      };
+      try { birth = researchCapture.birth(signal, { scanId, scanAt, ticker:tickerBySymbol.get(signal.symbol),
+        candles:researchCandles.get(signal.symbol) || [], settings, snapshot:marketSnapshot,
+        btc:{r12:btcObservation?.r12 == null ? null : Math.log1p(btcObservation.r12)}, universe:universeResearch,
+        tickerDynamic:tickerResearch.get(signal.symbol), birthResearch }); }
+      catch (e) { logger.warn('research', 'Birth capture failed', { error:e.message, symbol:signal.symbol }); }
+      if (birth?.kind === 'candidate_birth' && birth.engine === 'NEW_ORAYAN' &&
+          require('./minimalCapture').researchEnabled() && !sharedPacket)
         for (const provider of ['Groq','Alibaba']) require('./researchAI').notRequested(provider,birth,signal.id,'LOCAL_ABSTAIN_INPUT_UNAVAILABLE');
-      }
       // A shared-builder failure must never fall back to independent evidence in this cohort.
       if (!require('./minimalCapture').researchEnabled() || sharedPacket) {
         try { groqShadowProducer.observeBirth(signal,birth,{...birthContext,sharedPacket}); }

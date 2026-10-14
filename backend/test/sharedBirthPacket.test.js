@@ -57,16 +57,17 @@ test('restart and replay from canonical snapshot preserves hash, cohort and no-c
 });
 test('engine dispatches once per provider, shares one builder result and leaves PAPER sizing/execution unchanged',async()=>{
   const vm=require('vm'),root=path.resolve(__dirname,'../..'),source=fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8').replace(/\r\n/g,'\n');
-  const a=source.indexOf('      // Fire-and-forget shadow research'),b=source.indexOf('      // Shadow-only sidecar.',a),block=source.slice(a,b);
+  const a=source.indexOf('      // One birth packet'),b=source.indexOf('      // Shadow-only sidecar.',a),block=source.slice(a,b);
   const hash=s=>crypto.createHash('sha256').update(s).digest('hex');
-  assert.equal(hash(source.slice(0,a)+source.slice(b)),'f5665535be164b058c3463d6843f85a4771bdec4b5419e56393d18f9f65eb7ed','all engine code outside the birth handoff unchanged');
+  assert.equal(hash(source.slice(0,a)+source.slice(b)),'bc54906ba139e977bb36dbe32ed8dbcb820476883e74349b50e486c845e89cb6','all engine code outside the birth handoff unchanged');
   const protectedFiles={'signals.js':'a0b39835e78ed1326a6a07fb1a7eb8d6844b9bdf15ded5bad6f0e02f90671924','gates.js':'30316c24a2b52c96a4f4d1d612dbe688c2759038260d69bca39cc07fa8171048','risk.js':'14dbd15d6fc91c81a4d0aab17cb7a2f061d0301514341ea0cb6cc0f8519610ef','executor.js':'329aac63f3d11efaeac3034bcc1a1ce302754dd089c5c54d98352bf41dbfaa18'};
   for(const [p,h]of Object.entries(protectedFiles))assert.equal(hash(fs.readFileSync(path.join(root,'backend/lib',p),'utf8').replace(/\r\n/g,'\n')),h,p);
-  const contexts=[],p=packet();let builds=0;const signal={id:'C',symbol:'TESTUSDT',side:'BUY',entry:100,sl:98,tp:104,market:{turnover24h:1000}};
+  const contexts=[],p=packet();let builds=0,meta=0;const signal={id:'C',symbol:'TESTUSDT',side:'BUY',entry:100,sl:98,tp:104,market:{turnover24h:1000}};
   const ctx={signal,birth:{kind:'candidate_birth',engine:'NEW_ORAYAN',episodeId:'EP',decisionAt:at},scanAt:at,settings:input().settings,marketSnapshot:{},tickerBySymbol:new Map(),btcRegime:input().btcRegime,openTrades:()=>[],pendingTrades:()=>[],logger:{warn(){}},
     groqShadowProducer:{observeBirth:(s,b,c)=>contexts.push(c)},alibabaShadowProducer:{observeBirth:(s,b,c)=>contexts.push(c)},
-    require:n=>n==='./minimalCapture'?{researchEnabled:()=>true,current:()=>({state:{epochId:'EPOCH'}})}:n==='./researchPayload'?{sharedBirth:()=>{builds++;return p;}}:{notRequested(){}}};
-  vm.runInNewContext(block,ctx);assert.equal(builds,1);assert.equal(contexts.length,2);assert.equal(contexts[0].sharedPacket,contexts[1].sharedPacket);
+    researchCapture:{birth:(s,c)=>{c.birthResearch({kind:'candidate_birth',engine:'NEW_ORAYAN',episodeId:'EP',decisionAt:at});return {kind:'candidate_birth',engine:'NEW_ORAYAN',episodeId:'EP',decisionAt:at};}},scanId:'S',researchCandles:new Map(),btcObservation:null,universeResearch:{},tickerResearch:new Map(),
+    require:n=>n==='./metaLite'?{evaluate:packet=>{assert.equal(packet,p);meta++;return {};}}:n==='./minimalCapture'?{researchEnabled:()=>true,current:()=>({state:{epochId:'EPOCH'}})}:n==='./researchPayload'?{sharedBirth:()=>{builds++;return p;}}:{notRequested(){}}};
+  vm.runInNewContext(block,ctx);assert.equal(builds,1);assert.equal(meta,1);assert.equal(contexts.length,2);assert.equal(contexts[0].sharedPacket,contexts[1].sharedPacket);
   const risk=require('../lib/risk'),executor=require('../lib/executor'),market=require('../lib/marketData');
   const settings={mode:'paper',riskUsdtPerTrade:.25,maxNotionalUsdt:1000,leverage:1,entryWindowMin:10,entryBufferBps:0,tpThroughBps:0,slSlipBps:0,makerFeePct:.02,takerFeePct:.055};
   const sizing=risk.sizePosition({entry:signal.entry,sl:signal.sl,settings,instrument:{qtyStep:.001,tickSize:.01,minOrderQty:.001}});
