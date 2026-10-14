@@ -84,7 +84,7 @@
           <div class="capture-section-head"><h3>Active comparisons</h3><span class="panel-sub">No strategy promotion</span></div>
           <div id="comparisonCards" class="comparison-cards"></div>
           <p class="panel-sub">Net cash and paired difference use each comparison's eligible admissions. Missing or censored outcomes remain separate; these are not portfolio returns.</p>
-          <div class="capture-footer"><p id="captureStorageNote" class="panel-sub"></p><button class="btn primary" id="btnExportV3">Download research data</button></div>
+          <div class="capture-footer"><p id="captureStorageNote" class="panel-sub"></p><button class="btn primary" id="btnExportV3">Download research data</button><button class="btn btn-ghost" id="btnResetResearch" title="Start a new research epoch; preserve all existing records, archives and trades">Start clean experiment</button></div>
         </div>
         <div id="legacyResearchPanel" hidden>
         <p id="v3Status" aria-live="polite">Checking V3 capture…</p>
@@ -261,7 +261,6 @@
             <button class="btn btn-ghost" id="btnExportShadowCsv">Download shadow CSV</button>
             <button class="btn btn-ghost" id="btnExportShadowJson">JSON</button>
             <button class="btn btn-danger" id="btnClearShadow">Clear shadow trades</button>
-            <button class="btn btn-danger" id="btnResetResearch" title="Clear signal log + Orayan trades + Marci shadow trades">Start clean experiment</button>
           </div>
         </div>
         <div id="shadowTradeList"><div class="empty">No shadow trades yet.</div></div>

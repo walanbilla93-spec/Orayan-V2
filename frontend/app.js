@@ -166,7 +166,7 @@ async function freezeV3Export(){const c=await api('/api/v3/cohort');v3ExportGene
   await loadV3Status();return c;}
 async function downloadV3(channel){const minimal=await api('/api/capture/status');if(['ORAYAN_MINIMAL_CAPTURE_V1','ORAYAN_RESEARCH_V2'].includes(minimal.schemaVersion)){await downloadResearchZip('/api/capture/current.zip');return;}if(!v3ExportGeneration)await freezeV3Export();
   window.location.href=channel==='summary'?`/api/v3/summary?generation=${v3ExportGeneration}`:`/api/v3/export?channel=${channel}&generation=${v3ExportGeneration}`;}
-function hideDormantResearch(){for(const id of ['groqShadowPanel','alibabaShadowPanel','btnExportSignalsCsv','btnExportSignalsJson','btnExportProspectiveResearch','btnExportProspectiveAll','btnResetProspectiveCompact','btnExportSupplementResearch','btnExportEarlyEntryResearch','btnExportLegacyResearch','btnExportResearchEvents','btnResetResearch'])$('#'+id).hidden=true;}
+function hideDormantResearch(){for(const id of ['groqShadowPanel','alibabaShadowPanel','btnExportSignalsCsv','btnExportSignalsJson','btnExportProspectiveResearch','btnExportProspectiveAll','btnResetProspectiveCompact','btnExportSupplementResearch','btnExportEarlyEntryResearch','btnExportLegacyResearch','btnExportResearchEvents'])$('#'+id).hidden=true;}
 async function initializeCaptureView(){try{const cap=await api('/api/capture/status');if(['ORAYAN_MINIMAL_CAPTURE_V1','ORAYAN_RESEARCH_V2'].includes(cap.schemaVersion))hideDormantResearch();}catch{/* Existing status banner handles connection failures. */}}
 function renderCaptureSummary(info,cap){
   hideDormantResearch();
@@ -1012,13 +1012,18 @@ function init() {
     catch (e) { alert('Failed: ' + (e.message || e)); }
   });
   $('#btnResetResearch').addEventListener('click', async () => {
-    if (!confirm('START CLEAN EXPERIMENT? This clears the signal journal, Orayan trades, and Marci shadow trades. This cannot be undone.')) return;
+    const button = $('#btnResetResearch');
+    if (button.disabled) return;
+    if (!confirm('Start a new research epoch? All existing research records, archives and trades are preserved. Open episodes keep their original cohort. PAPER settings, provider budgets and strategy rules stay unchanged.')) return;
+    button.disabled = true;
     try {
-      await api('/api/research/reset-all', { method: 'POST' });
-      state.signals = []; state.funnel = {}; state.trades = []; state.shadowTrades = [];
-      toast('Research logs cleared — clean experiment started');
+      const result = await api('/api/research/reset-all', { method: 'POST' });
+      if (!result.ok || !result.epochId || result.historicalResearchPreserved !== true) throw Error('Could not verify the new research epoch. Refresh capture status before retrying.');
+      toast('New research epoch started — history preserved');
       await refresh();
+      await loadV3Status();
     } catch (e) { toast(e.message, 'error'); }
+    finally { button.disabled = false; }
   });
   $('#btnClearSignals').addEventListener('click', async () => {
     if (!confirm('Clear ALL signal history and the live signals list? This cannot be undone.')) return;
