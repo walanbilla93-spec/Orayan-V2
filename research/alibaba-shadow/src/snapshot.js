@@ -188,7 +188,7 @@ function validateSnapshot(snapshot, nowMs = Date.now()) {
 
 function compactSnapshot(snapshot) {
   const clean = JSON.parse(canonicalJson(redact(snapshot)));
-  return {snapshot:clean, inputHash:sha256(canonicalJson(clean))};
+  return {snapshot:require('../../../backend/lib/researchPayload').attachShared(snapshot,clean), inputHash:sha256(canonicalJson(clean))};
 }
 
 function validateDecision(decision, snapshot) {

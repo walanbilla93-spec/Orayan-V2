@@ -59,7 +59,7 @@ function abstainDecision(reasons,code='INSUFFICIENT_DECISION_TIME_EVIDENCE'){
     rationale_short:'Required causal decision-time evidence is missing, stale, unavailable, or invalid.'};
 }
 function baseRecord({recordType,requestId,snapshot,inputHash,config,nowIso,status}){
-  return {schema_version:SCHEMA_VERSION,record_type:recordType,request_id:requestId,candidate_id:snapshot.candidate_id,candidate_episode_id:snapshot.candidate_episode_id||null,
+  return {...require('../../../backend/lib/researchPayload').identity(snapshot),schema_version:SCHEMA_VERSION,record_type:recordType,request_id:requestId,candidate_id:snapshot.candidate_id,candidate_episode_id:snapshot.candidate_episode_id||null,
     candidate_birth_at_utc:snapshot.candidate_birth_at_utc,model:config.model,base_url:config.baseUrl,
     region:'Singapore',thinking_enabled:false,prompt_version:PROMPT_VERSION,prompt_variant:PROMPT_VARIANT,
     prompt_hash:PROMPT_HASH,response_schema_version:RESPONSE_SCHEMA_VERSION,response_schema_hash:RESPONSE_SCHEMA_HASH,
@@ -69,7 +69,7 @@ function baseRecord({recordType,requestId,snapshot,inputHash,config,nowIso,statu
 
 async function advise(snapshot,options={}){
   const config=options.config||configFromEnv(),nowMs=options.nowMs??Date.now(),nowIso=new Date(nowMs).toISOString();
-  snapshot=redact(snapshot,[config.apiKey]);
+  snapshot=require('../../../backend/lib/researchPayload').attachShared(snapshot,redact(snapshot,[config.apiKey]));
   const check=validateSnapshot(snapshot,nowMs),compact=compactSnapshot(snapshot);
   if(require('../../../backend/lib/minimalCapture').researchEnabled())check.abstainReasons.push(...require('../../../backend/lib/researchPayload').staleReasons(snapshot,nowMs,config.maxDeferAgeMs));
   const requestId=sha256(`${snapshot?.candidate_id||'missing'}|${compact.inputHash}|${config.model}|${PROMPT_HASH}|${PROMPT_VARIANT}`);

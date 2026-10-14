@@ -339,7 +339,7 @@ function observeBirth(signal, birth, context = {}) {
     logger.warn('groq-shadow','Durable shadow handoff capacity is full',{candidateId:signal.id});
     return false;
   }
-  const snapshot = buildSnapshot(signal, birth, context);
+  const snapshot = context.sharedPacket ? require('./researchPayload').providerSnapshot(context.sharedPacket,INPUT_SCHEMA_VERSION) : buildSnapshot(signal, birth, context);
   // Defer the durable append. The engine receives a boolean immediately; after this point the
   // snapshot is fsynced before it is allowed to enter pending work.
   setImmediate(() => {

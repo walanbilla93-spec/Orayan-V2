@@ -2,6 +2,64 @@
 const { canonical } = require('./researchRequest');
 const VERSION = 'ORAYAN_LEAN_AI_V2';
 const KEYS = ['symbol','side','regime','planned_trade','exposure','h1','h2','score','reason_flags','risk_flags','market_context','market_intelligence'];
+const PACKET_VERSION = 'ORAYAN_SHARED_BIRTH_AI_V1';
+const sha = value => require('crypto').createHash('sha256').update(canonical(value)).digest('hex');
+const CLOCK = /(?:_at_utc|timestamp_utc)$/;
+function freeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.values(value).forEach(freeze); Object.freeze(value);
+  }
+  return value;
+}
+// Validate before lean pruning removes clocks. Rejected source groups contain no values.
+function causal(value, cutoff) {
+  if (Array.isArray(value)) return value.map(v => causal(v, cutoff));
+  if (!value || typeof value !== 'object') return value;
+  if (value.status === 'NOT_AVAILABLE') return {status:'NOT_AVAILABLE',reason:'NOT_CAUSALLY_AVAILABLE_AT_CANDIDATE_BIRTH'};
+  const clocks = Object.entries(value).filter(([k]) => CLOCK.test(k));
+  if (clocks.length && (clocks.every(([,v]) => v == null) || clocks.some(([,v]) => v != null && (!Number.isFinite(Date.parse(v)) || Date.parse(v) > cutoff))))
+    return {status:'NOT_AVAILABLE',reason:'NOT_CAUSALLY_AVAILABLE_AT_CANDIDATE_BIRTH'};
+  return Object.fromEntries(Object.entries(value).filter(([k]) => !/(^|_)(realised|realized)(_|$)/.test(k)).map(([k,v]) => [k,causal(v,cutoff)]));
+}
+function sharedBirth(signal, birth, context, sourceEpoch) {
+  if (!birth || birth.kind !== 'candidate_birth' || birth.engine !== 'NEW_ORAYAN') return null;
+  const cutoff = Number(birth.decisionAt ?? birth.at);
+  if (!Number.isFinite(cutoff) || !sourceEpoch || !birth.episodeId) throw Error('SHARED_BIRTH_IDENTITY_UNAVAILABLE');
+  // Reuse the existing rich, cache-only builder; never acquire market data here.
+  const snapshot = causal(require('./alibabaShadowProducer').buildSnapshot(signal,birth,context),cutoff);
+  delete snapshot.schema_version;
+  if (Object.values(snapshot.h2.features).some(f => f.status !== 'OK'))
+    snapshot.h2 = {...snapshot.h2,state:'ABSTAIN',alerts:[],abstain_reasons:Object.entries(snapshot.h2.features).filter(([,f]) => f.status !== 'OK').map(([k]) => k+':missing_or_stale')};
+  if (snapshot.regime.status !== 'OK' || snapshot.exposure.status === 'NOT_AVAILABLE') {
+    snapshot.h1 = {...snapshot.h1,state:'ABSTAIN',reason_codes:[],abstain_reasons:['shared_source:missing_or_stale']};
+    snapshot.planned_trade.planned_heat_usdt = null;
+    snapshot.exposure.same_side_regime_count = null;
+    snapshot.exposure.same_side_regime_heat_usdt = null;
+    snapshot.risk_flags = [...(signal.gates?.failed || [])];
+  }
+  const normalized = freeze(evidence(snapshot));
+  const identity = freeze({packet_version:PACKET_VERSION,source_epoch:sourceEpoch,opportunity_id:birth.episodeId,
+    birth_cutoff:new Date(cutoff).toISOString(),cohort_id:sha([PACKET_VERSION,sourceEpoch,birth.episodeId]),shared_context_hash:sha(normalized)});
+  snapshot.shared_context = identity;
+  Object.defineProperty(snapshot,'sharedEvidence',{value:normalized});
+  return freeze({snapshot,identity,evidence:normalized});
+}
+function providerSnapshot(packet, schema) {
+  const snapshot = {...packet.snapshot,schema_version:schema};
+  Object.defineProperty(snapshot,'sharedEvidence',{value:packet.evidence});
+  return freeze(snapshot);
+}
+// The evidence is a transient reference, excluded from JSON/audit history. Replay derives
+// the same projection from the authoritative full causal snapshot and existing fragments.
+function attachShared(source, target) {
+  if (source.sharedEvidence) Object.defineProperty(target,'sharedEvidence',{value:source.sharedEvidence});
+  return target;
+}
+function identity(snapshot) {
+  return snapshot.shared_context || (snapshot.shared_context_hash ? {
+    packet_version:snapshot.packet_version,source_epoch:snapshot.source_epoch,opportunity_id:snapshot.opportunity_id,
+    birth_cutoff:snapshot.birth_cutoff,cohort_id:snapshot.cohort_id,shared_context_hash:snapshot.shared_context_hash} : {});
+}
 function prune(value, key = '') {
   if (/(_at_utc|timestamp_utc)$/.test(key) || /^(version|schema_version|engine|debug|sources|history|regime_transitions|model_confidence_map|correlation|risk_policy|config|prompt|parser)$/.test(key)) return undefined;
   if (key === 'status' && value === 'OK') return undefined;
@@ -19,6 +77,7 @@ function prune(value, key = '') {
   return value;
 }
 function evidence(snapshot) {
+  if (snapshot.sharedEvidence) return snapshot.sharedEvidence;
   const result = { snapshot_at_utc: snapshot.candidate_birth_at_utc };
   for (const key of KEYS) { const v = prune(snapshot[key],key); if (v !== undefined) result[key] = v; }
   return result;
@@ -50,4 +109,4 @@ function build(request, snapshot, schema) {
   else envelope.response_contract = outputSchema;
   return {...request,messages:[{role:'system',content:system},{role:'user',content:canonical(envelope)}]};
 }
-module.exports = {VERSION,evidence,prune,staleReasons,build};
+module.exports = {VERSION,PACKET_VERSION,sharedBirth,providerSnapshot,attachShared,identity,evidence,prune,staleReasons,build};

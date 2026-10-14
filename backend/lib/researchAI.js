@@ -19,6 +19,7 @@ function context(provider, snapshot, requestId, model) {
     ]),
   );
   return {
+    ...require('./researchPayload').identity(snapshot),
     provider,
     model,
     evaluationId,
@@ -72,7 +73,10 @@ function begin(provider, snapshot, request, requestId, secrets = []) {
       )
         throw Error("RESEARCH_CAPTURE_HALTED");
     }
-  const auditPack=require('./researchRequest').pack({messages:[{role:'user',content:require('./researchRequest').canonical({candidate:clean(snapshot,[...c.secrets,...secrets])})}]});
+  const auditSnapshot=clean(snapshot,[...c.secrets,...secrets]);
+  // Provider schema belongs to the transport record; one shared birth has one causal audit.
+  if (snapshot.shared_context) delete auditSnapshot.schema_version;
+  const auditPack=require('./researchRequest').pack({messages:[{role:'user',content:require('./researchRequest').canonical({candidate:auditSnapshot})}]});
   for(const fragment of auditPack.fragments)if(!c.state.dedupe['ai-context:'+fragment.definitionId]&&!c.emit('definitions',{definitionId:fragment.definitionId,kind:fragment.kind,definition:{value:fragment.value}},{key:'ai-context:'+fragment.definitionId,signature:fragment.definitionId}))throw Error('RESEARCH_CAPTURE_HALTED');
   const audit = {kind:'AI_FULL_CAUSAL_AUDIT',payloadVersion:require('./researchPayload').VERSION,snapshot:auditPack.unique.messages[0].candidate,contextReferences:auditPack.unique.messages[0].contextReferences,parserVersion:'ORAYAN_AI_PARSE_V2',normalizationVersion:'PROVIDER_NORMALIZE_V1'};
   const auditId=sha(JSON.stringify(audit));
@@ -186,6 +190,7 @@ function canonical(provider) {
         };
       }
       persist(c, {
+        ...require("./researchPayload").identity(record),
         provider,
         event: "PROVIDER_LEDGER",
         ledgerRecord: compact,

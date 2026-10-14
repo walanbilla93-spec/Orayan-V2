@@ -124,22 +124,20 @@ function baselineFor(at) {
     .sort((a, b) => Math.abs((at - a.at) - 10 * 60000) - Math.abs((at - b.at) - 10 * 60000))[0] || null;
 }
 
+function causalPoint(point,birthAt) {
+  return point?.observedAt != null && point?.availableAt != null && point.observedAt <= birthAt && point.availableAt <= birthAt ? point : null;
+}
 function h2Feature(name, current, baseline, birthAt) {
+  current = causalPoint(current,birthAt); baseline = causalPoint(baseline,birthAt);
   const ageSeconds = current?.observedAt == null ? null : Math.max(0, (birthAt - current.observedAt) / 1000);
-  const value = current?.value ?? null;
-  const base = baseline?.value ?? null;
-  const status = value != null && base != null && current?.observedAt <= birthAt && current?.availableAt <= birthAt
-    ? 'OK' : 'NOT_AVAILABLE';
+  const value = current?.value ?? null, base = baseline?.value ?? null;
   return {
-    current: value,
-    baseline: base,
-    delta: value != null && base != null ? value - base : null,
-    observed_at_utc: iso(current?.observedAt),
-    baseline_observed_at_utc: iso(baseline?.observedAt),
-    available_to_system_at_utc: iso(current?.availableAt),
-    age_seconds: ageSeconds,
-    status,
-    ...(name === 'linear_breadth' ? { sample_size: current?.sampleSize ?? null } : {}),
+    current:value,baseline:base,delta:value != null && base != null ? value-base : null,
+    observed_at_utc:iso(current?.observedAt),baseline_observed_at_utc:iso(baseline?.observedAt),
+    baseline_available_to_system_at_utc:iso(baseline?.availableAt),
+    available_to_system_at_utc:iso(current?.availableAt),age_seconds:ageSeconds,
+    status:value != null && base != null ? 'OK' : 'NOT_AVAILABLE',
+    ...(name === 'linear_breadth' ? {sample_size:current?.sampleSize ?? null} : {}),
   };
 }
 
@@ -256,7 +254,7 @@ function buildSnapshot(signal, birth, context = {}) {
         observed_at_utc:features.linear_breadth.observed_at_utc,
         available_to_system_at_utc:features.linear_breadth.available_to_system_at_utc},
       benchmark_returns:{
-        btc_short:current?.btc_return_short?.value??null,btc_medium:current?.btc_return_medium?.value??null,
+        btc_short:causalPoint(current?.btc_return_short,birthAt)?.value??null,btc_medium:causalPoint(current?.btc_return_medium,birthAt)?.value??null,
         btc_24h:features.btc_return_24h.current,eth_24h:features.eth_return_24h.current,
         observed_at_utc:features.btc_return_24h.observed_at_utc,
         available_to_system_at_utc:features.btc_return_24h.available_to_system_at_utc,
@@ -422,7 +420,7 @@ function observeBirth(signal, birth, context = {}) {
     logger.warn('alibaba-shadow','Durable shadow handoff capacity is full',redact({candidateId:signal.id}));
     return false;
   }
-  const snapshot = buildSnapshot(signal, birth, context);
+  const snapshot = context.sharedPacket ? require('./researchPayload').providerSnapshot(context.sharedPacket,INPUT_SCHEMA_VERSION) : buildSnapshot(signal, birth, context);
   const check=validateSnapshot(snapshot,Date.now());
   if(!check.valid){
     currentRuntime.reserved=Math.max(0,currentRuntime.reserved-1);

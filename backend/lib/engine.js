@@ -593,16 +593,24 @@ async function scanOnce() {
       catch (e) { logger.warn('research', 'Birth capture failed', { error:e.message, symbol:signal.symbol }); }
       // Fire-and-forget shadow research at the exact native birth point. The producer writes its
       // causal audit before queueing; its result is deliberately unavailable to execution.
-      try { groqShadowProducer.observeBirth(signal,birth,{scanAt,settings,
+      let sharedPacket = null;
+      const birthContext = {scanAt,settings,marketSnapshot,
         ticker:tickerBySymbol.get(signal.symbol),btcRegime,
-        openPositions:[...openTrades(),...pendingTrades()]}); }
-      catch (e) { logger.warn('groq-shadow', 'Candidate handoff failed open', { error:e.message, symbol:signal.symbol }); }
-      // Independent one-way Alibaba research handoff. No promise or result is exposed to any
-      // gate, rank, sizing, portfolio, order, or execution path.
-      try { alibabaShadowProducer.observeBirth(signal,birth,{scanAt,settings,marketSnapshot,
-        ticker:tickerBySymbol.get(signal.symbol),btcRegime,
-        openPositions:[...openTrades(),...pendingTrades()]}); }
-      catch (e) { logger.warn('alibaba-shadow', 'Candidate handoff failed open', { code:e.code }); }
+        openPositions:[...openTrades(),...pendingTrades()]};
+      try {
+        if (require('./minimalCapture').researchEnabled()) sharedPacket = require('./researchPayload').sharedBirth(
+          signal,birth,birthContext,require('./minimalCapture').current().state.epochId);
+       } catch (e) {
+        logger.warn('research','Shared birth packet unavailable',{code:e.code,error:e.message});
+        for (const provider of ['Groq','Alibaba']) require('./researchAI').notRequested(provider,birth,signal.id,'LOCAL_ABSTAIN_INPUT_UNAVAILABLE');
+      }
+      // A shared-builder failure must never fall back to independent evidence in this cohort.
+      if (!require('./minimalCapture').researchEnabled() || sharedPacket) {
+        try { groqShadowProducer.observeBirth(signal,birth,{...birthContext,sharedPacket}); }
+        catch (e) { logger.warn('groq-shadow', 'Candidate handoff failed open', { error:e.message, symbol:signal.symbol }); }
+        try { alibabaShadowProducer.observeBirth(signal,birth,{...birthContext,sharedPacket}); }
+        catch (e) { logger.warn('alibaba-shadow', 'Candidate handoff failed open', { code:e.code }); }
+      }
       // Shadow-only sidecar. Its return value is deliberately ignored and cannot affect any
       // candidate, gate, rank, size, portfolio limit, or order path below.
       try { earlyEntryShadow.observeCandidate(signal,{scanAt,settings,snapshot:marketSnapshot,

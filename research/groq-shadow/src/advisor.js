@@ -63,7 +63,7 @@ function abstainDecision(reasons, code = 'INSUFFICIENT_DECISION_TIME_EVIDENCE') 
 
 function baseRecord({recordType,requestId,snapshot,inputHash,config,nowIso,status}) {
   return {
-    schema_version:SCHEMA_VERSION,record_type:recordType,request_id:requestId,
+    ...require('../../../backend/lib/researchPayload').identity(snapshot),schema_version: SCHEMA_VERSION,record_type:recordType,request_id:requestId,
     candidate_id:snapshot.candidate_id,candidate_episode_id:snapshot.candidate_episode_id||null,candidate_birth_at_utc:snapshot.candidate_birth_at_utc,
     model:config.model,prompt_version:PROMPT_VERSION,prompt_variant:PROMPT_VARIANT,
     prompt_hash:PROMPT_HASH,response_schema_version:RESPONSE_SCHEMA_VERSION,response_schema_hash:RESPONSE_SCHEMA_HASH,
