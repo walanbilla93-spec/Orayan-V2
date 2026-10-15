@@ -3,6 +3,7 @@
 const settingsMod = require('../lib/settings');
 const engine = require('../lib/engine');
 const logger = require('../lib/logger');
+const { compactStatus } = require('../lib/resourceSummary');
 const bybit = require('../lib/bybit');
 const marketData = require('../lib/marketData');
 const journal = require('../lib/journal');
@@ -120,7 +121,8 @@ const routes = {
   },
   'GET /api/capture/receipt':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-reset-receipt.json'),'utf8')):({complete:false}),
   'GET /api/capture/reset-audit':async()=>require('fs').existsSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'))?JSON.parse(require('fs').readFileSync(require('path').join(require('../lib/store').DATA_DIR,'capture-pre-reset-final-audit.json'),'utf8')):({available:false}),
-  'GET /api/capture/status':async()=>require('../lib/minimalCapture').researchEnabled()?require('../lib/researchRuntime').status():require('../lib/minimalCapture').enabled()?require('../lib/minimalCapture').current().status():({enabled:false}),
+  'GET /api/capture/status':async()=>compactStatus(require('../lib/minimalCapture').researchEnabled()?require('../lib/researchRuntime').status():require('../lib/minimalCapture').enabled()?require('../lib/minimalCapture').current().status():({enabled:false})),
+  'GET /api/capture/status/details':async()=>require('../lib/minimalCapture').researchEnabled()?require('../lib/researchRuntime').status():require('../lib/minimalCapture').enabled()?require('../lib/minimalCapture').current().status():({enabled:false}),
   'GET /api/capture/current.zip':async()=>require('../lib/researchRuntime').downloadCurrent(),
   'GET /api/capture/archives':async()=>require('../lib/researchRuntime').current().state.archives.filter(a=>!a.expired&&a.verified&&a.published).map(({day,bytes,sha256})=>({day,bytes,sha256,url:'/api/capture/daily.zip?day='+day})),
   'GET /api/capture/daily.zip':async({query,req})=>{requireResearchExportAuth(req);return require('../lib/researchRuntime').daily(query.day);},
@@ -135,7 +137,7 @@ const routes = {
     processStartedAt: runtime.processStartedAt,
   }),
 
-  'GET /api/status': async () => engine.getState(),
+  'GET /api/status': async () => compactStatus(engine.getState()),
 
   'GET /api/settings': async () => ({
     schema: settingsMod.SCHEMA,
@@ -277,7 +279,7 @@ const routes = {
 
   'GET /api/journal/research/manifest': async () => researchManifest.buildManifest(),
 
-  'GET /api/v3/status': async () => {try{return v3Shadow.status();}catch(e){if(require('../lib/minimalCapture').researchEnabled())return {archive:require('../lib/researchRuntime').status()};throw e;}},
+  'GET /api/v3/status': async () => {try{return compactStatus(v3Shadow.status());}catch(e){if(require('../lib/minimalCapture').researchEnabled())return {archive:compactStatus(require('../lib/researchRuntime').status())};throw e;}},
   'GET /api/v3/summary': async ({query}) => ({__file:true,contentType:'application/json',
     filename:'orayan_v3_summary.json',body:JSON.stringify(v3Shadow.summary(query.generation),null,2)}),
   'GET /api/v3/export': async ({query,req}) => {if(require('../lib/minimalCapture').researchEnabled())requireResearchExportAuth(req);return v3Shadow.download(query.channel||'v3',query.generation);},

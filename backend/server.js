@@ -176,12 +176,20 @@ function startServer(port = PORT) {
 
   // Recover durable, nonterminal shadow snapshots after every process/container restart.
   // This remains one-way research work; recovery cannot affect engine startup or execution.
-  setImmediate(() => groqShadowProducer.initialize()
-    .then(result => logger.info('groq-shadow','Startup recovery complete',result))
-    .catch(e => logger.warn('groq-shadow','Startup recovery failed open',{code:e.code,error:e.message})));
-  setImmediate(() => alibabaShadowProducer.initialize()
-    .then(result => logger.info('alibaba-shadow','Startup recovery complete',result))
-    .catch(e => logger.warn('alibaba-shadow','Startup recovery failed open',{code:e.code})));
+  setImmediate(() => {
+    const started = Date.now();
+    groqShadowProducer.initialize()
+      .then(result => logger.info('groq-shadow','Startup recovery complete',
+        require('./lib/resourceSummary').recoverySummary('Groq', result, Date.now() - started)))
+      .catch(e => logger.warn('groq-shadow','Startup recovery failed open',{code:e.code,error:e.message}));
+  });
+  setImmediate(() => {
+    const started = Date.now();
+    alibabaShadowProducer.initialize()
+      .then(result => logger.info('alibaba-shadow','Startup recovery complete',
+        require('./lib/resourceSummary').recoverySummary('Alibaba', result, Date.now() - started)))
+      .catch(e => logger.warn('alibaba-shadow','Startup recovery failed open',{code:e.code}));
+  });
 
   // Resume only when the previous process had a persisted RUN intent. Manual stops and
   // uncaught exceptions clear that intent; deploys/container restarts preserve it.

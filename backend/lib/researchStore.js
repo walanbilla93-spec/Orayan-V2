@@ -34,10 +34,11 @@ function writeAll(fd, buffer, position = null) {
     offset += n;
   }
 }
-function atomic(file, value) {
+function atomic(file, value, checkpoint = false) {
   const fd = fs.openSync(file + ".tmp", "w", 0o600);
   try {
-    fs.writeFileSync(fd, JSON.stringify(value));
+    if (checkpoint) require('./checkpointJson').writeCheckpointJson(fd, value, writeAll);
+    else fs.writeFileSync(fd, JSON.stringify(value));
     fs.fsyncSync(fd);
   } finally {
     fs.closeSync(fd);
@@ -163,7 +164,7 @@ class ResearchStore {
     this.flush();
   }
   flush() {
-    atomic(this.file, this.state);
+    atomic(this.file, this.state, true);
     if (fs.existsSync(this.journal)) {
       const fd = fs.openSync(this.journal, "w");
       try {
