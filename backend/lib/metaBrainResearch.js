@@ -131,10 +131,18 @@ function decorate(provider,request,snapshot,env=process.env){
  try{
   const store=current(),identity=require('./researchPayload').identity(snapshot),cutoff=Date.parse(identity.birth_cutoff);
   const pct=Number(env[provider+'_FEEDBACK_PERCENT']??0),dayCap=Number(env[provider+'_FEEDBACK_MAX_REQUESTS_DAY']??0);
-  if(!identity.cohort_id||!Number.isFinite(cutoff))return request;
-  const day=new Date(cutoff).toISOString().slice(0,10),key=[provider,day,identity.cohort_id];
-  let reservation=store.read('route',key);
-  const block=reason=>{store.put('censor',key,{contract:'REFLECTION_CENSOR_V1',provider,day,cohort_id:identity.cohort_id,arm:'FEEDBACK',reason});throw Error('FEEDBACK_ARM_BLOCKED_'+reason);};
+  // A retry's cutoff is not a lookup prerequisite: the durable route owns its day.
+  const routes=fs.readdirSync(store.root).filter(n=>n.startsWith('route-')).map(n=>store.validate('route',path.join(store.root,n)))
+   .filter(x=>x.version==='REFLECTION_EXPERIMENT_V1'&&x.provider===provider&&
+    ((identity.cohort_id&&x.cohort_id===identity.cohort_id)||
+     (identity.source_epoch&&identity.opportunity_id&&x.source_epoch===identity.source_epoch&&x.opportunity_id===identity.opportunity_id)));
+  let reservation=routes.find(x=>x.arm==='FEEDBACK')||routes[0];
+  if(!reservation&&(!identity.cohort_id||!Number.isFinite(cutoff)))return request;
+  const day=reservation?reservation.day:new Date(cutoff).toISOString().slice(0,10),cohort=reservation?reservation.cohort_id:identity.cohort_id,key=[provider,day,cohort];
+  const block=reason=>{store.put('censor',key,{contract:'REFLECTION_CENSOR_V1',provider,day,cohort_id:cohort,arm:reservation?.arm||'FEEDBACK',reason});throw Error('FEEDBACK_ARM_BLOCKED_'+reason);};
+  if(routes.length>1)block('AMBIGUOUS_PINNED_ROUTE');
+  if(reservation?.arm==='FEEDBACK'&&(!validIdentity(identity)||identity.cohort_id!==reservation.cohort_id||
+   !Number.isFinite(cutoff)||identity.birth_cutoff!==reservation.digest?.cutoff))block('PINNED_RETRY_CONTEXT_MISMATCH');
   if(env[provider+'_FEEDBACK_ENABLED']!=='true'){
    if(reservation?.arm==='FEEDBACK')block('EXPERIMENT_DISABLED');
    return request;

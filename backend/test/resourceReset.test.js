@@ -142,6 +142,40 @@ test('pinned FEEDBACK reservation survives lesson eviction and restart without B
  assert.throws(()=>r.decorate('QWEN',{messages:[{role:'user',content:'{"changed":true}'}]},snap,env),/FEEDBACK_ARM_BLOCKED/);
  assert.ok(fs.readdirSync(path.join(dir,'meta-brain-v1-evidence')).some(name=>name.startsWith('censor-')));
 });
+test('missing-context FEEDBACK retry after restart blocks with durable censor and retains assignment',t=>{
+ const dir=temp(t),storage=require('../lib/store'),oldRoot=storage.DATA_DIR,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;process.env.META_BRAIN_V1_SHADOW='true';const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ const root=path.join(dir,'meta-brain-v1-evidence'),store=new r.EvidenceStore(root),f=feedback.build({...closed(20000),id:'prior'},birth(),{}, {},21000);
+ store.put('feedback',[f.trade_id,f.closed_at,'E'],f);
+ let cohort;for(let i=0;i<10000;i++){const id='missing-context'+i;if(parseInt(meta.hash(['QWEN',id]).slice(0,8),16)%100<10){cohort=id;break;}}
+ assert.ok(cohort);
+ const snapshot={...packet(30000).snapshot,shared_context:{...packet(30000).identity,cohort_id:cohort,opportunity_id:'NEW'}};
+ const request={model:'frozen-qwen',messages:[{role:'system',content:'frozen'},{role:'user',content:'{"candidate":{}}'}]},bytes=JSON.stringify(request);
+ const env={QWEN_FEEDBACK_ENABLED:'true',QWEN_FEEDBACK_PERCENT:'10',QWEN_FEEDBACK_MAX_REQUESTS_DAY:'1'};
+ const first=r.decorate('QWEN',request,snapshot,env);assert.notStrictEqual(first,request);
+ assert.ok(JSON.parse(first.messages[1].content).reflection_memory.lessons.length);
+ const key=['QWEN','1970-01-01',cohort],reserved=store.read('route',key);assert.equal(reserved.arm,'FEEDBACK');
+ delete require.cache[mod];r=require(mod);assert.equal(r.status().health,'OK');
+ const retry={...snapshot,shared_context:{...snapshot.shared_context}};delete retry.shared_context.birth_cutoff;
+ assert.throws(()=>r.decorate('QWEN',request,retry,env),/FEEDBACK_ARM_BLOCKED_PINNED_RETRY_CONTEXT_MISMATCH/);
+ assert.equal(JSON.stringify(request),bytes);assert.equal(r.status().health,'RESEARCH_ERROR');
+ const restarted=new r.EvidenceStore(root),censor=restarted.read('censor',key);
+ assert.equal(censor.contract,'REFLECTION_CENSOR_V1');assert.equal(censor.arm,'FEEDBACK');assert.equal(censor.reason,'PINNED_RETRY_CONTEXT_MISMATCH');
+ assert.deepEqual(restarted.read('route',key),reserved);assert.equal(restarted.read('route',key).arm,'FEEDBACK');
+});
+
+test('BASE-assigned retry after restart preserves identical request bytes',t=>{
+ const dir=temp(t),storage=require('../lib/store'),oldRoot=storage.DATA_DIR,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;process.env.META_BRAIN_V1_SHADOW='true';const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ const snapshot={...packet().snapshot,shared_context:packet().identity},request={messages:[{role:'system',content:'frozen'},{role:'user',content:'{ "candidate": {} }'}]},bytes=JSON.stringify(request);
+ const env={QWEN_FEEDBACK_ENABLED:'true',QWEN_FEEDBACK_PERCENT:'10',QWEN_FEEDBACK_MAX_REQUESTS_DAY:'1'};
+ assert.strictEqual(r.decorate('QWEN',request,snapshot,env),request);
+ const root=path.join(dir,'meta-brain-v1-evidence'),key=['QWEN','1970-01-01','C'];assert.equal(new r.EvidenceStore(root).read('route',key).arm,'BASE');
+ delete require.cache[mod];r=require(mod);assert.strictEqual(r.decorate('QWEN',request,snapshot,env),request);assert.equal(JSON.stringify(request),bytes);
+});
+
 test('every corrupt final evidence kind and staged partial fails closed before export',t=>{
  const storage=require('../lib/store'),oldRoot=storage.DATA_DIR;t.after(()=>{storage.DATA_DIR=oldRoot;});
  for(const kind of ['activation','birth','ai','feedback','route','gap','censor']){
