@@ -8,7 +8,7 @@ function build(trade,birth,decisions={},path={},at=Date.now()) {
  // Existing OHLC extrema cannot establish event ordering or signal validity.
  const category=r==null?'OUTCOME_UNAVAILABLE':r>0?'POSITIVE_NET_R':r<0?'NEGATIVE_NET_R':'FLAT_NET_R';
  return {contract:'AI_POST_TRADE_FEEDBACK_V1',feedback_id:hash(['AI_POST_TRADE_FEEDBACK_V1',trade.id,trade.closedAt,trade.originEpoch??identity?.source_epoch??null]),
-  at,available_at:at,resolved_at:trade.closedAt,identity,sourceEpisodeId:identity?.opportunity_id??trade.episodeId??null,
+  trade_id:trade.id,closed_at:trade.closedAt,at,available_at:at,resolved_at:trade.closedAt,identity,sourceEpisodeId:identity?.opportunity_id??trade.episodeId??null,
   cohort_status:identity?'LINKED':'UNAVAILABLE_BIRTH_REFERENCE',symbol:trade.symbol,side:trade.side,
   causal_context:birth?.context??{regime:'UNAVAILABLE',side:trade.side,symbol:trade.symbol},
   original_ai:{Meta:birth?.decision??{status:'UNAVAILABLE'},MetaLite:birth?.meta_lite??{status:'UNAVAILABLE'},

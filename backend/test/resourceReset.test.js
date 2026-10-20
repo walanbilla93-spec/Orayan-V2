@@ -46,30 +46,39 @@ test('native PAPER close produces supported immutable feedback; loss is never fa
  const dir=temp(t),store=new EvidenceStore(dir),f=feedback.build(closed(),birth(),{}, {mfeR:2,maeR:-1},21000);
  assert.equal(f.lesson_category,'NEGATIVE_NET_R');assert.equal(f.false_signal_taxonomy,'AMBIGUOUS_UNSUPPORTED');assert.equal(f.path.intrabar_order,'UNKNOWN');assert.equal(f.original_ai.Qwen.status,'UNAVAILABLE');
  const bytes=JSON.stringify(closed());assert.equal(feedback.build({...closed(),mode:'live'},birth(),{}, {},21000),null);assert.equal(feedback.build({...closed(),engine:'MARCI_SHADOW'},birth(),{}, {},21000),null);
- store.put('feedback','T',f);assert.deepEqual(store.put('feedback','T',f),f);assert.throws(()=>store.put('feedback','T',{...f,lesson_category:'FALSE_SIGNAL'}));assert.equal(JSON.stringify(closed()),bytes);
- const restarted=new EvidenceStore(dir);assert.equal(restarted.lessons.length,1);assert.deepEqual(restarted.read('feedback','T'),f);
+ const key=[f.trade_id,f.closed_at,f.identity.source_epoch];store.put('feedback',key,f);assert.deepEqual(store.put('feedback',key,f),f);assert.throws(()=>store.put('feedback',key,{...f,lesson_category:'FALSE_SIGNAL'}));assert.equal(JSON.stringify(closed()),bytes);
+ const restarted=new EvidenceStore(dir);assert.equal(restarted.lessons.length,1);assert.deepEqual(restarted.read('feedback',key),f);
 });
 test('bounded deterministic retrieval excludes future availability, wrong epoch, own episode',t=>{
  const store=new EvidenceStore(temp(t));
  for(let i=0;i<300;i++){
   const b=birth();b.identity={...b.identity,opportunity_id:'prior'+i};const f=feedback.build({...closed(15000+i),id:'t'+i},b,{}, {},16000+i);
-  store.put('feedback',i,f);
+  store.put('feedback',[f.trade_id,f.closed_at,f.identity.source_epoch],f);
  }
  assert.equal(store.lessons.length,256);
  const p=packet(30000),ctx=birth().context,d=store.retrieve(ctx,p.identity);
  assert.ok(d.lessons.length>0&&d.lessons.length<=5);assert.ok(d.token_upper_bound<=1024);assert.deepEqual(store.retrieve(ctx,p.identity),d);
  assert.equal(store.retrieve(ctx,{...p.identity,source_epoch:'OTHER'}).lessons.length,0);
  assert.equal(store.retrieve(ctx,{...p.identity,birth_cutoff:new Date(15999).toISOString()}).lessons.length,0);
- const one=new EvidenceStore(temp(t)),b=birth(),f=feedback.build(closed(),b,{}, {},21000);one.put('feedback','own',f);
+ const one=new EvidenceStore(temp(t)),b=birth(),f=feedback.build(closed(),b,{}, {},21000);one.put('feedback',[f.trade_id,f.closed_at,f.identity.source_epoch],f);
  assert.equal(one.retrieve(ctx,{...b.identity,birth_cutoff:new Date(30000).toISOString()}).lessons.length,0);
 });
 test('storage pressure preserves existing evidence and rejects additional oversized write',t=>{
- const store=new EvidenceStore(temp(t));store.put('birth','one',{v:1});const before=fs.readFileSync(store.file('birth','one'));
- assert.throws(()=>store.put('birth','huge',{v:'x'.repeat(9000)}));store.files=8192;assert.throws(()=>store.put('birth','two',{v:2}));assert.deepEqual(fs.readFileSync(store.file('birth','one')),before);
+ const store=new EvidenceStore(temp(t)),make=(id,v='')=>({identity:{...birth().identity,opportunity_id:id},decision:{version:'META_BRAIN_V1'},v});
+ store.put('birth',['E','one'],make('one'));const before=fs.readFileSync(store.file('birth',['E','one']));
+ assert.throws(()=>store.put('birth',['E','huge'],make('huge','x'.repeat(9000))));store.files=8192;assert.throws(()=>store.put('birth',['E','two'],make('two')));assert.deepEqual(fs.readFileSync(store.file('birth',['E','one'])),before);
 });
 test('disabled feedback modes preserve exact base provider request bytes',()=>{
  const r=require('../lib/metaBrainResearch'),request={messages:[{role:'system',content:'frozen'},{role:'user',content:'{"candidate":{}}'}]};
  assert.strictEqual(r.decorate('QWEN',request,{},{}),request);assert.strictEqual(r.decorate('GROQ',request,{},{}),request);
+});
+test('enabled optional store with feedback flags off returns the identical base request',t=>{
+ const dir=temp(t),storage=require('../lib/store'),oldRoot=storage.DATA_DIR,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;process.env.META_BRAIN_V1_SHADOW='true';const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];const r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ const request={messages:[{role:'system',content:'frozen'},{role:'user',content:'{"candidate":{}}'}]},snapshot={...packet().snapshot,shared_context:packet().identity};
+ assert.strictEqual(r.decorate('QWEN',request,snapshot,{QWEN_FEEDBACK_ENABLED:'false'}),request);
+ assert.strictEqual(r.decorate('GROQ',request,snapshot,{GROQ_FEEDBACK_ENABLED:'false'}),request);
 });
 test('enabled birth/AI/close plumbing survives restart, exports evidence, routes one bounded request per cohort/day',async t=>{
  const dir=temp(t),storage=require('../lib/store'),minimal=require('../lib/minimalCapture'),oldRoot=storage.DATA_DIR,oldCurrent=minimal.current;
@@ -98,6 +107,52 @@ test('enabled birth/AI/close plumbing survives restart, exports evidence, routes
  let exported='';for await(const chunk of r.download().stream)exported+=chunk;
  const rows=exported.trim().split('\n').map(JSON.parse);assert.ok(rows.some(x=>x.contract==='AI_POST_TRADE_FEEDBACK_V1'));assert.ok(rows.some(x=>x.decision?.version==='META_BRAIN_V1'));
  assert.equal(r.status().execution_authority,'NONE');
+});
+test('committed native close with failed feedback write remains a durable degraded gap after restart',async t=>{
+ const dir=temp(t),storage=require('../lib/store'),minimal=require('../lib/minimalCapture'),oldRoot=storage.DATA_DIR,oldCurrent=minimal.current,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;minimal.current=()=>({state:{epochId:'E',extremes:{}}});process.env.META_BRAIN_V1_SHADOW='true';
+ const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;minimal.current=oldCurrent;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ assert.ok(r.observeBirth(packet(),{decision:'RETAIN'},'candidate'));
+ const trade={...closed(),originEpoch:'E',episodeId:'EP'};fs.writeFileSync(path.join(dir,'trades.json'),JSON.stringify([trade]));
+ const original=r.EvidenceStore.prototype.put;r.EvidenceStore.prototype.put=function(kind,...args){if(kind==='feedback')throw Error('INJECTED_FEEDBACK_WRITE_FAILURE');return original.call(this,kind,...args);};
+ try{assert.equal(r.observeClose({event:'CLOSED',episodeId:'EP'},trade),null);}finally{r.EvidenceStore.prototype.put=original;}
+ delete require.cache[mod];r=require(mod);
+ assert.equal(r.status().health,'DEGRADED');assert.equal(r.status().unresolved_feedback_gaps,1);
+ const evidence=await Array.fromAsync(r.download().stream);assert.ok(evidence.join('').includes('META_BRAIN_FEEDBACK_GAP_V1'));
+ assert.equal(r.status().health,'DEGRADED');
+ const missingBirth={...trade,id:'T-without-birth',episodeId:'OTHER',closedAt:Date.now()};
+ fs.writeFileSync(path.join(dir,'trades.json'),JSON.stringify([trade,missingBirth]));delete require.cache[mod];r=require(mod);
+ assert.equal(r.status().health,'DEGRADED');assert.equal(r.status().unresolved_feedback_gaps,2);
+});
+test('pinned FEEDBACK reservation survives lesson eviction and restart without BASE fallback',t=>{
+ const dir=temp(t),storage=require('../lib/store'),oldRoot=storage.DATA_DIR,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;process.env.META_BRAIN_V1_SHADOW='true';const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ const store=new r.EvidenceStore(path.join(dir,'meta-brain-v1-evidence')),f=feedback.build({...closed(20000),id:'prior'},birth(),{}, {},21000);
+ store.put('feedback',[f.trade_id,f.closed_at,'E'],f);
+ const choose=()=>{for(let i=0;i<10000;i++){const id='reserve'+i;if(parseInt(meta.hash(['QWEN',id]).slice(0,8),16)%100<10)return id;}};
+ const snap={side:'BUY',symbol:'TESTUSDT',regime:{label:'BULL_TREND'},shared_context:{...packet(30000).identity,cohort_id:choose(),opportunity_id:'NEW'}};
+ const request={messages:[{role:'system',content:'frozen'},{role:'user',content:'{"candidate":{}}'}]};
+ const env={QWEN_FEEDBACK_ENABLED:'true',QWEN_FEEDBACK_PERCENT:'10',QWEN_FEEDBACK_MAX_REQUESTS_DAY:'1'};
+ const first=r.decorate('QWEN',request,snap,env);assert.notStrictEqual(first,request);
+ for(let i=0;i<300;i++){const b=birth();b.identity={...b.identity,opportunity_id:'later'+i};const x=feedback.build({...closed(22000+i),id:'later'+i},b,{}, {},23000+i);store.put('feedback',[x.trade_id,x.closed_at,'E'],x);}
+ delete require.cache[mod];r=require(mod);const again=r.decorate('QWEN',request,snap,env);
+ assert.deepEqual(again,first);assert.notStrictEqual(again,request);
+ assert.throws(()=>r.decorate('QWEN',{messages:[{role:'user',content:'{"changed":true}'}]},snap,env),/FEEDBACK_ARM_BLOCKED/);
+ assert.ok(fs.readdirSync(path.join(dir,'meta-brain-v1-evidence')).some(name=>name.startsWith('censor-')));
+});
+test('every corrupt final evidence kind and staged partial fails closed before export',t=>{
+ const storage=require('../lib/store'),oldRoot=storage.DATA_DIR;t.after(()=>{storage.DATA_DIR=oldRoot;});
+ for(const kind of ['activation','birth','ai','feedback','route','gap','censor']){
+  const dir=temp(t),root=path.join(dir,'meta-brain-v1-evidence');storage.DATA_DIR=dir;const store=new EvidenceStore(root),file=store.file(kind,'truncated');
+  fs.writeFileSync(file,'{"truncated":');assert.throws(()=>new EvidenceStore(root),/CORRUPT_RESEARCH_EVIDENCE_JSON/);
+  assert.throws(()=>require('../lib/metaBrainResearch').download(),/CORRUPT_RESEARCH_EVIDENCE_JSON/);
+  fs.writeFileSync(file,'{}');assert.throws(()=>new EvidenceStore(root),/CORRUPT_RESEARCH_EVIDENCE_IDENTITY|INVALID_RESEARCH_EVIDENCE/);
+  assert.throws(()=>require('../lib/metaBrainResearch').download(),/CORRUPT_RESEARCH_EVIDENCE_IDENTITY|INVALID_RESEARCH_EVIDENCE/);
+ }
+ const dir=temp(t),root=path.join(dir,'meta-brain-v1-evidence');fs.mkdirSync(root);fs.writeFileSync(path.join(root,'birth-'+hash('partial')+'.json.staged'),'{');
+ assert.throws(()=>new EvidenceStore(root),/UNKNOWN_RESEARCH_EVIDENCE_FILE/);
 });
 test('reproducible offline development fit accepts only prior, resolved curriculum and never overwrites output',async t=>{
  const dir=temp(t),file=path.join(dir,'input.jsonl'),train=require('../tools/train-meta-brain-v1').train;
