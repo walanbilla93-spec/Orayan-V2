@@ -12,9 +12,6 @@ const state = {
   funnel: {},
   gateOrder: [],
   trades: [],
-  shadowTrades: [],
-  shadowSummary: null,
-  shadowOpenUnrealisedPnl: null,
   tradeFilter: '',
   expandedSignal: null,
   logSeq: 0,
@@ -623,74 +620,6 @@ function renderTrades() {
 }
 
 
-function renderShadow() {
-  const m = state.shadowSummary || {};
-  const metrics = $('#shadowMetrics');
-  if (metrics) {
-    const items = [
-      ['Closed trades', m.totalClosed ?? 0, ''],
-      ['Win rate', m.winRate == null ? '—' : `${fmt(m.winRate, 1)}%`, ''],
-      ['Net P&L', fmtUsd(m.netPnl ?? 0), sgn(m.netPnl)],
-      ['Expectancy', m.expectancy == null ? '—' : fmtUsd(m.expectancy), sgn(m.expectancy)],
-      ['Profit factor', m.profitFactor == null ? '—' : fmt(m.profitFactor, 2), ''],
-      ['Max drawdown', fmtUsd(-Math.abs(m.maxDrawdown ?? 0)), m.maxDrawdown ? 'neg' : ''],
-      ['Open', `${m.open ?? 0}+${m.pending ?? 0}`, ''],
-      ['Expired', m.expired ?? 0, ''],
-    ];
-    metrics.innerHTML = items.map(([label, value, cls]) => `
-      <div><div class="metric-label">${esc(label)}</div><div class="metric-value ${cls}">${esc(value)}</div></div>
-    `).join('');
-  }
-
-  const exp = $('#shadowExperiment');
-  if (exp) {
-    exp.innerHTML = [
-      ['Engine', 'MARCI_INDEPENDENT_V2'],
-      ['Signal source', 'Own Little-Rizzy scanner'],
-      ['BTC veto', 'Bypassed — BTC recorded only'],
-      ['Rizzy sequence', '1–2 only'],
-      ['Target', 'Full measured move D'],
-      ['Invalidation', 'Trendline close + independent hard SL'],
-      ['Execution', 'Paper only'],
-      ['Same-symbol overlap', 'Allowed vs Orayan'],
-      ['After invalidation', 'Counterfactual TP/SL tracked'],
-      ['Last scan assessed', state.status?.shadowFunnel?.assessed ?? 0],
-      ['Last scan eligible', state.status?.shadowFunnel?.passed ?? 0],
-      ['Last scan queued', state.status?.shadowFunnel?.placed ?? 0],
-    ].map(([l,v]) => `<div><div class="metric-label">${esc(l)}</div><div class="metric-value">${esc(v)}</div></div>`).join('');
-  }
-
-  const el = $('#shadowTradeList');
-  if (!el) return;
-  const list = state.shadowTrades || [];
-  if (!list.length) { el.innerHTML = '<div class="empty">No shadow trades yet.</div>'; return; }
-  el.innerHTML = `
-    <div class="rows">
-      <div class="row row-shadow-trade row-head">
-        <div>Created (LK)</div><div>Engine</div><div>Symbol</div><div>Side</div><div>Status</div>
-        <div>Net USDT</div><div>R</div><div>D target R</div><div>CF outcome</div><div>Closed</div>
-      </div>
-      ${list.map((t) => {
-        const isOpen = t.status === 'OPEN';
-        const pnl = isOpen ? t.unrealisedPnl : t.netPnl;
-        const rr = isOpen ? t.unrealisedRR : t.realisedRR;
-        return `
-        <div class="row row-shadow-trade">
-          <div class="faint" data-label="Created (LK)">${fmtDate(t.createdAt)}</div>
-          <div class="dim" data-label="Engine">MARCI</div>
-          <div class="sym" data-label="Symbol">${esc(t.symbol)}</div>
-          <div class="side-${t.side.toLowerCase()}" data-label="Side">${esc(t.side)}</div>
-          <div data-label="Status"><span class="pill ${t.status === 'OPEN' ? 'open' : t.status === 'PENDING' ? 'pending' : ''}">${esc(t.status)}</span></div>
-          <div class="${sgn(pnl)}" data-label="Net USDT">${pnl == null ? '—' : fmtUsd(pnl)}</div>
-          <div class="${sgn(rr)}" data-label="R">${rr == null ? '—' : fmt(rr, 2)}</div>
-          <div class="dim" data-label="D target R">${fmt(t.marciShadow?.targetR ?? t.marciIndependent?.targetR, 2)}</div>
-          <div class="dim" data-label="CF outcome">${esc(t.marciCounterfactual?.tracking ? 'TRACKING' : (t.marciCounterfactual?.outcome || '—'))}</div>
-          <div class="faint" data-label="Closed">${t.closedAt ? fmtDate(t.closedAt) : '—'}</div>
-        </div>`;
-      }).join('')}
-    </div>`;
-}
-
 /* ── Settings ─────────────────────────────────────────────────────────────────────────── */
 
 function renderSettings() {
@@ -822,11 +751,10 @@ async function pollLogs() {
 
 async function refresh() {
   try {
-    const [status, signals, trades, shadow] = await Promise.all([
+    const [status, signals, trades] = await Promise.all([
       api('/api/status'),
       api('/api/signals'),
       api(`/api/trades?limit=300`),
-      api(`/api/shadow/trades?limit=300`),
     ]);
 
     state.status = status;
@@ -835,9 +763,6 @@ async function refresh() {
     state.gateOrder = signals.gateOrder || [];
     state.trades = trades.trades || [];
     state.openUnrealisedPnl = trades.openUnrealisedPnl;
-    state.shadowTrades = shadow.trades || [];
-    state.shadowSummary = shadow.summary || status.shadowSummary || null;
-    state.shadowOpenUnrealisedPnl = shadow.openUnrealisedPnl;
 
     renderStatus(status);
     if (state.view === 'dashboard') {
@@ -847,7 +772,6 @@ async function refresh() {
     }
     if (state.view === 'signals') renderSignals();
     if (state.view === 'trades') renderTrades();
-    if (state.view === 'shadow') renderShadow();
     if (state.view === 'v3') await loadV3Status();
   } catch (e) {
     const banner = $('#banner');
@@ -1004,13 +928,6 @@ function init() {
   $('#btnExportGroqShadow').addEventListener('click', downloadGroqShadow);
   $('#btnExportAlibabaShadow').addEventListener('click',downloadAlibabaShadow);
   $('#btnExportAlibabaSnapshots').addEventListener('click',downloadAlibabaShadow);
-  $('#btnExportShadowCsv').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=csv'));
-  $('#btnExportShadowJson').addEventListener('click', () => downloadFrom('/api/journal/shadow/export?format=json'));
-  $('#btnClearShadow').addEventListener('click', async () => {
-    if (!confirm('Clear ALL Marci shadow trades? This cannot be undone.')) return;
-    try { await api('/api/journal/shadow/clear', { method: 'POST' }); state.shadowTrades = []; renderShadow(); alert('Shadow trades cleared.'); }
-    catch (e) { alert('Failed: ' + (e.message || e)); }
-  });
   $('#btnResetResearch').addEventListener('click', async () => {
     const button = $('#btnResetResearch');
     if (button.disabled) return;

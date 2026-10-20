@@ -762,6 +762,8 @@ function outcome(candidateId, event, trade, detail={}) {
   capMap(lastOutcome,MAX_OUTCOME_KEYS);
   if(minimal.enabled())minimal.nativeOutcome(row,trade);
   append('compact',row,at);
+  // Native outcome is authoritative and already captured before this optional observer.
+  try { require('./metaBrainResearch').observeClose(row,trade); } catch (_) {}
 }
 function exportFiles(date = 'all', raw = false) {
   prune(Date.now());

@@ -4,6 +4,8 @@
 require('./lib/startupCaptureReset').run();
 require('./lib/researchRuntime').prepare();
 require('./lib/researchRuntime').start();
+// Validate optional Meta Brain evidence and reconcile committed closes once at boot.
+require('./lib/metaBrainResearch').status();
 
 const http = require('http');
 const fs = require('fs');

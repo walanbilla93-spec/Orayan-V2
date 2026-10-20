@@ -109,6 +109,7 @@ class Maintenance {
   }
   blockers(detail) {
     const names = [...this.active].filter(([k]) => !k.startsWith('management:')).map(([k,v]) => k + '=' + v);
+    if(detail.marciRetirement?.failure)names.push('marci retirement:'+detail.marciRetirement.failure);
     for (const [name,p] of Object.entries(detail.providers))
       if (p.queueDepth || p.inFlight || p.reserved || p.initializing || p.openRequests)
         names.push(name + ':' + JSON.stringify(p));
@@ -221,11 +222,12 @@ function current() {
       const engine = require('./engine'), v3 = require('./v3Shadow').maintenanceStatus();
       const legacy = [require('./earlyEntryShadow'),require('./researchSupplement'),require('./researchCapture')].map(m=>m.maintenanceStatus());
       const legacyObligations = legacy.reduce((n,x)=>n+x.obligations,0);
-      const nativeTrades = [...engine.getTrades({limit:Infinity}), ...engine.getShadowTrades({limit:Infinity})];
+      const retired=require('./marciRetirement').accounting(c,require('./store').DATA_DIR);
+      const nativeTrades = [...engine.getTrades({limit:Infinity}), ...retired.rows.filter((_,i)=>!retired.coveredRows.has(i))];
       const native = nativeTrades.filter(t => ['OPEN','PENDING'].includes(t.status)).length;
       const counterfactuals = nativeTrades.filter(t => t.marciCounterfactual?.tracking === true).length;
-      const unresolved = Object.values(c.state.episodes).filter(e => !e.controlResolved ||
-        Object.values(e.controls || {}).some(v => !v) || Object.values(e.arms || {}).some(v => !v)).length;
+      const unresolved = Object.entries(c.state.episodes).filter(([id,e]) => !retired.coveredEpisodes.has(id) && (!e.controlResolved ||
+        Object.values(e.controls || {}).some(v => !v) || Object.values(e.arms || {}).some(v => !v))).length;
       const providers = { groq: require('./groqShadowProducer').maintenanceStatus(), qwen: require('./alibabaShadowProducer').maintenanceStatus() };
       for (const [key,provider] of [['groq','Groq'],['qwen','Alibaba']])
         providers[key].openRequests = Object.values(c.state.aiAttempts || {}).filter(a => a.provider === provider &&
@@ -238,6 +240,9 @@ function current() {
         archiveIdle: !runtime.busy && !c.exportReaders && ![...current().active.keys()].some(k=>k.startsWith('archive:')),
         exportReaders: (c.exportReaders || 0)+(current().active.get('archive:http-reader') || 0), archiveBuildActivity: current().active.get('archive:canonical') || 0,
         scanResearchBusy: engine.state.scanning || v3.researchBusy || legacy.some(x=>x.busy), managementBusy: v3.busy || [...current().active.keys()].some(k => k.startsWith('management:')),
+        marciRetirement:{receiptId:retired.receipt?.receipt_id||null,failure:retired.failure,
+          retiredCensoredRows:retired.coveredRows.size,retiredCensoredEpisodes:retired.coveredEpisodes.size,
+          outcomeClaim:'NONE'},
         managementObligations: { native, counterfactuals, v3: v3.obligations, canonicalUnresolved: unresolved,
           legacyObligations, total: native + counterfactuals + v3.obligations + unresolved + legacyObligations },
         symbolStats: require('./symbolStats').maintenanceStatus(),

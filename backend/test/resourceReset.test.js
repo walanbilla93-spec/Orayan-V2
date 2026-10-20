@@ -1,0 +1,198 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),os=require('os'),path=require('path'),crypto=require('crypto');
+const meta=require('../lib/metaBrainV1'),{EvidenceStore}=require('../lib/metaBrainResearch'),feedback=require('../lib/aiPostTradeFeedback');
+const hash=x=>crypto.createHash('sha256').update(x).digest('hex');
+const text=f=>fs.readFileSync(path.join(__dirname,'..',f),'utf8').replace(/\r\n/g,'\n');
+function temp(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'resource-reset-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir;}
+function packet(at=10000){return {identity:{source_epoch:'E',opportunity_id:'EP',cohort_id:'C',shared_context_hash:'H',birth_cutoff:new Date(at).toISOString()},
+ snapshot:{symbol:'TESTUSDT',side:'BUY',candidate_birth_at_utc:new Date(at).toISOString(),planned_trade:{entry:100,sl:98,tp:104,quote_evidence:{bid:99.99,ask:100.01}},regime:{label:'BULL_TREND'},score:{value:75}}};}
+function birth(at=10000){const p=packet(at);return {identity:p.identity,context:{side:'BUY',symbol:'TESTUSDT',regime:'BULL_TREND'},meta_lite:{decision:'RETAIN'},decision:{decision:'ABSTAIN',execution_authority:'NONE'}};}
+function closed(at=20000){return {id:'T',mode:'paper',status:'CLOSED',symbol:'TESTUSDT',side:'BUY',filledAt:11000,closedAt:at,fillPrice:100,realisedRR:-1,fees:0.02,netPnl:-0.25};}
+test('native management/admission and protected trading/comparator modules retain baseline bytes',()=>{
+ const b=require('./fixtures/resourceResetBaseline.json'),s=text('lib/engine.js');
+ for(const f of ['signals.js','gates.js','risk.js','executor.js','metaLite.js','researchPayload.js'])assert.equal(hash(text('lib/'+f)),b[f],f);
+ const a=s.indexOf('async function manageOpenTrades(settings) {'),end=s.indexOf('async function scanOnce() {',a);
+ assert.equal(hash(s.slice(a,end).trim()),b.native_management);
+ const c=s.indexOf('    const blockReason = !settings.tradingEnabled'),d=s.indexOf('    for (const signal of journalSignals) {\n      if (signal.gates?.passed',c);
+ assert.equal(hash(s.slice(c,d).trim()),b.native_admission);
+});
+test('no Marci acquisition, resident history, writes, discovery or UI polling remain',()=>{
+ const s=text('lib/engine.js');
+ for(const word of ['manageMarciCounterfactuals','manageShadowTrades','persistShadowTrades','shadowCandidates',"require('./marciIndependent')","require('./marciShadow')"])assert.ok(!s.includes(word),word);
+ assert.ok(!/store\.read\('marci/.test(s));assert.ok(!/atomic\([^\n]*marci/.test(s));
+ const ui=fs.readFileSync(path.join(__dirname,'../../frontend/app.js'),'utf8'),html=fs.readFileSync(path.join(__dirname,'../../frontend/index.html'),'utf8');
+ assert.ok(!ui.includes('/api/shadow/trades'));assert.ok(!html.includes('data-view="shadow"'));
+});
+test('historical Marci read and retired reset never rewrite or rename evidence',t=>{
+ const vm=require('vm'),dir=temp(t),file=path.join(dir,'marciShadowTrades.json'),rows=[{id:'old',status:'OPEN',createdAt:10}];fs.writeFileSync(file,JSON.stringify(rows));
+ const s=text('lib/engine.js'),scope={require,store:{DATA_DIR:dir}};
+ vm.createContext(scope);vm.runInContext(s.slice(s.indexOf('function historicalMarci()'),s.indexOf('let lastStopRecoveryBackfillAt'))+s.slice(s.indexOf('function getShadowTrades('),s.indexOf('function resetTrades()')),scope);
+ const before=fs.readFileSync(file);assert.equal(scope.getShadowTrades()[0].id,'old');assert.equal(scope.resetShadowTrades().ok,false);assert.deepEqual(fs.readFileSync(file),before);
+ fs.writeFileSync(file,'broken');assert.throws(()=>scope.getShadowTrades());assert.equal(fs.readFileSync(file,'utf8'),'broken');
+});
+test('feature allowlist excludes all future outcome fields and inference abstains without frozen model',()=>{
+ const p=packet(),a=meta.project(p,{decision:'RETAIN'});p.snapshot.realized_r=999;p.snapshot.future={profit:100};
+ assert.deepEqual(meta.project(p,{decision:'RETAIN'}),a);assert.equal(a.missing.length,0);
+ const out=meta.infer(a,null,10001);assert.equal(out.decision,'ABSTAIN');assert.equal(out.execution_authority,'NONE');assert.equal(out.learning_influence,0);
+});
+test('frozen model validation rejects hash tampering, missing input and training after birth',()=>{
+ const body={contract:meta.CONTRACT,features:meta.FEATURES,training_status:'DEVELOPMENT_TRAINED',execution_authority:'NONE',training_cutoff:new Date(100).toISOString(),weights:[0,0,0,0,0,0],means:[0,0,0,0,0,0],scales:[1,1,1,1,1,1],bias:2,retain_threshold:0.6,skip_threshold:0.4};
+ const m={...body,model_id:meta.hash(body)},input=meta.project(packet(),{decision:'RETAIN'});
+ assert.equal(meta.infer(input,m,10001).decision,'RETAIN');assert.throws(()=>meta.validate({...m,bias:99}));
+ assert.equal(meta.infer({...input,missing:['native_score']},m,10001).decision,'ABSTAIN');
+ const future={...body,training_cutoff:new Date(15000).toISOString()};assert.equal(meta.infer(input,{...future,model_id:meta.hash(future)},20000).decision,'ABSTAIN');
+});
+test('native PAPER close produces supported immutable feedback; loss is never false-signal assertion',t=>{
+ const dir=temp(t),store=new EvidenceStore(dir),f=feedback.build(closed(),birth(),{}, {mfeR:2,maeR:-1},21000);
+ assert.equal(f.lesson_category,'NEGATIVE_NET_R');assert.equal(f.false_signal_taxonomy,'AMBIGUOUS_UNSUPPORTED');assert.equal(f.path.intrabar_order,'UNKNOWN');assert.equal(f.original_ai.Qwen.status,'UNAVAILABLE');
+ const bytes=JSON.stringify(closed());assert.equal(feedback.build({...closed(),mode:'live'},birth(),{}, {},21000),null);assert.equal(feedback.build({...closed(),engine:'MARCI_SHADOW'},birth(),{}, {},21000),null);
+ const key=[f.trade_id,f.closed_at,f.identity.source_epoch];store.put('feedback',key,f);assert.deepEqual(store.put('feedback',key,f),f);assert.throws(()=>store.put('feedback',key,{...f,lesson_category:'FALSE_SIGNAL'}));assert.equal(JSON.stringify(closed()),bytes);
+ const restarted=new EvidenceStore(dir);assert.equal(restarted.lessons.length,1);assert.deepEqual(restarted.read('feedback',key),f);
+});
+test('bounded deterministic retrieval excludes future availability, wrong epoch, own episode',t=>{
+ const store=new EvidenceStore(temp(t));
+ for(let i=0;i<300;i++){
+  const b=birth();b.identity={...b.identity,opportunity_id:'prior'+i};const f=feedback.build({...closed(15000+i),id:'t'+i},b,{}, {},16000+i);
+  store.put('feedback',[f.trade_id,f.closed_at,f.identity.source_epoch],f);
+ }
+ assert.equal(store.lessons.length,256);
+ const p=packet(30000),ctx=birth().context,d=store.retrieve(ctx,p.identity);
+ assert.ok(d.lessons.length>0&&d.lessons.length<=5);assert.ok(d.token_upper_bound<=1024);assert.deepEqual(store.retrieve(ctx,p.identity),d);
+ assert.equal(store.retrieve(ctx,{...p.identity,source_epoch:'OTHER'}).lessons.length,0);
+ assert.equal(store.retrieve(ctx,{...p.identity,birth_cutoff:new Date(15999).toISOString()}).lessons.length,0);
+ const one=new EvidenceStore(temp(t)),b=birth(),f=feedback.build(closed(),b,{}, {},21000);one.put('feedback',[f.trade_id,f.closed_at,f.identity.source_epoch],f);
+ assert.equal(one.retrieve(ctx,{...b.identity,birth_cutoff:new Date(30000).toISOString()}).lessons.length,0);
+});
+test('storage pressure preserves existing evidence and rejects additional oversized write',t=>{
+ const store=new EvidenceStore(temp(t)),make=(id,v='')=>({identity:{...birth().identity,opportunity_id:id},decision:{version:'META_BRAIN_V1'},v});
+ store.put('birth',['E','one'],make('one'));const before=fs.readFileSync(store.file('birth',['E','one']));
+ assert.throws(()=>store.put('birth',['E','huge'],make('huge','x'.repeat(9000))));store.files=8192;assert.throws(()=>store.put('birth',['E','two'],make('two')));assert.deepEqual(fs.readFileSync(store.file('birth',['E','one'])),before);
+});
+test('disabled feedback modes preserve exact base provider request bytes',()=>{
+ const r=require('../lib/metaBrainResearch'),request={messages:[{role:'system',content:'frozen'},{role:'user',content:'{"candidate":{}}'}]};
+ assert.strictEqual(r.decorate('QWEN',request,{},{}),request);assert.strictEqual(r.decorate('GROQ',request,{},{}),request);
+});
+test('enabled optional store with feedback flags off returns the identical base request',t=>{
+ const dir=temp(t),storage=require('../lib/store'),oldRoot=storage.DATA_DIR,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;process.env.META_BRAIN_V1_SHADOW='true';const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];const r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ const request={messages:[{role:'system',content:'frozen'},{role:'user',content:'{"candidate":{}}'}]},snapshot={...packet().snapshot,shared_context:packet().identity};
+ assert.strictEqual(r.decorate('QWEN',request,snapshot,{QWEN_FEEDBACK_ENABLED:'false'}),request);
+ assert.strictEqual(r.decorate('GROQ',request,snapshot,{GROQ_FEEDBACK_ENABLED:'false'}),request);
+});
+test('enabled birth/AI/close plumbing survives restart, exports evidence, routes one bounded request per cohort/day',async t=>{
+ const dir=temp(t),storage=require('../lib/store'),minimal=require('../lib/minimalCapture'),oldRoot=storage.DATA_DIR,oldCurrent=minimal.current;
+ const keys=['META_BRAIN_V1_SHADOW','QWEN_FEEDBACK_ENABLED','QWEN_FEEDBACK_PERCENT','QWEN_FEEDBACK_MAX_REQUESTS_DAY'];
+ const oldEnv=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+ storage.DATA_DIR=dir;minimal.current=()=>({state:{epochId:'E',extremes:{T:{mfeR:0.2,maeR:-1}}}});
+ process.env.META_BRAIN_V1_SHADOW='true';process.env.QWEN_FEEDBACK_ENABLED='true';process.env.QWEN_FEEDBACK_PERCENT='10';process.env.QWEN_FEEDBACK_MAX_REQUESTS_DAY='1';
+ const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;minimal.current=oldCurrent;for(const k of keys)if(oldEnv[k]===undefined)delete process.env[k];else process.env[k]=oldEnv[k];delete require.cache[mod];});
+ const p=packet(Date.now()-100000),cutoff=Date.parse(p.identity.birth_cutoff);
+ assert.equal(r.observeBirth(p,{decision:'RETAIN'},'candidate').decision,'ABSTAIN');
+ r.observeAI({...p.identity,provider:'Alibaba',model:'frozen-qwen'},{status:'OK',decision:{decision:'SKIP',confidence:0.6}});
+ const trade={...closed(Date.now()-50000),filledAt:cutoff+1000};
+ const row={event:'CLOSED',episodeId:'EP'};const f=r.observeClose(row,trade);
+ assert.equal(f.identity.shared_context_hash,'H');assert.equal(f.original_ai.Qwen.decision,'SKIP');assert.equal(f.path.mfe_r,0.2);
+ assert.deepEqual(r.observeClose(row,trade),f);
+ delete require.cache[mod];r=require(mod);assert.deepEqual(r.observeClose(row,trade),f);
+ const request={model:'frozen-qwen',messages:[{role:'system',content:'frozen base prompt'},{role:'user',content:'{"candidate":{"side":"BUY"}}'}]};
+ const choose=(start)=>{for(let i=start;i<start+10000;i++){const id='c'+i;if(parseInt(meta.hash(['QWEN',id]).slice(0,8),16)%100<10)return {id,next:i+1};}throw Error('no fixture cohort');};
+ const chosen=choose(0),s={side:'BUY',symbol:'TESTUSDT',regime:{label:'BULL_TREND'},shared_context:{...p.identity,opportunity_id:'NEW',cohort_id:chosen.id,birth_cutoff:new Date(Date.now()+1000).toISOString()}};
+ const decorated=r.decorate('QWEN',request,s);assert.notEqual(decorated,request);assert.equal(decorated.messages[0].content,request.messages[0].content);
+ const memory=JSON.parse(decorated.messages[1].content).reflection_memory;assert.equal(memory.mode,'QWEN_FEEDBACK');assert.ok(memory.lessons.length<=5);assert.ok(Buffer.byteLength(JSON.stringify(memory))<2048);
+ assert.deepEqual(r.decorate('QWEN',request,s),decorated);
+ delete require.cache[mod];r=require(mod);assert.deepEqual(r.decorate('QWEN',request,s),decorated);
+ const next=choose(chosen.next);assert.strictEqual(r.decorate('QWEN',request,{...s,shared_context:{...s.shared_context,cohort_id:next.id,opportunity_id:'NEW2'}}),request);
+ let exported='';for await(const chunk of r.download().stream)exported+=chunk;
+ const rows=exported.trim().split('\n').map(JSON.parse);assert.ok(rows.some(x=>x.contract==='AI_POST_TRADE_FEEDBACK_V1'));assert.ok(rows.some(x=>x.decision?.version==='META_BRAIN_V1'));
+ assert.equal(r.status().execution_authority,'NONE');
+});
+test('committed native close with failed feedback write remains a durable degraded gap after restart',async t=>{
+ const dir=temp(t),storage=require('../lib/store'),minimal=require('../lib/minimalCapture'),oldRoot=storage.DATA_DIR,oldCurrent=minimal.current,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;minimal.current=()=>({state:{epochId:'E',extremes:{}}});process.env.META_BRAIN_V1_SHADOW='true';
+ const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;minimal.current=oldCurrent;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ assert.ok(r.observeBirth(packet(),{decision:'RETAIN'},'candidate'));
+ const trade={...closed(),originEpoch:'E',episodeId:'EP'};fs.writeFileSync(path.join(dir,'trades.json'),JSON.stringify([trade]));
+ const original=r.EvidenceStore.prototype.put;r.EvidenceStore.prototype.put=function(kind,...args){if(kind==='feedback')throw Error('INJECTED_FEEDBACK_WRITE_FAILURE');return original.call(this,kind,...args);};
+ try{assert.equal(r.observeClose({event:'CLOSED',episodeId:'EP'},trade),null);}finally{r.EvidenceStore.prototype.put=original;}
+ delete require.cache[mod];r=require(mod);
+ assert.equal(r.status().health,'DEGRADED');assert.equal(r.status().unresolved_feedback_gaps,1);
+ const evidence=await Array.fromAsync(r.download().stream);assert.ok(evidence.join('').includes('META_BRAIN_FEEDBACK_GAP_V1'));
+ assert.equal(r.status().health,'DEGRADED');
+ const missingBirth={...trade,id:'T-without-birth',episodeId:'OTHER',closedAt:Date.now()};
+ fs.writeFileSync(path.join(dir,'trades.json'),JSON.stringify([trade,missingBirth]));delete require.cache[mod];r=require(mod);
+ assert.equal(r.status().health,'DEGRADED');assert.equal(r.status().unresolved_feedback_gaps,2);
+});
+test('pinned FEEDBACK reservation survives lesson eviction and restart without BASE fallback',t=>{
+ const dir=temp(t),storage=require('../lib/store'),oldRoot=storage.DATA_DIR,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;process.env.META_BRAIN_V1_SHADOW='true';const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ const store=new r.EvidenceStore(path.join(dir,'meta-brain-v1-evidence')),f=feedback.build({...closed(20000),id:'prior'},birth(),{}, {},21000);
+ store.put('feedback',[f.trade_id,f.closed_at,'E'],f);
+ const choose=()=>{for(let i=0;i<10000;i++){const id='reserve'+i;if(parseInt(meta.hash(['QWEN',id]).slice(0,8),16)%100<10)return id;}};
+ const snap={side:'BUY',symbol:'TESTUSDT',regime:{label:'BULL_TREND'},shared_context:{...packet(30000).identity,cohort_id:choose(),opportunity_id:'NEW'}};
+ const request={messages:[{role:'system',content:'frozen'},{role:'user',content:'{"candidate":{}}'}]};
+ const env={QWEN_FEEDBACK_ENABLED:'true',QWEN_FEEDBACK_PERCENT:'10',QWEN_FEEDBACK_MAX_REQUESTS_DAY:'1'};
+ const first=r.decorate('QWEN',request,snap,env);assert.notStrictEqual(first,request);
+ for(let i=0;i<300;i++){const b=birth();b.identity={...b.identity,opportunity_id:'later'+i};const x=feedback.build({...closed(22000+i),id:'later'+i},b,{}, {},23000+i);store.put('feedback',[x.trade_id,x.closed_at,'E'],x);}
+ delete require.cache[mod];r=require(mod);const again=r.decorate('QWEN',request,snap,env);
+ assert.deepEqual(again,first);assert.notStrictEqual(again,request);
+ assert.throws(()=>r.decorate('QWEN',{messages:[{role:'user',content:'{"changed":true}'}]},snap,env),/FEEDBACK_ARM_BLOCKED/);
+ assert.ok(fs.readdirSync(path.join(dir,'meta-brain-v1-evidence')).some(name=>name.startsWith('censor-')));
+});
+test('missing-context FEEDBACK retry after restart blocks with durable censor and retains assignment',t=>{
+ const dir=temp(t),storage=require('../lib/store'),oldRoot=storage.DATA_DIR,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;process.env.META_BRAIN_V1_SHADOW='true';const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ const root=path.join(dir,'meta-brain-v1-evidence'),store=new r.EvidenceStore(root),f=feedback.build({...closed(20000),id:'prior'},birth(),{}, {},21000);
+ store.put('feedback',[f.trade_id,f.closed_at,'E'],f);
+ let cohort;for(let i=0;i<10000;i++){const id='missing-context'+i;if(parseInt(meta.hash(['QWEN',id]).slice(0,8),16)%100<10){cohort=id;break;}}
+ assert.ok(cohort);
+ const snapshot={...packet(30000).snapshot,shared_context:{...packet(30000).identity,cohort_id:cohort,opportunity_id:'NEW'}};
+ const request={model:'frozen-qwen',messages:[{role:'system',content:'frozen'},{role:'user',content:'{"candidate":{}}'}]},bytes=JSON.stringify(request);
+ const env={QWEN_FEEDBACK_ENABLED:'true',QWEN_FEEDBACK_PERCENT:'10',QWEN_FEEDBACK_MAX_REQUESTS_DAY:'1'};
+ const first=r.decorate('QWEN',request,snapshot,env);assert.notStrictEqual(first,request);
+ assert.ok(JSON.parse(first.messages[1].content).reflection_memory.lessons.length);
+ const key=['QWEN','1970-01-01',cohort],reserved=store.read('route',key);assert.equal(reserved.arm,'FEEDBACK');
+ delete require.cache[mod];r=require(mod);assert.equal(r.status().health,'OK');
+ const retry={...snapshot,shared_context:{...snapshot.shared_context}};delete retry.shared_context.birth_cutoff;
+ assert.throws(()=>r.decorate('QWEN',request,retry,env),/FEEDBACK_ARM_BLOCKED_PINNED_RETRY_CONTEXT_MISMATCH/);
+ assert.equal(JSON.stringify(request),bytes);assert.equal(r.status().health,'RESEARCH_ERROR');
+ const restarted=new r.EvidenceStore(root),censor=restarted.read('censor',key);
+ assert.equal(censor.contract,'REFLECTION_CENSOR_V1');assert.equal(censor.arm,'FEEDBACK');assert.equal(censor.reason,'PINNED_RETRY_CONTEXT_MISMATCH');
+ assert.deepEqual(restarted.read('route',key),reserved);assert.equal(restarted.read('route',key).arm,'FEEDBACK');
+});
+
+test('BASE-assigned retry after restart preserves identical request bytes',t=>{
+ const dir=temp(t),storage=require('../lib/store'),oldRoot=storage.DATA_DIR,oldFlag=process.env.META_BRAIN_V1_SHADOW;
+ storage.DATA_DIR=dir;process.env.META_BRAIN_V1_SHADOW='true';const mod=require.resolve('../lib/metaBrainResearch');delete require.cache[mod];let r=require(mod);
+ t.after(()=>{storage.DATA_DIR=oldRoot;if(oldFlag===undefined)delete process.env.META_BRAIN_V1_SHADOW;else process.env.META_BRAIN_V1_SHADOW=oldFlag;delete require.cache[mod];});
+ const snapshot={...packet().snapshot,shared_context:packet().identity},request={messages:[{role:'system',content:'frozen'},{role:'user',content:'{ "candidate": {} }'}]},bytes=JSON.stringify(request);
+ const env={QWEN_FEEDBACK_ENABLED:'true',QWEN_FEEDBACK_PERCENT:'10',QWEN_FEEDBACK_MAX_REQUESTS_DAY:'1'};
+ assert.strictEqual(r.decorate('QWEN',request,snapshot,env),request);
+ const root=path.join(dir,'meta-brain-v1-evidence'),key=['QWEN','1970-01-01','C'];assert.equal(new r.EvidenceStore(root).read('route',key).arm,'BASE');
+ delete require.cache[mod];r=require(mod);assert.strictEqual(r.decorate('QWEN',request,snapshot,env),request);assert.equal(JSON.stringify(request),bytes);
+});
+
+test('every corrupt final evidence kind and staged partial fails closed before export',t=>{
+ const storage=require('../lib/store'),oldRoot=storage.DATA_DIR;t.after(()=>{storage.DATA_DIR=oldRoot;});
+ for(const kind of ['activation','birth','ai','feedback','route','gap','censor']){
+  const dir=temp(t),root=path.join(dir,'meta-brain-v1-evidence');storage.DATA_DIR=dir;const store=new EvidenceStore(root),file=store.file(kind,'truncated');
+  fs.writeFileSync(file,'{"truncated":');assert.throws(()=>new EvidenceStore(root),/CORRUPT_RESEARCH_EVIDENCE_JSON/);
+  assert.throws(()=>require('../lib/metaBrainResearch').download(),/CORRUPT_RESEARCH_EVIDENCE_JSON/);
+  fs.writeFileSync(file,'{}');assert.throws(()=>new EvidenceStore(root),/CORRUPT_RESEARCH_EVIDENCE_IDENTITY|INVALID_RESEARCH_EVIDENCE/);
+  assert.throws(()=>require('../lib/metaBrainResearch').download(),/CORRUPT_RESEARCH_EVIDENCE_IDENTITY|INVALID_RESEARCH_EVIDENCE/);
+ }
+ const dir=temp(t),root=path.join(dir,'meta-brain-v1-evidence');fs.mkdirSync(root);fs.writeFileSync(path.join(root,'birth-'+hash('partial')+'.json.staged'),'{');
+ assert.throws(()=>new EvidenceStore(root),/UNKNOWN_RESEARCH_EVIDENCE_FILE/);
+});
+test('reproducible offline development fit accepts only prior, resolved curriculum and never overwrites output',async t=>{
+ const dir=temp(t),file=path.join(dir,'input.jsonl'),train=require('../tools/train-meta-brain-v1').train;
+ const rows=Array.from({length:30},(_,i)=>({contract:meta.CONTRACT,episode_id:'e'+i,birth_cutoff:new Date(100).toISOString(),resolved_at:200,available_at:300,realized_r:i%2?1:-1,values:{reward_risk:2,spread_risk:0.01,native_score:50+i,side:1,regime_alignment:1,meta_lite:1}}));
+ fs.writeFileSync(file,rows.map(JSON.stringify).join('\n'));
+ const a=await train(file,new Date(1000).toISOString(),path.join(dir,'a.json')),b=await train(file,new Date(1000).toISOString(),path.join(dir,'b.json'));
+ assert.deepEqual(a,b);assert.equal(a.training_status,'DEVELOPMENT_TRAINED');await assert.rejects(train(file,new Date(1000).toISOString(),path.join(dir,'a.json')));
+ rows[0].available_at=2000;fs.writeFileSync(file,rows.map(JSON.stringify).join('\n'));await assert.rejects(train(file,new Date(1000).toISOString(),path.join(dir,'bad.json')));
+});
