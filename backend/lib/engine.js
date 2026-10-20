@@ -12,8 +12,6 @@ const executor = require('./executor');
 const symbolStats = require('./symbolStats');
 const journal = require('./journal');
 const locationResearch = require('./locationResearch');
-const marciShadow = require('./marciShadow');
-const marciIndependent = require('./marciIndependent');
 const researchCapture = require('./researchCapture');
 const researchSupplement = require('./researchSupplement');
 const earlyEntryShadow = require('./earlyEntryShadow');
@@ -33,7 +31,6 @@ const state = {
   universe: [],
   universeBuiltAt: 0,
   funnel: {},
-  shadowFunnel: {},
   lastSignals: [],
   haltedUntil: 0,
   haltReason: null,
@@ -50,7 +47,11 @@ const state = {
 let trades = store.read('trades', []);
 const captureSafety=store.read('captureSafetyClosed', {total:0,closed:[]});
 function closedForSafety(){return [...captureSafety.closed.map(x=>({closedAt:x.closedAt,netPnl:x.netPnl})),...closedTrades()];}
-let shadowTrades = store.read('marciShadowTrades', []);
+// Retired evidence is loaded only for explicit historical reads, never on startup.
+function historicalMarci() {
+  const fs=require('fs'),file=require('path').join(store.DATA_DIR,'marciShadowTrades.json');
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file,'utf8')) : [];
+}
 let lastStopRecoveryBackfillAt = 0;
 let timer = null;
 
@@ -90,10 +91,6 @@ function persistTrades() {
   return saved;
 }
 
-function persistShadowTrades() {
-  store.write('marciShadowTrades', shadowTrades.slice(-5000));
-}
-
 function openTrades() {
   return trades.filter((t) => t.status === 'OPEN');
 }
@@ -103,9 +100,6 @@ function pendingTrades() {
 function closedTrades() {
   return trades.filter((t) => t.status === 'CLOSED');
 }
-function openShadowTrades() { return shadowTrades.filter((t) => t.status === 'OPEN'); }
-function pendingShadowTrades() { return shadowTrades.filter((t) => t.status === 'PENDING'); }
-function closedShadowTrades() { return shadowTrades.filter((t) => t.status === 'CLOSED'); }
 
 /** Symbols worth scanning: liquid, tradable, not excluded by the operator. */
 async function buildUniverse(settings) {
@@ -201,155 +195,6 @@ async function manageOpenTrades(settings) {
 }
 
 
-async function manageShadowTrades(settings) {
-  let changed = false;
-  const paperSettings = { ...settings, mode: 'paper' };
-  const active = shadowTrades.filter((t) => ['PENDING', 'OPEN'].includes(t.status));
-
-  for (const t of active) {
-    try {
-      const statusBefore = t.status;
-      const tfMs = Math.max(60000, num(settings.timeframe, 15) * 60000);
-
-      // A resting Marci order must be cancelled if ANY completed signal-timeframe candle since
-      // order creation closed through the Rizzy line. Check this BEFORE the 1m fill simulator.
-      // Otherwise a scan arriving just after a 15m boundary can fill an order that should already
-      // have been cancelled by the structural rule. We inspect the whole pending lifetime (bounded
-      // by the entry window), not only the latest candle, so a brief invalidation cannot be missed
-      // after a restart or slow scan.
-      if (t.status === 'PENDING') {
-        const ageBars = Math.ceil(Math.max(0, Date.now() - num(t.createdAt)) / tfMs) + 3;
-        const preCandles = await marketData.getCandles(
-          t.symbol, settings.timeframe, Math.min(1000, Math.max(5, ageBars)),
-          { testnet: settings.testnet }
-        );
-        const afterCreate = preCandles.filter((c) => c.ts + tfMs >= num(t.createdAt));
-        const firstInvalid = afterCreate.find((c) => marciShadow.invalidation(t, c).invalidated);
-        if (firstInvalid) {
-          const inv = marciShadow.invalidation(t, firstInvalid);
-          t.status = 'CANCELLED';
-          t.closedAt = firstInvalid.ts + tfMs;
-          t.closeReason = 'MARCI trendline invalidated before fill (candle close)';
-          t.netPnl = 0; t.grossPnl = 0; t.fees = 0;
-          t.marciTrendlineAtExit = inv.line;
-          changed = true;
-          researchCapture.outcome(t.signalId, t.status, t, { reason:t.closeReason });
-          continue;
-        }
-      }
-
-      const did = await executor.stepPaperTrade(t, paperSettings, require('./researchExcursions').observeMinute);
-      if (did) changed = true;
-      if (statusBefore !== t.status) researchCapture.outcome(t.signalId, t.status, t);
-      if (!['PENDING', 'OPEN'].includes(t.status)) continue;
-
-      // Marci-style structural invalidation is a CANDLE-CLOSE rule, not a wick rule. Hard SL
-      // remains the max-loss backstop inside stepPaperTrade().
-      const candles = await marketData.getCandles(t.symbol, settings.timeframe, 5, {
-        testnet: settings.testnet,
-      });
-      const last = candles[candles.length - 1];
-      const closedTs = last?.ts ? last.ts + tfMs : Date.now();
-      // Never apply a candle-close invalidation from before the position actually existed.
-      const relevantFrom = t.status === 'OPEN' ? num(t.filledAt) : num(t.createdAt);
-      if (last?.ts != null && last.ts + tfMs < relevantFrom) continue;
-      const inv = marciShadow.invalidation(t, last);
-      if (!inv.invalidated) continue;
-
-      if (t.status === 'PENDING') {
-        t.status = 'CANCELLED';
-        t.closedAt = closedTs;
-        t.closeReason = 'MARCI trendline invalidated before fill (candle close)';
-        t.netPnl = 0; t.grossPnl = 0; t.fees = 0;
-      } else {
-        executor.closeTrade(t, inv.close, closedTs,
-          'MARCI trendline close invalidation', paperSettings);
-        t.marciCounterfactual = {
-          tracking: true,
-          exitPrice: inv.close,
-          startedAt: closedTs,
-          lastCheckedTs: closedTs,
-          postInvalidationMfeR: 0,
-          postInvalidationMaeR: 0,
-          outcome: null,
-          originalPlanWouldWin: null,
-          resolvedAt: null,
-        };
-      }
-      t.marciTrendlineAtExit = inv.line;
-      changed = true;
-      researchCapture.outcome(t.signalId, t.status, t, { reason:t.closeReason });
-    } catch (e) {
-      logger.error('engine', `Error advancing MARCI shadow trade on ${t.symbol}`, { error: e.message });
-    }
-  }
-
-  if (changed) persistShadowTrades();
-  return changed;
-}
-
-
-async function manageMarciCounterfactuals(settings) {
-  let changed = false;
-  const trackers = shadowTrades.filter((t) =>
-    t.status === 'CLOSED'
-    && t.marciCounterfactual?.tracking === true
-    && t.filledAt
-    && t.closedAt
-  );
-
-  for (const t of trackers) {
-    try {
-      const cf = t.marciCounterfactual;
-      const anchor = num(cf.lastCheckedTs) || num(t.closedAt);
-      const sinceMin = Math.ceil((Date.now() - anchor) / 60000) + 5;
-      const limit = Math.min(1000, Math.max(10, sinceMin));
-      const candles = await marketData.getCandles(t.symbol, '1', limit, {
-        testnet: settings.testnet,
-        ttlMs: 10000,
-      });
-      const after = candles.filter((c) => c.ts >= anchor);
-      const isBuy = t.side === 'BUY';
-      const riskPx = Math.abs(num(t.fillPrice) - num(t.sl));
-      for (const c of after) {
-        const favPx = isBuy ? num(c.high) - num(cf.exitPrice) : num(cf.exitPrice) - num(c.low);
-        const advPx = isBuy ? num(cf.exitPrice) - num(c.low) : num(c.high) - num(cf.exitPrice);
-        if (riskPx > 0) {
-          cf.postInvalidationMfeR = Math.max(num(cf.postInvalidationMfeR, 0), favPx / riskPx);
-          cf.postInvalidationMaeR = Math.max(num(cf.postInvalidationMaeR, 0), advPx / riskPx);
-        }
-
-        const hitTp = isBuy ? num(c.high) >= num(t.tp) : num(c.low) <= num(t.tp);
-        const hitSl = isBuy ? num(c.low) <= num(t.sl) : num(c.high) >= num(t.sl);
-        if (hitTp || hitSl) {
-          cf.tracking = false;
-          cf.resolvedAt = c.ts;
-          cf.outcome = hitTp && hitSl ? 'STOP_SAME_CANDLE_CONSERVATIVE' : hitSl ? 'STOP' : 'TARGET';
-          cf.originalPlanWouldWin = hitTp && !hitSl;
-          changed = true;
-          break;
-        }
-      }
-
-      if (cf.tracking && after.length) {
-        cf.lastCheckedTs = after[after.length - 1].ts;
-      }
-      if (cf.tracking && Date.now() - num(t.filledAt) > settings.maxHoldMin * 60000) {
-        cf.tracking = false;
-        cf.resolvedAt = Date.now();
-        cf.outcome = 'MAX_HOLD';
-        cf.originalPlanWouldWin = null;
-        changed = true;
-      }
-    } catch (e) {
-      logger.warn('engine', `MARCI counterfactual tracking failed on ${t.symbol}`, { error: e.message });
-    }
-  }
-
-  if (changed) persistShadowTrades();
-  return changed;
-}
-
 async function scanOnce() {
   if (state.scanning) {
     logger.debug('engine', 'Scan already in progress, skipping this tick');
@@ -363,8 +208,6 @@ async function scanOnce() {
     if (require('./maintenance').fenced()) {
       await require('./maintenance').run('management', 'engine', async () => {
         await manageOpenTrades(settings);
-        await manageShadowTrades(settings);
-        await manageMarciCounterfactuals(settings);
         await v3Shadow.refreshManagementContext(settings, () => getBtcRegime(settings));
       });
       return;
@@ -377,8 +220,6 @@ async function scanOnce() {
       }
     }
     await manageOpenTrades(settings);
-    await manageShadowTrades(settings);
-    await manageMarciCounterfactuals(settings);
 
     if (require('./maintenance').fenced()) {
       await v3Shadow.refreshManagementContext(settings, () => getBtcRegime(settings));
@@ -412,8 +253,6 @@ async function scanOnce() {
 
     const funnel = { evaluated: 0, noSignal: 0, gated: {}, passed: 0, sized: 0, placed: 0, dual: false };
     const candidates = [];
-    const shadowCandidates = [];
-    const shadowFunnel = { assessed: 0, passed: 0, placed: 0, rejected: {}, source: marciIndependent.VERSION };
     const signalsForUi = [];
     const journalSignals = [];
     const orderResolved = new Set();
@@ -499,64 +338,6 @@ async function scanOnce() {
         candidates.push(signal);
       }
 
-      // MARCI_INDEPENDENT_V2 scans the same candles but does NOT wait for an Orayan signal.
-      // It owns discovery; only execution-quality/portfolio gates are shared for a fair paper test.
-      shadowFunnel.assessed++;
-      const marciBuilt = marciIndependent.buildSignal({ symbol, candles, ticker, btcRegime, settings });
-      if (!marciBuilt.ok) {
-        const r = marciBuilt.reason || 'NO_MARCI_SETUP';
-        shadowFunnel.rejected[r] = (shadowFunnel.rejected[r] || 0) + 1;
-      } else {
-        const mSignal = marciBuilt.signal;
-        mSignal.locationResearch = locationResearch.measure({ candles, signal: mSignal });
-
-        const shadowSettings = {
-          ...settings,
-          gateScoreBandEnabled: false,
-          gateBtcRegimeEnabled: false,
-          gateRREnabled: false,
-          gateCostFloorEnabled: false,
-          gateSymbolExpectancyEnabled: false,
-          // These are Orayan strategy filters, not neutral execution protections. Leaving them
-          // enabled would silently make Marci's supposedly independent discovery depend on
-          // effects validated on the Orayan ledger. Keep the liquidity floor, spread check,
-          // stop-distance safety bounds and portfolio limits; disable the strategy opinions.
-          gateTurnoverCeilingEnabled: false,
-          gateVolumeEnabled: false,
-          gateFundingEnabled: false,
-          dualEngines: false,
-        };
-        const shadowVerdict = gates.evaluate(mSignal, shadowSettings, {
-          openPositions: [...openShadowTrades(), ...pendingShadowTrades()],
-          symbolLockouts: {},
-          dualEngines: false,
-        });
-        mSignal.gates = shadowVerdict;
-        mSignal.marciShadow = {
-          ...(mSignal.marciShadow || {}),
-          passed: shadowVerdict.passed,
-          failed: shadowVerdict.failed || [],
-          checks: shadowVerdict.checks || [],
-        };
-        journalSignals.push(mSignal);
-
-        if (shadowVerdict.passed) {
-          const patternKey = mSignal.marciIndependent?.patternKey;
-          const seen = patternKey && shadowTrades.some((t) => t.marciPatternKey === patternKey);
-          if (seen) {
-            shadowFunnel.rejected.PATTERN_ALREADY_TRADED = (shadowFunnel.rejected.PATTERN_ALREADY_TRADED || 0) + 1;
-            mSignal.marciShadow.passed = false;
-            mSignal.marciShadow.failed = [...(mSignal.marciShadow.failed || []), 'PATTERN_ALREADY_TRADED'];
-          } else {
-            shadowFunnel.passed++;
-            shadowCandidates.push(mSignal);
-          }
-        } else {
-          for (const reason of shadowVerdict.failed || []) {
-            shadowFunnel.rejected[reason] = (shadowFunnel.rejected[reason] || 0) + 1;
-          }
-        }
-      }
     }
 
     // Observational only: one immutable cross-sectional snapshot per completed signal bar.
@@ -601,7 +382,12 @@ async function scanOnce() {
           logger.warn('research','Shared birth packet unavailable',{code:e.code,error:e.message});
           return require('./metaLite').unavailable(row,epoch);
         }
-        try { return require('./metaLite').evaluate(sharedPacket); }
+        try {
+          const verdict = require('./metaLite').evaluate(sharedPacket);
+          // One-way research observer; its output cannot change the frozen comparator.
+          try { require('./metaBrainResearch').observeBirth(sharedPacket,verdict,signal.id); } catch (_) {}
+          return verdict;
+        }
         catch (e) {
           logger.warn('research','Meta-Lite evaluation censored',{code:e.code});
           return require('./metaLite').unavailable(row,epoch,'EVALUATOR_ERROR',sharedPacket);
@@ -730,44 +516,6 @@ async function scanOnce() {
       if (funnel.placed) persistTrades();
     }
 
-    // MARCI_INDEPENDENT_V2 is always paper-only. It has its own signal discovery, positions,
-    // duplicate-symbol checks, targets, exits and ledger. It may take the same symbol at the same
-    // time as Orayan because that overlap is exactly what gives us a clean head-to-head sample.
-    if (settings.tradingEnabled && !state.killSwitch) {
-      shadowCandidates.sort((a, b) => num(b.marciIndependent?.priorityScore) - num(a.marciIndependent?.priorityScore));
-      for (const signal of shadowCandidates) {
-        if (!require('./researchRuntime').canAdmit('SHADOW')) break;
-        const activeShadow = [...openShadowTrades(), ...pendingShadowTrades()];
-        if (activeShadow.length >= settings.maxOpenPositions) break;
-        if (activeShadow.some((t) => t.symbol === signal.symbol)) continue;
-        if (activeShadow.filter((t) => t.side === signal.side).length >= settings.maxPerDirection) continue;
-
-        const instrument = instruments.get(signal.symbol);
-        const shadowSettings = { ...settings, mode: 'paper' };
-        const sizing = risk.sizePosition({ entry: signal.entry, sl: signal.sl, settings: shadowSettings, instrument });
-        if (!sizing.ok) { researchCapture.outcome(signal.id, 'NO_ORDER', null, {reason:sizing.reason}); orderResolved.add(signal.id); continue; }
-        researchCapture.outcome(signal.id, 'ORDER_INTENT', null, { mode:'paper' });
-        if (!require('./researchRuntime').canAdmit('SHADOW')) break;
-
-        const trade = executor.createPendingOrder({ signal, sizing, settings: shadowSettings });
-        trade.marketSnapshotId = signal.marketSnapshotId || marketSnapshotId;
-        trade.engine = 'MARCI_SHADOW';
-        trade.researchEngine = marciIndependent.VERSION;
-        trade.sourceSignalId = signal.id;
-        trade.sourceScore = null;
-        trade.signalSource = marciIndependent.VERSION;
-        trade.marciPatternKey = signal.marciIndependent?.patternKey || null;
-        trade.marciIndependent = signal.marciIndependent ? { ...signal.marciIndependent } : null;
-        trade.marciShadow = signal.marciShadow ? { ...signal.marciShadow } : null;
-        shadowTrades.push(trade);
-        researchCapture.outcome(signal.id, 'ORDER_ACK', trade, { mode:'paper' });
-        orderResolved.add(signal.id);
-        shadowFunnel.placed++;
-        logger.info('engine', `MARCI independent queued: ${signal.symbol} ${signal.side} Rizzy ${signal.marciIndependent?.sequence} D-target R ${Number(signal.rr).toFixed(2)}`);
-      }
-      persistShadowTrades();
-    }
-
     for (const signal of journalSignals) {
       if (signal.gates?.passed && !orderResolved.has(signal.id)
         && signal.marciShadow?.passed !== false)
@@ -775,7 +523,6 @@ async function scanOnce() {
           {reason:blockReason || (!settings.tradingEnabled || state.killSwitch ? 'TRADING_DISABLED_OR_KILL_SWITCH' : 'PORTFOLIO_OR_SLOT_LIMIT')});
     }
 
-    state.shadowFunnel = shadowFunnel;
     state.lastScanAt = Date.now();
     state.lastScanMs = Date.now() - t0;
     state.scanCount++;
@@ -894,24 +641,7 @@ async function panicClose() {
     }
   }
 
-  // Research shadow is paper-only, but the panic button should still stop/cancel every
-  // simulated position so the operator has one unmistakable emergency control.
-  const shadowSettings = { ...settings, mode: 'paper' };
-  for (const t of pendingShadowTrades()) {
-    t.status = 'CANCELLED'; t.closedAt = Date.now(); t.closeReason = 'Cancelled by kill switch';
-    t.netPnl = 0; t.grossPnl = 0; t.fees = 0; closed++;
-  }
-  for (const t of openShadowTrades()) {
-    try {
-      const candles = await marketData.getCandles(t.symbol, '1', 5, { testnet: settings.testnet, ttlMs: 0 });
-      const last = candles[candles.length - 1];
-      executor.closeTrade(t, last ? last.close : t.fillPrice, Date.now(), 'Closed by kill switch', shadowSettings);
-      closed++;
-    } catch (e) { errors.push(`MARCI ${t.symbol}: ${e.message}`); }
-  }
-
   persistTrades();
-  persistShadowTrades();
   return { ok: errors.length === 0, closed, errors };
 }
 
@@ -974,7 +704,7 @@ function summarizeTradeList(list) {
 }
 
 function summary() { return summarizeTradeList(trades); }
-function shadowSummary() { return summarizeTradeList(shadowTrades); }
+function shadowSummary() { return {runtime:'RETIRED',history:'READ_ONLY_ON_DEMAND'}; }
 
 function getState() {
   const settings = settingsMod.effective();
@@ -997,17 +727,12 @@ function getTrades({ status, limit = 200 } = {}) {
 }
 
 function getShadowTrades({ status, limit = 200 } = {}) {
-  let list = shadowTrades;
+  let list = historicalMarci();
   if (status) list = list.filter((t) => t.status === status);
   return list.slice().sort((a, b) => b.createdAt - a.createdAt).slice(0, limit);
 }
 
-function resetShadowTrades() {
-  shadowTrades = [];
-  persistShadowTrades();
-  logger.warn('engine', 'MARCI shadow trade history cleared by operator');
-  return { ok: true };
-}
+function resetShadowTrades() { return {ok:false,reason:'MARCI_HISTORY_READ_ONLY'}; }
 
 function resetTrades() {
   if (executor.hasUnresolvedLiveOutcome(trades)) return {ok:false,reason:'Unresolved live mutation must be reconciled before clearing history'};
@@ -1020,7 +745,6 @@ function resetTrades() {
 function clearLastSignals() {
   state.lastSignals = [];
   state.funnel = {};
-  state.shadowFunnel = {};
   logger.warn('engine', 'Live signal list cleared by operator');
   return { ok: true };
 }
@@ -1029,7 +753,6 @@ function clearLastSignals() {
 function maintenanceCheckpoint() {
   const path=require('path'),atomic=require('./researchStore').atomic;
   atomic(path.join(store.DATA_DIR,'trades.json'),persistedTradeRows());
-  atomic(path.join(store.DATA_DIR,'marciShadowTrades.json'),shadowTrades.slice(-5000));
   atomic(path.join(store.DATA_DIR,'engineControl.json'),engineControl);
   if(captureSafety.total) {
     const keep=Math.max(0,5000-trades.length),cutoff=Math.max(0,captureSafety.total-keep);

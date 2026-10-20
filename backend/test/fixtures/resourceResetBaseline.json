@@ -1,0 +1,10 @@
+{
+  "native_management": "80d3aea0dd49bd43663f0bee8b4898d3edd81ea2036c4dbe60f9bcbd50aba361",
+  "native_admission": "706febffc1aaaaeb104744c1f95180a58fe219d3debacfa7dc518a9090954e1f",
+  "signals.js": "a0b39835e78ed1326a6a07fb1a7eb8d6844b9bdf15ded5bad6f0e02f90671924",
+  "gates.js": "30316c24a2b52c96a4f4d1d612dbe688c2759038260d69bca39cc07fa8171048",
+  "risk.js": "14dbd15d6fc91c81a4d0aab17cb7a2f061d0301514341ea0cb6cc0f8519610ef",
+  "executor.js": "329aac63f3d11efaeac3034bcc1a1ce302754dd089c5c54d98352bf41dbfaa18",
+  "metaLite.js": "d2192ff6bdc48b2d097286a82018ed6bb5a2bf659ec5b12945f3141e5bca0542",
+  "researchPayload.js": "0acf91786d96ba0a4a32a3360f536a40bf76ca09675e18a6f3e4eadf65e4042d"
+}

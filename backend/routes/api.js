@@ -179,16 +179,19 @@ const routes = {
   },
 
 
+  'GET /api/meta-brain/status': async () => require('../lib/metaBrainResearch').status(),
+  'GET /api/meta-brain/export': async ({req}) => {
+    requireMaintenanceAuth(req);
+    return require('../lib/metaBrainResearch').download();
+  },
   'GET /api/shadow/trades': async ({ query }) => {
-    const trades = await withFloatingPnl(
-      engine.getShadowTrades({ status: query.status || null, limit: num(query.limit, 200) }),
-    );
+    const trades = engine.getShadowTrades({ status: query.status || null, limit: num(query.limit, 200) });
     const openFloat = trades
       .filter((t) => t.status === 'OPEN' && Number.isFinite(Number(t.unrealisedPnl)))
       .reduce((a, t) => a + Number(t.unrealisedPnl), 0);
     return {
       trades,
-      summary: engine.shadowSummary(),
+      summary: {...engine.shadowSummary(),historicalOnly:true},
       openUnrealisedPnl: openFloat,
     };
   },

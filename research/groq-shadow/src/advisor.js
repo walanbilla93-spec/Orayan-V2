@@ -50,7 +50,8 @@ function buildLegacyRequest(snapshot, config) {
 
 function buildRequest(snapshot,config){
  const request=buildLegacyRequest(snapshot,config);
- return require('../../../backend/lib/minimalCapture').researchEnabled()?require('../../../backend/lib/researchPayload').build(request,snapshot,RESPONSE_SCHEMA):request;
+ const base=require('../../../backend/lib/minimalCapture').researchEnabled()?require('../../../backend/lib/researchPayload').build(request,snapshot,RESPONSE_SCHEMA):request;
+ return require('../../../backend/lib/metaBrainResearch').decorate('GROQ',base,snapshot);
 }
 function estimateTokens(request, completionReserveTokens = 450) {
   const promptEstimate = Math.ceil(Buffer.byteLength(JSON.stringify(request),'utf8')/3.5);

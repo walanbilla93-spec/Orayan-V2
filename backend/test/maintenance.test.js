@@ -174,7 +174,7 @@ test('real admission, provider, archive and mutation entrypoints honor fences',a
   await assert.rejects(require('../routes/api').routes['POST /api/control/start']({}),/MAINTENANCE_FENCED/);
 });
 
-test('real engine keeps PAPER/SHADOW outcome management and preserves its sole scheduled timer across cycles',async t=>{
+test('real engine keeps native PAPER management, freezes retired Marci and preserves its sole scheduled timer across cycles',async t=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'maintenance-engine-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   const store=require('../lib/store'), minimal=require('../lib/minimalCapture'), executor=require('../lib/executor');
@@ -202,13 +202,13 @@ test('real engine keeps PAPER/SHADOW outcome management and preserves its sole s
   t.after(()=>{global.setTimeout=originalTimeout;global.clearTimeout=originalClear;});
   await engine.start();assert.equal(scheduled,1);assert.equal(engine.shouldAutoResume(),true);
   const researchScans=engine.state.scanCount;await f.m.enter();close=true;
-  await engine.scanOnce();assert.equal(native.status,'CLOSED');assert.equal(shadow.status,'CLOSED');
+  await engine.scanOnce();assert.equal(native.status,'CLOSED');assert.equal(shadow.status,'OPEN');
   assert.equal(engine.state.scanCount,researchScans);assert.equal(f.m.state,'SEALED');
   const rows=[];await require('../lib/researchArchive').rows(c,row=>rows.push(row));
-  assert.ok(rows.some(r=>r.tradeId==='N'&&r.stream==='lifecycle'));assert.ok(rows.some(r=>r.tradeId==='S'&&r.mode==='SHADOW'));
+  assert.ok(rows.some(r=>r.tradeId==='N'&&r.stream==='lifecycle'));assert.ok(!rows.some(r=>r.tradeId==='S'));
   assert.equal(c.status().lostRows,0);assert.equal(engine.state.running,true);
   for(let i=0;i<3;i++){await f.m.exit();await f.m.exit();await engine.start();await f.m.enter();}
-  assert.equal(scheduled,1);assert.equal(steps,4);assert.equal(data.engineControl.desiredRunning,true);
+  assert.equal(scheduled,1);assert.equal(steps,2);assert.equal(data.engineControl.desiredRunning,true);
   assert.deepEqual(settings.effective(),frozen);
 });
 

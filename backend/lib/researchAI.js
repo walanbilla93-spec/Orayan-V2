@@ -36,6 +36,14 @@ function begin(provider, snapshot, request, requestId, secrets = []) {
   if (!c.canDispatch()) throw Error("RESEARCH_CAPTURE_HALTED");
   const ctx = context(provider, snapshot, requestId, request.model),
     attemptId = require("crypto").randomUUID();
+  // Arm provenance is separate from candidate evidence and base system prompt.
+  for (const message of request.messages || []) if (message.role === 'user') {
+    try {
+      const memory=JSON.parse(message.content).reflection_memory;
+      ctx.reflection_experiment=memory ? {mode:memory.mode,digest_id:memory.digest_id,version:memory.version}
+        : {mode:provider==='Alibaba'?'QWEN_BASE':'GROQ_BASE'};
+    } catch (_) {}
+  }
   const prior = Object.values(c.state.aiAttempts || {}).filter(
     (a) => a.evaluationId === ctx.evaluationId,
   );
@@ -142,6 +150,7 @@ function finish(ctx, result) {
     finalEndpoint: "EPISODE_ENDPOINT_REFERENCE",
     at: Date.now(),
   });
+  try { require('./metaBrainResearch').observeAI(ctx,result); } catch (_) {}
 }
 function transportError(ctx, error) {
   if (!ctx) return;

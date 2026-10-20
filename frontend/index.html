@@ -65,7 +65,6 @@
     <button class="tab is-active" data-view="dashboard" role="tab">Dashboard</button>
     <button class="tab" data-view="signals" role="tab">Signals</button>
     <button class="tab" data-view="trades" role="tab">Orayan Trades</button>
-    <button class="tab" data-view="shadow" role="tab">Marci Independent</button>
     <button class="tab" data-view="v3" role="tab">Research</button>
     <button class="tab" data-view="settings" role="tab">Settings</button>
     <button class="tab" data-view="logs" role="tab">Logs</button>
@@ -235,37 +234,6 @@
       </div>
     </section>
 
-
-    <!-- ── Marci Shadow ─────────────────────────────────────────────────────────────── -->
-    <section class="view" data-view="shadow">
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Marci Independent — Performance</h2>
-            <p class="panel-sub">Research-only paper engine. Own Little-Rizzy signal source; BTC is recorded but cannot veto; Marci geometry controls entry context, target and invalidation.</p>
-          </div>
-          <div class="metrics" id="shadowMetrics"></div>
-        </div>
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Experiment</h2>
-            <p class="panel-sub">MARCI_INDEPENDENT_V2 scans its own setups from the shared market data. It is a deterministic research proxy, not a claim of exact discretionary replication.</p>
-          </div>
-          <div class="metrics" id="shadowExperiment"></div>
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Marci Independent positions & trades</h2>
-          <div class="panel-actions">
-            <button class="btn btn-ghost" id="btnExportShadowCsv">Download shadow CSV</button>
-            <button class="btn btn-ghost" id="btnExportShadowJson">JSON</button>
-            <button class="btn btn-danger" id="btnClearShadow">Clear shadow trades</button>
-          </div>
-        </div>
-        <div id="shadowTradeList"><div class="empty">No shadow trades yet.</div></div>
-      </div>
-    </section>
 
     <!-- ── Settings ──────────────────────────────────────────────────────────────────── -->
     <section class="view" data-view="settings">
