@@ -136,7 +136,7 @@ class ResearchStore {
     fs.mkdirSync(this.wal, { recursive: true });
     fs.mkdirSync(path.join(dir, "archives"), { recursive: true });
     this.state = fs.existsSync(this.file)
-      ? JSON.parse(fs.readFileSync(this.file, "utf8"))
+      ? require('./readCheckpointJson').readCheckpointJson(this.file)
       : initial(options.epochId, options.startedAt ?? this.now());
     if (this.state.schemaVersion !== SCHEMA)
       throw Error("RESEARCH_SCHEMA_MISMATCH");
