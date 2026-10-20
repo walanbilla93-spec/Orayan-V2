@@ -180,6 +180,12 @@ const routes = {
 
 
   'GET /api/meta-brain/status': async () => require('../lib/metaBrainResearch').status(),
+  'POST /api/maintenance/marci-retirement': async ({req,body={}}) => {
+    requireMaintenanceAuth(req);return require('../lib/marciRetirement').record(body.implementation_commit);
+  },
+  'GET /api/maintenance/marci-retirement': async ({req}) => {
+    requireMaintenanceAuth(req);return {receipt:require('../lib/marciRetirement').read(require('../lib/store').DATA_DIR)};
+  },
   'GET /api/meta-brain/export': async ({req}) => {
     requireMaintenanceAuth(req);
     return require('../lib/metaBrainResearch').download();
