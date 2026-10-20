@@ -1,0 +1,37 @@
+# Medium implementation plan — frozen scope
+
+Decision: **SOL HIGH DESIGN APPROVED — READY FOR MEDIUM IMPLEMENTATION**. This authorizes a separate implementation task to build and test the design; it does not authorize production activation, deployment, model/feedback activation, source deletion or an epoch reset.
+
+Implement against exact reviewed tree `582d9056c1fbc10dad342bf71e60169e86969b88` (parent `c1875c87925f5425d28e1d48eeea8369ca6bfdb9`). Before work, verify current integration differences against the actual intended branch. The unhealthy deployed `c66f1d7` is evidence, not an assumed correct merge base. Keep continuous deployment OFF throughout any later authorized canary. No Heavy Meta/PostgreSQL action.
+
+## Phase 1 — bounded engine and all mandatory callers
+
+One implementation slice, kept disabled until complete:
+
+1. Add a small static sorted-shard reader/writer, authenticated pages, bounded overlay, streaming merge and common disk spill-set utility using Node built-ins. **Before adapting production callers**, benchmark this primitive's 1×/10×/100× lookup/fold I/O under the target CPU/volume constraints. Per-fold copy cost is the sum of the touched shards' bytes; an evenly distributed batch can touch most buckets. If measured fold delay/backlog violates the unchanged management deadline, stop this slice and return to High before broad implementation. Freeze the binary tag/field encoding in fixtures before integration. No native addon/new database. Single-writer lock must use an atomic exclusive filesystem primitive (e.g. lock directory plus owner boot identity); do not steal locks on timeout alone. Stale lock recovery requires proving no live writer under the deployment's single-instance/volume ownership contract. Never allow old and new writers on the same evidence files.
+2. Add checkpoint v3, LSN-covered transactions, additive WAL/journal completion receipts, bounded hot state, exact point APIs, normalized episode child records and disk obligation directory. Retain old reader and old namespace. Preserve reducer, sequence, typed dedupe and reserve semantics. New journal contains segment deltas, not full inventory copies.
+3. Adapt required read/write callers together. `researchStore`: emit/apply/nativeState/recoverAI/status/flush. `minimalCapture`: nativeOutcome/nativePair/observe/paths and source/episode context. `researchExcursions`: exact prior extrema. `researchCapture`: three-hour native continuity restore. `researchAI`: definition presence, evaluation retry/parsed references and separate full-read/restore APIs. Both provider `src/ledger.js`: durable projection/open-directory restore instead of full canonical boot scan. `researchRuntime`: provider metadata, daily receipt and compact status. Preserve provider prompts, request bytes, normalization, budgets and unknown-outcome/no-retry decisions.
+4. Adapt `researchArchive`: source catalogue cursors, disk selection/closure/seen sets, streamed manifest/write/verify, and preservation-only behavior. Adapt maintenance and Marci retirement accounting to exact paged views while preserving existing receipt hashes/coverage. No Marci retirement receipt is created as part of this storage migration. Optional Meta Brain references use exact lookups while feature flags stay disabled. Update server/resource-summary endpoints and tools consuming status/exports to avoid reconstructing hidden large arrays.
+5. Serialize history-sized jobs and archive catch-up after critical recovery. Bound scratch, readers, current-export sharing and page caches. Audit auxiliary startup loaders (`researchJournal`, holdout/native stores, directory scans); fix only proven whole-history input allocations with streaming compatible reads if required by the memory gate, without touching trading logic or deleting data. A remaining auxiliary unbounded loader blocks full-service acceptance; it is not ignored because ResearchStore passed.
+
+Phase 1 gate: focused parity/replay/fault tests plus a generated physical-history benchmark pass. In particular, exact miss proof, native-only LSN replay, cold episode reopening, CENSORED unresolved management, AI and provider interruption, and full streaming export must pass before the slice can be enabled. Do not deploy a half-adapted store with Proxy-backed old enumeration.
+
+## Phase 2 — migration and audit tooling
+
+Implement the [migration plan](researchstore_migration_plan.md) as an offline/fenced tool with source read-only, deterministic spools, restart receipts, checksums/counts and explicit coverage. Add read-only compare/audit tools, migration status and selector. Reject missing/corrupt source evidence; preserve existing gaps without falsely healing them. Migrate the original stress fixture and a consistent real recovery snapshot or conservative physical equivalent. Test restart at every stage and unchanged source hashes.
+
+Phase 2 gate: complete migration receipt; repeated deterministic output; all [acceptance cases](researchstore_acceptance_tests.md) pass under Node 20 Linux/Alpine; ≤300 MiB maxRSS and ≤400 MiB cgroup peak. Source/runtime parity reports and full exports must be available for review. No “tests passed” claim from the old 24 focused tests substitutes for these new tests.
+
+## Phase 3 — integration and separately authorized canary
+
+Integrate reviewed resource-reset changes onto the qualified storage implementation, retaining all flags OFF/unset. Review the final diff, protected native fingerprints and receipts. Obtain deployment authorization only after the concrete artifact, exact commit and qualification report are ready; this architecture task contains no deployment authorization.
+
+For an authorized canary: pin one writer, unchanged persistent volume/source, CD OFF, no model/feedback activation and no Heavy Meta/PostgreSQL changes. Activate only a verified migration at a matching source boundary. Observe at least 15 minutes covering restarts, archive catch-up, interrupted recovery, canonical growth, paper capture and one export. Require stable bounded RSS/heap/cgroup usage, no restart, exact counters/epoch, no newly unexplained loss and unchanged PAPER/native behavior. Then perform one controlled restart in the canary plan and verify replay once. If latency/CPU or budget fails, stay fenced or fix forward; never switch to stale v2 after new v3 writes.
+
+## Work size and stop conditions
+
+Three phases are the minimum safe release sequence; file count does not justify omitting callers. The main engineering cost is the bounded archive/provider recovery adapters, not writing a small hot checkpoint. Keep general query optimizers, filters, extra partition tiers, automatic garbage collection, retention changes and database experiments out of scope.
+
+Return to High review if the static shard rewrite fails the management-latency gate, immutable page authentication cannot fit the bound, required provider projections cannot reproduce baseline semantics, source identities cannot be reconciled, or a change would alter native admission/risk/execution decisions. These are implementation failures against a frozen design, not permission for Medium to choose a different architecture silently.
+
+Required implementation outputs: exact commit/diff; protected-path fingerprints; migration/audit receipts and coverage; Node20/image identity; memory/stage/cgroup traces; crash matrix report; export reconciliation; tested selector/rollback procedure; final canary candidate hash. Keep production evidence intact.
