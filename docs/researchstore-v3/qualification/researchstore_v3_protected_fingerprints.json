@@ -1,0 +1,154 @@
+{
+  "base": "582d9056c1fbc10dad342bf71e60169e86969b88",
+  "baseline": "c66f1d7494635030e3871ed78529f83ea1080ff1",
+  "resourceReset": "c1875c87925f5425d28e1d48eeea8369ca6bfdb9",
+  "remoteMain": "d7f2ba802a4b4204fad70bf502c6f996f76aabc4",
+  "mainIsAncestor": true,
+  "protected": [
+    {
+      "file": "backend/lib/engine.js",
+      "baseSha256": "dc434f397b67981d590515c06c2d867b8b42a2cb97c35bfadb52fe18a477a652",
+      "currentSha256": "b13fe4b9e239e4c80bba4ea01cb9ace6c1176997f7050ad17099b18dad1b293e",
+      "unchanged": false,
+      "currentNormalizedSha256": "dc434f397b67981d590515c06c2d867b8b42a2cb97c35bfadb52fe18a477a652",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/signals.js",
+      "baseSha256": "a0b39835e78ed1326a6a07fb1a7eb8d6844b9bdf15ded5bad6f0e02f90671924",
+      "currentSha256": "d7e28720b4129038d46b2a8cf2c2b867efb533fed09ede70837672814820b15b",
+      "unchanged": false,
+      "currentNormalizedSha256": "a0b39835e78ed1326a6a07fb1a7eb8d6844b9bdf15ded5bad6f0e02f90671924",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/gates.js",
+      "baseSha256": "30316c24a2b52c96a4f4d1d612dbe688c2759038260d69bca39cc07fa8171048",
+      "currentSha256": "fdcfe04db9eed0509e2f790ecc44f75a726ff2bb51b66a2b7e0e8320c6fb6cc5",
+      "unchanged": false,
+      "currentNormalizedSha256": "30316c24a2b52c96a4f4d1d612dbe688c2759038260d69bca39cc07fa8171048",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/risk.js",
+      "baseSha256": "14dbd15d6fc91c81a4d0aab17cb7a2f061d0301514341ea0cb6cc0f8519610ef",
+      "currentSha256": "7cc74ffb20220c832cff457ca63d2d134bc4464019bf5bcb485eed1e0b8086bb",
+      "unchanged": false,
+      "currentNormalizedSha256": "14dbd15d6fc91c81a4d0aab17cb7a2f061d0301514341ea0cb6cc0f8519610ef",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/executor.js",
+      "baseSha256": "329aac63f3d11efaeac3034bcc1a1ce302754dd089c5c54d98352bf41dbfaa18",
+      "currentSha256": "8f2c08e2b7fcc6ec666086439605e8eb2b97f7772842c123bac0cbb2078c2503",
+      "unchanged": false,
+      "currentNormalizedSha256": "329aac63f3d11efaeac3034bcc1a1ce302754dd089c5c54d98352bf41dbfaa18",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/metaLite.js",
+      "baseSha256": "d2192ff6bdc48b2d097286a82018ed6bb5a2bf659ec5b12945f3141e5bca0542",
+      "currentSha256": "a353196ee503086106f7ce8e598cb5c8d1f81f595e1ec793422a349c8fc60025",
+      "unchanged": false,
+      "currentNormalizedSha256": "d2192ff6bdc48b2d097286a82018ed6bb5a2bf659ec5b12945f3141e5bca0542",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/researchPayload.js",
+      "baseSha256": "0acf91786d96ba0a4a32a3360f536a40bf76ca09675e18a6f3e4eadf65e4042d",
+      "currentSha256": "851d9b0b77171819a68e8ba9974f3719ffe93bd61048f9ea3b1fae2a0fa1f4aa",
+      "unchanged": false,
+      "currentNormalizedSha256": "0acf91786d96ba0a4a32a3360f536a40bf76ca09675e18a6f3e4eadf65e4042d",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/researchStore.js",
+      "baseSha256": "de238b5c415cf312c6872e87618a92860bae9f31f3685bde42e2aa2c9e7f97e8",
+      "currentSha256": "e758635e0333f1de411805c5b38e56ca43d3045091849b250106f8f95423bfa5",
+      "unchanged": false,
+      "currentNormalizedSha256": "de238b5c415cf312c6872e87618a92860bae9f31f3685bde42e2aa2c9e7f97e8",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/researchAI.js",
+      "baseSha256": "7679f8184e1e62c576523f282bcfdad2bcf9b14d768805a8e5c2f59badaa377c",
+      "currentSha256": "620a2dfaae5312ef23eed2ef1c66df486088c60c089fdec7167fbb62ddd53fa6",
+      "unchanged": false,
+      "currentNormalizedSha256": "7679f8184e1e62c576523f282bcfdad2bcf9b14d768805a8e5c2f59badaa377c",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/researchArchive.js",
+      "baseSha256": "1ae41fb39f3b679c09967dbda0928fc76635162a1637c61a16ce188e200fc856",
+      "currentSha256": "0471fa030b41a034e63a773005d59c0b0515ab5103f8909954ad64362f4d7dcb",
+      "unchanged": false,
+      "currentNormalizedSha256": "1ae41fb39f3b679c09967dbda0928fc76635162a1637c61a16ce188e200fc856",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/researchCapture.js",
+      "baseSha256": "131d16c1cf666fbf5a6d8dba8285e47a5d69c6d68d33163ac02a8c420de23829",
+      "currentSha256": "8a848c46068d8c22601c04ae31c4692aa06f87ddb98a3597fc3e15ca129cb9ce",
+      "unchanged": false,
+      "currentNormalizedSha256": "131d16c1cf666fbf5a6d8dba8285e47a5d69c6d68d33163ac02a8c420de23829",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/minimalCapture.js",
+      "baseSha256": "cee9b14f77181a74489a7cf50bc53e70952ebe2977ae167e540408d111ca8384",
+      "currentSha256": "3e639bee9af389bc5641780e14637373a7715f0d50e5b3f5f9d2c92ce8eebb52",
+      "unchanged": false,
+      "currentNormalizedSha256": "cee9b14f77181a74489a7cf50bc53e70952ebe2977ae167e540408d111ca8384",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/researchExcursions.js",
+      "baseSha256": "05017b6f90bf324de896887ae3a904e045b9c556ab16b070a9dd7e17099cf233",
+      "currentSha256": "f4479bb80f12bdf5eab056c0f6bee5ee7cf959fd6e3399b948adfa64ab9f69bd",
+      "unchanged": false,
+      "currentNormalizedSha256": "05017b6f90bf324de896887ae3a904e045b9c556ab16b070a9dd7e17099cf233",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "backend/lib/aiPostTradeFeedback.js",
+      "baseSha256": "deb447358384a3445790416a2503c917b12f796d99730da091a7a5609ba5b32b",
+      "currentSha256": "c5110cae9ea1f793021dc35623b3e607e3d019699c684dd8e62d53f1a4ed2067",
+      "unchanged": false,
+      "currentNormalizedSha256": "deb447358384a3445790416a2503c917b12f796d99730da091a7a5609ba5b32b",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "research/groq-shadow/src/ledger.js",
+      "baseSha256": "a3ad1e0cf1d671fbbc484be1f3e01abea010e93a4a8eba99d925685a3b0e6fa1",
+      "currentSha256": "024deee0f0d819e675f9b10d2c1d2eae3b3f985114d96b23b4a8c472a46f4276",
+      "unchanged": false,
+      "currentNormalizedSha256": "a3ad1e0cf1d671fbbc484be1f3e01abea010e93a4a8eba99d925685a3b0e6fa1",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "research/alibaba-shadow/src/ledger.js",
+      "baseSha256": "8d1aa3a4015f5cef8be83399a4dba8ae44d2450fcaeaabbdb8a4ec48f0e601d2",
+      "currentSha256": "e15277e01fdd9e86e47b43478a41142f82278e921f456a2b26910e6e56a87fa0",
+      "unchanged": false,
+      "currentNormalizedSha256": "8d1aa3a4015f5cef8be83399a4dba8ae44d2450fcaeaabbdb8a4ec48f0e601d2",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "Dockerfile",
+      "baseSha256": "c964b7bee4bcb9e0d1d138244617697415e5dd60a091a83f35556fcfd977b5ae",
+      "currentSha256": "7a4321c67f620d90d6d2986c60a3246bf5ca6b8d696df264abcbba5aa668596c",
+      "unchanged": false,
+      "currentNormalizedSha256": "c964b7bee4bcb9e0d1d138244617697415e5dd60a091a83f35556fcfd977b5ae",
+      "gitContentUnchanged": true
+    },
+    {
+      "file": "docker-compose.yml",
+      "baseSha256": "368213ad4b5f2c8015239ad3604f725bbf962699004d99f3e8bf0c0a233914cd",
+      "currentSha256": "a37916d07ea21fb062d47e15baef764b9cb5472cd973808d5046ba0e970b06b6",
+      "unchanged": false,
+      "currentNormalizedSha256": "368213ad4b5f2c8015239ad3604f725bbf962699004d99f3e8bf0c0a233914cd",
+      "gitContentUnchanged": true
+    }
+  ],
+  "checkoutNote": "Git core.autocrlf working-tree line endings differ from Git blob bytes; all normalized hashes match and git diff has no protected changes."
+}

@@ -1,0 +1,30 @@
+{
+  "exampleOnly": true,
+  "state": "EXAMPLE_ONLY_NOT_VERIFIED",
+  "activationAllowed": false,
+  "reason": "Cold primitive latency gate failed before migration implementation",
+  "source": {
+    "epochId": null,
+    "checkpointSha256": null,
+    "inventoryRoot": null,
+    "journalBoundary": null,
+    "walCommitSha256": null,
+    "hashesBeforeAfterEqual": null
+  },
+  "destination": {
+    "generationRoot": null,
+    "indexBaseLSN": null,
+    "checkpointLSN": null,
+    "eventSequence": null
+  },
+  "reconciliation": {
+    "performed": false,
+    "physicalEvidenceCoverage": "NOT_MEASURED",
+    "knownDedupeDomainPreserved": null,
+    "openObligationsPreserved": null,
+    "providerProjectionParity": null,
+    "inventedDedupeKeys": false,
+    "sourceMutation": false
+  },
+  "selectorState": "NO_V3_SELECTOR_IMPLEMENTED"
+}

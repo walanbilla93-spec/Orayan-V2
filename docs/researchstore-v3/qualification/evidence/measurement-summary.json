@@ -1,0 +1,8 @@
+{
+  "linuxSamples": 2425,
+  "linuxRssPeak": 134979584,
+  "linuxHeapPeak": 15037512,
+  "linuxCgroupPeak": 409419776,
+  "kernelMaxRSS": 135372800,
+  "kernelMaxGapMs": 197
+}

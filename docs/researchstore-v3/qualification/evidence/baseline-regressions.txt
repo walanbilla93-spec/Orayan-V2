@@ -1,0 +1,49 @@
+✔ incremental checkpoint reader matches JSON.parse across chunk boundaries and JSON types (636.9188ms)
+✔ invalid or torn checkpoints fail without changing evidence (86.6246ms)
+✔ duplicate keys and prototype-like names retain native JSON semantics (23.2256ms)
+✔ checkpoint restore never performs a whole-file read (73.4298ms)
+✔ native management/admission and protected trading/comparator modules retain baseline bytes (7.084ms)
+✔ no Marci acquisition, resident history, writes, discovery or UI polling remain (1.7024ms)
+✔ historical Marci read and retired reset never rewrite or rename evidence (30.3027ms)
+✔ feature allowlist excludes all future outcome fields and inference abstains without frozen model (3.1396ms)
+✔ frozen model validation rejects hash tampering, missing input and training after birth (12.6055ms)
+✔ native PAPER close produces supported immutable feedback; loss is never false-signal assertion (34.8344ms)
+✔ bounded deterministic retrieval excludes future availability, wrong epoch, own episode (2585.8865ms)
+✔ storage pressure preserves existing evidence and rejects additional oversized write (22.9523ms)
+✔ disabled feedback modes preserve exact base provider request bytes (0.6167ms)
+✔ enabled optional store with feedback flags off returns the identical base request (16.2897ms)
+✔ enabled birth/AI/close plumbing survives restart, exports evidence, routes one bounded request per cohort/day (80.8291ms)
+✔ committed native close with failed feedback write remains a durable degraded gap after restart (105.5268ms)
+✔ pinned FEEDBACK reservation survives lesson eviction and restart without BASE fallback (2102.6081ms)
+✔ missing-context FEEDBACK retry after restart blocks with durable censor and retains assignment (52.4143ms)
+✔ BASE-assigned retry after restart preserves identical request bytes (28.0859ms)
+✔ every corrupt final evidence kind and staged partial fails closed before export (182.8956ms)
+✔ reproducible offline development fit accepts only prior, resolved curriculum and never overwrites output (32.7153ms)
+{"provider":"Groq","oldLogBytes":28842,"newLogBytes":175}
+{"provider":"Alibaba","oldLogBytes":36104,"newLogBytes":210}
+{"fixtureStatusBefore":2588550,"fixtureStatusAfter":1090}
+✔ recovery logger retains only frozen scalar counts for both provider shapes (14.2978ms)
+✔ ordinary status strips large metadata at both V3 paths and preserves UI fields without mutation (17.1459ms)
+✔ checkpoint bytes match native JSON including ordering, escaping, sparse arrays and toJSON (21.6738ms)
+✔ large checkpoint and restart retain exact sequence, dedupe, episodes, epoch and open obligations (2191.0518ms)
+✔ checkpoint write failure preserves previous file and replay journal (100.4238ms)
+✔ checkpoint fsync failure preserves previous file and replay journal (101.6546ms)
+✔ checkpoint rename failure preserves previous file and replay journal (97.5565ms)
+✔ actual read-only routes retain details and project ordinary status without hiding health (72.1665ms)
+[2026-10-20T17:40:15.608Z] INFO  executor — Paper fill TESTUSDT BUY @ 100 
+[2026-10-20T17:40:15.609Z] INFO  executor — Closed TESTUSDT BUY — Take profit — net 0.4904 USDT 
+✔ one birth shares immutable evidence object, hash and cohort across transport schemas (28.9132ms)
+✔ construction has zero market acquisition and no retained evidence JSON copy (7.3081ms)
+✔ missing quote is represented identically and both local validators abstain (7.4166ms)
+✔ future and invalid observation/receipt groups lose all values before hashing (3.89ms)
+✔ restart and replay from canonical snapshot preserves hash, cohort and no-clock reconstruction (3.2516ms)
+✔ engine dispatches once per provider, shares one builder result and leaves PAPER sizing/execution unchanged (13.2699ms)
+✔ shared advisor calls, statuses, budgets, dedupe and one causal audit remain authoritative (1783.3331ms)
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5420.6353

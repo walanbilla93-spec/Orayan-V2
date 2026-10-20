@@ -1,0 +1,45 @@
+{
+  "allMatch": true,
+  "files": [
+    {
+      "file": "backend/lib/researchV3/codec.js",
+      "expected": "84c915708cab24fe1c8bc71f6f541f69b8e34c3dad18a215bd1db841213324be",
+      "actual": "84c915708cab24fe1c8bc71f6f541f69b8e34c3dad18a215bd1db841213324be"
+    },
+    {
+      "file": "backend/lib/researchV3/io.js",
+      "expected": "61e9c4cf4d40650b691c69622ccf3645d43314b7cea71d37f527f01e149c675e",
+      "actual": "61e9c4cf4d40650b691c69622ccf3645d43314b7cea71d37f527f01e149c675e"
+    },
+    {
+      "file": "backend/lib/researchV3/pages.js",
+      "expected": "4fe719cdb1dd4a2c4b7ac74dfc316612203d840236f20a6bba10335c90a7a99d",
+      "actual": "4fe719cdb1dd4a2c4b7ac74dfc316612203d840236f20a6bba10335c90a7a99d"
+    },
+    {
+      "file": "backend/lib/researchV3/shard.js",
+      "expected": "61004b3ae665d870e912f29f3c5ee0bea518b36a494a549d439cb0dbe082d3a2",
+      "actual": "61004b3ae665d870e912f29f3c5ee0bea518b36a494a549d439cb0dbe082d3a2"
+    },
+    {
+      "file": "backend/lib/researchV3/spool.js",
+      "expected": "5913aed9e0fb714d2ce8e4305057e05d50d6833b13930e4328fed440a90b639a",
+      "actual": "5913aed9e0fb714d2ce8e4305057e05d50d6833b13930e4328fed440a90b639a"
+    },
+    {
+      "file": "backend/test/researchV3Primitive.test.js",
+      "expected": "264e1d6bd5ed35abf56a93e42dc0c383c1d0d878bf67e4929e918888edd28e60",
+      "actual": "264e1d6bd5ed35abf56a93e42dc0c383c1d0d878bf67e4929e918888edd28e60"
+    },
+    {
+      "file": "backend/test/fixtures/researchV3/codec-v1.json",
+      "expected": "ed409dec59a670cabbbadd7e82631c61503630fc8f64d0e092c1957c08631514",
+      "actual": "ed409dec59a670cabbbadd7e82631c61503630fc8f64d0e092c1957c08631514"
+    },
+    {
+      "file": "backend/tools/research-v3-benchmark.js",
+      "expected": "19e76a6a20472a1bdb7798c2b51f3b23976e1901e605f76dbf4ddd9d6f48ddca",
+      "actual": "19e76a6a20472a1bdb7798c2b51f3b23976e1901e605f76dbf4ddd9d6f48ddca"
+    }
+  ]
+}
