@@ -21,7 +21,12 @@ function* jsonLines(file, max=TX_CAP*2) {
   } finally {fs.closeSync(fd);}
 }
 class Index {
-  constructor(dir,{create=false}={}) {
+  constructor(dir,{create=false,offlineImport=false}={}) {
+    // A stopped migration can amortize shard rewrites with a larger fixed
+    // buffer. Runtime admission and recovery retain their original small caps.
+    this.overlayCap=offlineImport?32*1024*1024:OVERLAY_CAP;
+    this.walFlushCap=offlineImport?32*1024*1024:4*1024*1024;
+    this.walReadCap=offlineImport?64*1024*1024:8*1024*1024;
     this.dir=dir;fs.mkdirSync(dir,{recursive:true});
     this.file=path.join(dir,'CURRENT');this.wal=path.join(dir,'transactions.jsonl');
     this.handles=new IO.Handles(16);this.cache=new IO.Cache(4*1024*1024);
@@ -35,7 +40,7 @@ class Index {
     } else {if(!create)throw Error('V3_NAMESPACE_NOT_CREATED');this.root={format:'ORAYAN_PRODUCTION_V3_1',lsn:0,directory:S.directory(),state:{}};this.publish();}
     // No completed-history reads at startup. Only the byte-capped uncheckpointed tail.
     if(fs.existsSync(this.wal)) {
-      if(fs.statSync(this.wal).size>8*1024*1024)throw Error('V3_WAL_CAP');
+      if(fs.statSync(this.wal).size>this.walReadCap)throw Error('V3_WAL_CAP');
       for(const line of jsonLines(this.wal)) {
         if(line.incomplete)break;
         if(sha(line.data)!==line.sha256)throw Error('V3_WAL_CHECKSUM');
@@ -74,7 +79,7 @@ class Index {
     for(const [t,id,v,deleted]of ops)C.record(this.key(t,id),Buffer.from(deleted?'null':JSON.stringify(v)),this.root.lsn+1,deleted?1:0);
     const size=ops.reduce((n,o)=>n+this.cost(o),0);
     if(size>TX_CAP)throw Error('V3_TRANSACTION_CAP');
-    if(this.overlayBytes+size>OVERLAY_CAP|| (fs.existsSync(this.wal)&&fs.statSync(this.wal).size>4*1024*1024))this.flush();
+    if(this.overlayBytes+size>this.overlayCap|| (fs.existsSync(this.wal)&&fs.statSync(this.wal).size>this.walFlushCap))this.flush();
     const tx={lsn:this.root.lsn+1,ops,state};const data=JSON.stringify(tx);
     if(Buffer.byteLength(data)>TX_CAP)throw Error('V3_TRANSACTION_CAP');
     try {
@@ -90,7 +95,7 @@ class Index {
       r.cost=(k.length+r.value.length+256)*4;this.overlay.set(key,r);this.overlayBytes+=r.cost;
     }
     // WAL replay is bounded by the same admission budget; corruption never grows RAM.
-    if(this.overlayBytes>OVERLAY_CAP+TX_CAP)throw Error('V3_OVERLAY_CAP');
+    if(this.overlayBytes>this.overlayCap+TX_CAP)throw Error('V3_OVERLAY_CAP');
     this.highWater=Math.max(this.highWater,this.overlayBytes);this.root.lsn=tx.lsn;this.root.state=tx.state;
   }
   publish() {const body=this.root;atomic(this.file,{body,sha256:sha(JSON.stringify(body))});}
@@ -113,7 +118,7 @@ class Index {
     const live=new Set();for(const f of C.FAMILIES)for(const d of this.root.directory[f])if(!d.empty)for(const role of ['slots','values']){live.add(d[role].sha256+'.'+role);live.add(d[role].treeSha256+'.mtree');}
     const d=fs.opendirSync(this.dir);try{let e;while((e=d.readSync()))if(e.isFile()&&(/^[a-f0-9]{64}\.(slots|values|mtree)$/.test(e.name)||/\.building\./.test(e.name))&&!live.has(e.name))fs.unlinkSync(path.join(this.dir,e.name));}finally{d.closeSync();}
   }
-  metrics() {return {descriptors:{count:2560,cap:2560},overlay:{count:this.overlay.size,bytes:this.overlayBytes,capBytes:OVERLAY_CAP+TX_CAP,highWaterBytes:this.highWater},pageCache:{count:this.cache.map.size,bytes:this.cache.bytes,capBytes:this.cache.limit},handles:{count:this.handles.map.size,cap:this.handles.limit},cursors:{count:this.cursors||0,cap:8,snapshotCapBytes:8*(OVERLAY_CAP+TX_CAP)},cursorRecords:{count:this.cursors||0,cap:8},scalarDescriptor:{capBytes:128*1024},reducerWork:{capEntries:128,capEncodedBytes:TX_CAP},providerRecent:{capEntries:1024},historyDictionaries:{count:0,cap:0},pointReadsByTable:{...this.pointReads},cursorReadsByTable:{...this.cursorReads}};}
+  metrics() {return {descriptors:{count:2560,cap:2560},overlay:{count:this.overlay.size,bytes:this.overlayBytes,capBytes:this.overlayCap+TX_CAP,highWaterBytes:this.highWater},pageCache:{count:this.cache.map.size,bytes:this.cache.bytes,capBytes:this.cache.limit},handles:{count:this.handles.map.size,cap:this.handles.limit},cursors:{count:this.cursors||0,cap:8,snapshotCapBytes:8*(this.overlayCap+TX_CAP)},cursorRecords:{count:this.cursors||0,cap:8},scalarDescriptor:{capBytes:128*1024},reducerWork:{capEntries:128,capEncodedBytes:TX_CAP},providerRecent:{capEntries:1024},historyDictionaries:{count:0,cap:0},pointReadsByTable:{...this.pointReads},cursorReadsByTable:{...this.cursorReads}};}
   close(){this.flush();this.handles.close();this.cache.clear();}
 }
 module.exports={Index,FAMILY,decode,jsonLines};

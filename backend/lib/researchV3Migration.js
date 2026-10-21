@@ -23,7 +23,7 @@ async function migrate(root,{afterStep=()=>{},reserveBytes=0}={}) {
     if(fs.existsSync(receiptFile)) {require('./researchV3Activation').verify(root);checkHashes(source,hashes,scratch);return JSON.parse(fs.readFileSync(receiptFile,'utf8'));}
     if(!fs.existsSync(hashes)) {const temp=hashes+'.building';if(fs.existsSync(temp))fs.unlinkSync(temp);createHashes(source,temp);fs.renameSync(temp,hashes);}
     checkHashes(source,hashes,scratch);
-    store=new ResearchStoreV3(destination,{create:true,offline:true,reserveBytes});
+    store=new ResearchStoreV3(destination,{create:true,offline:true,migration:true,reserveBytes});
     function done(n){store.state.migrationCursor=0;store.flush();atomic(stageFile,{stage:n,sourceHashesSHA256:IO.hashFile(hashes)});stage.stage=n;afterStep('stage:'+n);}
     function visitStep(work){store.transaction(()=>{work();store.state.migrationCursor=(store.state.migrationCursor||0)+1;},{migration:true});afterStep('entry:'+store.state.migrationCursor);}
     if(stage.stage<1) {

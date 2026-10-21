@@ -50,6 +50,18 @@ test('checkpoint batching bounds work and durably resumes at group boundaries',a
     assert.equal(receipt.sourceHashesBefore,receipt.sourceHashesAfter);
   }finally{Index.prototype.commit=commit;}
 });
+
+test('offline import amortizes folds with a fixed cap and publishes a normal bounded runtime root',t=>{
+  const d=root(t),{Index}=require('../lib/researchV3/index'),dir=path.join(d,'index');
+  let index=new Index(dir,{create:true,offlineImport:true});
+  for(let start=0;start<4096;start+=64){const ops=[];for(let i=start;i<start+64;i++)ops.push(['dedupe',String(i),{signature:'x'.repeat(512),eventId:String(i)},false]);index.commit(ops,{});}
+  assert.ok(index.overlayBytes>4*1024*1024);
+  assert.ok(index.overlayBytes<=index.metrics().overlay.capBytes);
+  index.handles.close();index.cache.clear();
+  index=new Index(dir,{offlineImport:true});assert.equal(index.get('dedupe','4095').eventId,'4095');index.close();
+  index=new Index(dir);assert.equal(index.metrics().overlay.capBytes,4*1024*1024);
+  assert.equal(index.get('dedupe','0').eventId,'0');assert.equal(index.overlayBytes,0);index.close();
+});
 test('archive causal closure, streaming manifest, compaction and boot reject historical enumeration',async t=>{
   const d=root(t);fixture(d,25);await migrate(d);A.activate(d);
   const c=new ResearchStoreV3(path.join(d,'research-canonical-v3'),{reserveBytes:0,admissionHeadroom:0});

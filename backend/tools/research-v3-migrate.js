@@ -6,7 +6,13 @@ async function main(){
   if(!rootArg)throw Error('DATA_DIR_REQUIRED');const root=path.resolve(rootArg);
   if(process.env.ORAYAN_V3_OFFLINE!=='true')throw Error('STOP_SERVICE_AND_SET_ORAYAN_V3_OFFLINE_TRUE');
   const A=require('../lib/researchV3Activation');let result;
-  if(command==='migrate')result=await require('../lib/researchV3Migration').migrate(root);
+  if(command==='migrate'){
+    let next=0;
+    result=await require('../lib/researchV3Migration').migrate(root,{afterStep:step=>{
+      const now=Date.now();if(now<next&&!step.startsWith('stage:')&&step!=='verified')return;
+      next=now+30000;console.error(JSON.stringify({migrationProgress:step,at:new Date(now).toISOString(),memory:process.memoryUsage()}));
+    }});
+  }
   else if(command==='verify')result=A.verify(root);
   else if(command==='activate')result=A.activate(root);
   else if(command==='rollback-before-write')result=A.rollback(root);

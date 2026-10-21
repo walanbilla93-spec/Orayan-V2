@@ -48,6 +48,8 @@ The receipt explicitly preserves prior compaction/dedupe coverage gaps. It does 
 
 Checkpoint import groups at most 64 entries and 128 KiB of serialized input, except that an individual entry retains the existing transaction cap. Each group and its resume cursor commit together. This avoids a filesystem flush for every key or ignored archive member while preserving restartability. Existing per-entry migration cursors remain compatible.
 
+Only the stopped migration uses a fixed 32 MiB accounted index overlay and 64 MiB maximum recovery journal (32 MiB journal fold threshold). This amortizes immutable shard rewrites on the small service plan. Migration resumes with those same explicit limits, flushes every completed stage and flushes before publishing its receipt. Normal runtime and offline health retain the 2 MiB overlay admission limit and 8 MiB recovery journal limit; no environment flag expands runtime limits.
+
 Activation rechecks every V2 source file against the migration inventory before publishing `V3_SELECTED`. If V2 changed after migration, activation fails; V2 remains selectable. Keep the service stopped between migration and activation. A pre-write selected namespace requires explicit rollback before V2 may resume.
 
 For the service restart, set:

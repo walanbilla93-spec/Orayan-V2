@@ -42,7 +42,7 @@ class ResearchStoreV3 {
     try {
     this.wal=path.join(dir,'wal');fs.mkdirSync(this.wal,{recursive:true});this.reserve=path.join(dir,'outcome-reserve.bin');
     this.journal=path.join(dir,'index','transactions.jsonl');this.segmentBytes=8*1024*1024;this.segmentMs=15*60000;
-    this.index=new Index(path.join(dir,'index'),{create:options.create});
+    this.index=new Index(path.join(dir,'index'),{create:options.create,offlineImport:options.offline===true&&options.migration===true});
     this.loadState();
     if(!this.state.epochId) {
       if(!options.create)throw Error('V3_MIGRATION_REQUIRED');
