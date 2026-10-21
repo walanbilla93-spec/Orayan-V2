@@ -44,6 +44,14 @@ test('accepted WAL before acknowledgement is finished exactly once and torn jour
 test('published corruption fences and never resets to an empty generation',async()=>{
  const dir=temp(),h=await new Harness(dir,{budget}).init();await h.transaction([r('a')]);await h.cycle();await h.close();const b=fs.readFileSync(path.join(dir,'CURRENT'));fs.writeFileSync(path.join(dir,'CURRENT'),Buffer.concat([b,Buffer.from('invalid')]));await assert.rejects(new Harness(dir,{budget}).init());assert.ok(fs.existsSync(path.join(dir,'INITIALIZED')));
 });
+
+test('duplicate authority fields and corrupt authenticated roots fence recovery',async()=>{
+ for(const kind of ['ambiguous-current','corrupt-root']){const dir=temp(),h=await new Harness(dir,{budget}).init();await h.transaction([r('authority')]);await h.cycle();await h.close();
+  if(kind==='ambiguous-current'){const current=fs.readFileSync(path.join(dir,'CURRENT'),'utf8'),pointer=JSON.parse(current);fs.writeFileSync(path.join(dir,'CURRENT'),current.replace('"checkpoint":','"checkpoint":'+JSON.stringify(pointer.checkpoint)+',"checkpoint":'));}
+  else{const file=path.join(dir,h.cp.root.path),b=fs.readFileSync(file);b[0]^=1;fs.writeFileSync(file,b);}
+  await assert.rejects(new Harness(dir,{budget}).init(),{code:'INDEX_INTEGRITY_FAILED'});assert.ok(fs.existsSync(path.join(dir,'INITIALIZED')));
+ }
+});
 test('one reserved protected outcome during final H barrier persists in the new journal without delaying native computation',async()=>{
  const dir=temp();let pending,cut=false;const h=await new Harness(dir,{budget,hook:async(phase,store)=>{if(phase==='CUTOVER_FENCE'&&!cut){cut=true;pending=store.deferProtected([r('protected-cutover','outcome')],{scalar:9});assert.equal(store.protectedPendingHighWater,1);assert.throws(()=>store.deferProtected([r('overflow')]),{code:'PROTECTED_PENDING_CAPACITY'});assert.equal(store.acceptedLSN,store.H);}}}).init();await h.transaction([r('base')]);const cy=await h.cycle();assert.equal(cy.H,1);assert.equal(await pending.completion,2);assert.equal(h.lsn,2);await h.close();const again=await new Harness(dir,{budget}).init();assert.equal(again.scalar,9);assert.equal((await again.get(r('protected-cutover').key)).toString(),'outcome');await again.close();
 });
