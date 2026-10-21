@@ -141,7 +141,7 @@ class Harness {
         await this.publish({version:3,checkpoint,previous:oldPointer});await this.mark('INSTALL_VIEW');
         this.barrierMs=performance.now()-barrierAt;this.directory=directory;this.C=this.F;this.journal=newId;this.end=suffixEnd;this.cp=await load(s,dir,checkpoint,1048576);const pointer=await this.readPointer();this.pointer=pointer.ptr;this.pointerHash=await digest(s,pointer.bytes);
         // Retirement updates accounting once and retains every physical input.
-        await this.mark('RETIRE_PREFIX');await s.slice(()=>this.budget.retire());this.pendingCycle=null;this.barrier=false;await this.drainProtected();this.admissionHeld=false;await this.mark('DONE');
+        await this.mark('RETIRE_PREFIX');await s.slice(()=>this.budget.retire());this.pendingCycle=null;this.barrier=false;this.barrierMs=performance.now()-barrierAt;await this.drainProtected();this.admissionHeld=false;await this.mark('DONE');
         if(this.barrierMs>750)Q.fault('PUBLICATION_BARRIER_LIMIT');s.finishSegment();return {C:this.C,F:this.F,H:this.H,barrierMs:this.barrierMs,metrics:{...s.metrics}};
       }finally{await Q.close(s,old);try{await Q.close(s,suffix);}catch(e){if(e.code!=='EBADF')throw e;}}
     }catch(e){this.cycleFault=true;this.budget.ordinaryReason=e.code||'FOLD_FAULT';throw e;}finally{this.cycleBusy=false;s.finishSegment();}
