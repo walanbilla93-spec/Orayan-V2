@@ -1,0 +1,38 @@
+[
+  {
+    "scale": 1,
+    "records": 215336,
+    "blockSizeAssumption": 4096,
+    "sortPasses": 3,
+    "sortRuns": 58,
+    "spoolAllocated": 144117760,
+    "generationAllocated": 55455744,
+    "generations": 2,
+    "metadataJournalTraceReserve": 16777216,
+    "requiredBytes": 271806464
+  },
+  {
+    "scale": 10,
+    "records": 2153360,
+    "blockSizeAssumption": 4096,
+    "sortPasses": 4,
+    "sortRuns": 583,
+    "spoolAllocated": 1939103744,
+    "generationAllocated": 530628608,
+    "generations": 2,
+    "metadataJournalTraceReserve": 16777216,
+    "requiredBytes": 3017138176
+  },
+  {
+    "scale": 100,
+    "records": 21533600,
+    "blockSizeAssumption": 4096,
+    "sortPasses": 5,
+    "sortRuns": 5859,
+    "spoolAllocated": 24457793536,
+    "generationAllocated": 5327560704,
+    "generations": 2,
+    "metadataJournalTraceReserve": 16777216,
+    "requiredBytes": 35129692160
+  }
+]
