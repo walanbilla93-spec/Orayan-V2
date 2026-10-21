@@ -104,7 +104,7 @@ class Pages {
 }
 class Reader {
   constructor(s,dir,d,{testDigest=null}={}){Object.assign(this,{s,dir,d,testDigest});this.index=0;this.previous=null;this.live=0;this.maxLSN=0;this.offset=0;}
-  async init(){const {s,d}=this;await s.slice(()=>{if(d.format!==S.FORMAT||d.codec!==1||!C.FAMILIES.includes(d.family)||JSON.stringify(d).length>1024)C.fail('shard format');C.integer(d.bucket,255);C.integer(d.count);C.integer(d.maxLSN);if(d.live+d.tombstones!==d.count)C.fail('counts');});
+  async init(){const {s,d}=this;await s.slice(()=>{if(d.format!==S.FORMAT||d.codec!==1||!C.FAMILIES.includes(d.family)||JSON.stringify(d).length>1024)C.fail('shard format');C.integer(d.bucket,255);C.integer(d.count);C.integer(d.live);C.integer(d.tombstones);C.integer(d.maxLSN);if(d.live+d.tombstones!==d.count)C.fail('counts');});
     if(d.empty){if(JSON.stringify(d)!==JSON.stringify(S.emptyDescriptor(d.family,d.bucket)))C.fail('empty identity');return this;}
     if(!d.count||d.slots.bytes!==d.count*S.SLOT)C.fail('slot count');
     this.slots=await new Pages(s,this.dir,d.slots,'slots').init();this.values=await new Pages(s,this.dir,d.values,'values').init();return this;

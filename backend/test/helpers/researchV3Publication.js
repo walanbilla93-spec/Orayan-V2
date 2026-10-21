@@ -67,7 +67,7 @@ class Harness {
       pinRecovered();if(await exists(s,path.join(dir,'wal-'+(this.lsn+1)+'.commit')))C.fail('multiple outstanding WALs');
     }else if(this.tornJournal)C.fail('torn journal without WAL');
     if(this.pendingCycle&&!this.budget.P)C.fail('unprovable F');
-    if(this.lsn<cp.checkpointLSN)C.fail('unprovable extent');this.acceptedLSN=this.acknowledgedLSN=this.lsn;
+    if(this.lsn<cp.checkpointLSN)C.fail('unprovable extent');this.acceptedLSN=this.acknowledgedLSN=this.lsn;this.cycleFault=false;
   }
   applyRecovered(tx){const ticket=this.budget.precommit(tx.records,tx.bytes.length,{protectedWrite:true});this.budget.apply(ticket);this.lsn=tx.lsn;this.head=tx.hash;if(tx.lsn>this.cp.checkpointLSN)this.scalar+=tx.scalar;}
   async writerMark(phase){await this.w.stage(phase);await this.hook(phase,this);}
@@ -99,7 +99,7 @@ class Harness {
   async get(key){const r=this.budget.lookup(key);if(r)return r.flags===1?null:r.value;const family=String.fromCharCode(key[1]),bucket=(this.testDigest?this.testDigest(key):C.sha(key))[0],reader=await new Q.Reader(this.s,this.dir,this.directory[family][bucket],{testDigest:this.testDigest}).init();
     try{let old;while((old=await reader.next()))if(old.key.equals(key))return old.flags===1?null:old.value;return null;}finally{await reader.close();this.s.finishSegment();}
   }
-  async cycle(){if(this.cycleBusy||this.writerBusy||this.budget.pending)Q.fault('CYCLE_BUSY');this.cycleBusy=true;const {s,dir}=this;let cycle;
+  async cycle(){if(this.cycleFault)Q.fault('CYCLE_FAULT');if(this.cycleBusy||this.writerBusy||this.budget.pending)Q.fault('CYCLE_BUSY');this.cycleBusy=true;const {s,dir}=this;let cycle;
     try{await this.mark('PIN_BOUNDARY');if(this.writerBusy||this.budget.pending)Q.fault('WRITER_BUSY');this.F=this.pendingCycle?.body.F??this.lsn;this.anchor=this.pendingCycle?.body.anchor??this.head;this.foldInputEnd=this.pendingCycle?.body.inputEnd??this.end;const p=this.budget.P||this.budget.pin();
       const bitmap=Buffer.alloc(320),ordered=await Q.order(s,p);for(let i=0;i<ordered.length;i++)await s.slice(()=>{const r=ordered[i],n=C.FAMILIES.indexOf(String.fromCharCode(r.key[1]))*256+r.digest[0];bitmap[n>>3]|=1<<(n&7);});
       cycle={version:1,writer:'test-only-exclusive-v1',epoch:'fixture-v1',codec:1,C:this.C,F:this.F,parent:this.cp.root.sha256,anchor:this.anchor,journal:this.journal,inputEnd:this.foldInputEnd,touched:bitmap.toString('hex')};const cycleRef=await json(s,dir,cycle,16384);if(this.pendingCycle&&cycleRef.sha256!==this.pendingCycle.ref.sha256)C.fail('reconstructed cycle differs');this.cycleId=cycleRef.sha256;
@@ -138,7 +138,7 @@ class Harness {
         await this.mark('RETIRE_PREFIX');await s.slice(()=>this.budget.retire());this.pendingCycle=null;this.barrier=false;await this.drainProtected();await this.mark('DONE');
         if(this.barrierMs>750)Q.fault('PUBLICATION_BARRIER_LIMIT');s.finishSegment();return {C:this.C,F:this.F,H:this.H,barrierMs:this.barrierMs,metrics:{...s.metrics}};
       }finally{await Q.close(s,old);try{await Q.close(s,suffix);}catch(e){if(e.code!=='EBADF')throw e;}}
-    }catch(e){this.budget.ordinaryReason=e.code||'FOLD_FAULT';throw e;}finally{this.cycleBusy=false;s.finishSegment();}
+    }catch(e){this.cycleFault=true;this.budget.ordinaryReason=e.code||'FOLD_FAULT';throw e;}finally{this.cycleBusy=false;s.finishSegment();}
   }
   async verifyCandidate(d){const {s,dir}=this;if(!d.empty)for(const role of ['slots','values']){if(await Q.hashFile(s,await Q.regular(s,dir,d[role].sha256+'.'+role))!==d[role].sha256||await Q.hashFile(s,await Q.regular(s,dir,d[role].treeSha256+'.mtree'))!==d[role].treeSha256)C.fail('candidate content hash');}
     const r=await new Q.Reader(s,dir,d,{testDigest:this.testDigest}).init();try{while(await r.next()){} }finally{await r.close();}
