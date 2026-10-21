@@ -79,8 +79,9 @@ class Overlay {
 }
 function fold(dir,d,overlay,options={}){
   const reader=new Reader(dir,d,options),writer=new Writer(dir,d.family,d.bucket,options),updates=overlay.sorted(),it=reader.records();let old=it.next(),i=0;
-  try{while(!old.done||i<updates.length){const u=updates[i];if(old.done){writer.add(u);i++;continue;}if(!u){writer.add(old.value);old=it.next();continue;}
-    const cmp=C.compare(old.value,u);if(cmp<0){writer.add(old.value);old=it.next();}else if(cmp>0){writer.add(u);i++;}else{if(u.lsn<old.value.lsn)C.fail('LSN regression');if(u.lsn===old.value.lsn&&(u.flags!==old.value.flags||!u.value.equals(old.value.value)))C.fail('conflicting LSN');writer.add(u);i++;old=it.next();}}
+  const add=r=>{if(!options.dropTombstones||r.flags!==1)writer.add(r);};
+  try{while(!old.done||i<updates.length){const u=updates[i];if(old.done){add(u);i++;continue;}if(!u){add(old.value);old=it.next();continue;}
+    const cmp=C.compare(old.value,u);if(cmp<0){add(old.value);old=it.next();}else if(cmp>0){add(u);i++;}else{if(u.lsn<old.value.lsn)C.fail('LSN regression');if(u.lsn===old.value.lsn&&(u.flags!==old.value.flags||!u.value.equals(old.value.value)))C.fail('conflicting LSN');add(u);i++;old=it.next();}}
     return {descriptor:writer.finish(),readBytes:reader.stats.readBytes,proofBytes:reader.stats.proofBytes};
   }catch(e){writer.abort();throw e;}finally{reader.close();}
 }

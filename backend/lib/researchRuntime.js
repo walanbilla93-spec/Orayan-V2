@@ -9,9 +9,10 @@ let singleton,
   busy = false;
 function current() {
   const root = require("./store").DATA_DIR;
-  if (singleton && singleton.dir === path.join(root, "research-canonical-v2"))
-    return singleton;
-  singleton = new ResearchStore(path.join(root, "research-canonical-v2"), {
+  if (singleton) return singleton;
+  const backend = require('./researchV3Activation').select(root);
+  const Store = backend === 'v3' ? require('./researchStoreV3').ResearchStoreV3 : ResearchStore;
+  singleton = new Store(path.join(root, 'research-canonical-' + backend), {
     epochId: crypto.randomUUID(),
   });
   const provenance = {
@@ -77,7 +78,9 @@ function start() {
       busy = false;
     }
   };
-  tick();
+  // V3 boot opens descriptors and bounded recovery only. The normal archive
+  // timer performs bounded traversal after management has initialized.
+  if ((process.env.RESEARCH_STORE_BACKEND || 'v2') !== 'v3') tick();
   timer = setInterval(tick, 15000);
   timer.unref();
 }
@@ -141,6 +144,12 @@ async function buildCurrent(options = {}) {
   };
 }
 function providerExportMetadata(provider) {
+  if (current().backend === 'v3') {
+    let sizeBytes=0,last=0,requests=0,requestBytes=0,requestLast=0;
+    const now=Date.now(),since=now-30*3600000;
+    for(const e of current().values('events'))if(e.stream==='ai_calls'&&e.provider===provider&&e.at>=since&&e.at<=now){sizeBytes+=e.bytes;last=Math.max(last,e.at);if(e.aiEvent==='REQUEST_PREPARED'){requests++;requestBytes+=e.bytes;requestLast=Math.max(requestLast,e.at);}}
+    return {canonical:true,exportFormat:'zip',available:!!last,sizeBytes,lastUpdatedAt:last?new Date(last).toISOString():null,snapshotAuditAvailable:requests>0,snapshotAuditSizeBytes:requestBytes,snapshotAuditLastUpdatedAt:requestLast?new Date(requestLast).toISOString():null};
+  }
   const now = Date.now(), sinceAt = now - 30 * 3600000;
   const events = Object.values(current().state.events).filter(
     (e) => e.stream === 'ai_calls' && e.provider === provider && e.at >= sinceAt && e.at <= now,
@@ -162,7 +171,7 @@ async function daily(day) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day))
     throw Object.assign(Error("INVALID_ARCHIVE_DATE"), { statusCode: 400 });
   const c = current(),
-    a = c.state.archives.find(
+    a = (c.backend === 'v3' ? c.archiveStatus() : c.state.archives).find(
       (a) => a.day === day && !a.expired && a.published && a.verified,
     );
   if (!a)
@@ -196,6 +205,7 @@ function status() {
   try {
     return {
       ...current().status(),
+      ...(current().backend === 'v3' ? {startupMemory:current().startupMemory,memory:current().memory()} : {}),
       evidencePreservationEnabled: require("./researchArchive").preservationEnabled(),
       exportAuthorization: {
         groq: !!process.env.GROQ_SHADOW_EXPORT_TOKEN,

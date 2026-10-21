@@ -666,6 +666,8 @@ async function tick(store, now = Date.now()) {
   await collectGarbage(store);
 }
 module.exports = {
+  zipEntries,
+  lines,
   preservationEnabled,
   build,
   verify,
@@ -679,6 +681,16 @@ module.exports = {
   collectGarbage,
   compactIndex,
 };
+// All V3 entry points dispatch before touching legacy dictionaries. Verification
+// accepts both old and new manifests through the bounded visitor.
+for (const name of ['build','rows','closeDay','retention','tick','compactIndex','collectGarbage']) {
+  const legacy = module.exports[name];
+  module.exports[name] = (store,...args) => store.backend === 'v3'
+    ? require('./researchArchiveV3')[name](store,...args) : legacy(store,...args);
+}
+const verifyLegacy = module.exports.verify;
+module.exports.verify = async (file) => await require('./researchArchiveV3').isV3Archive(file)
+  ? require('./researchArchiveV3').verify(file) : verifyLegacy(file);
 for (const name of ['build','closeDay','retention','tick','collectGarbage','compactIndex']) {
   const work = module.exports[name];
   module.exports[name] = (...args) => require('./maintenance').run('archive','canonical',() => work(...args));

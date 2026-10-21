@@ -7,20 +7,24 @@ const test = require("node:test"),
 const { ResearchStore } = require("../lib/researchStore"),
   archive = require("../lib/researchArchive"),
   minimal = require("../lib/minimalCapture");
-for (const provider of ["groq", "alibaba"])
+for (const provider of ["groq", "alibaba"]) for (const backend of ["v2", "v3"])
   test(
-    provider +
+    backend + ": " + provider +
       " actual advisor writes canonical request/raw/parsed and budget ledger, without legacy files",
     async (t) => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "research-provider-")),
-        c = new ResearchStore(dir, { reserveBytes: 0 }),
+        c = await (async()=>{if(backend==='v2')return new ResearchStore(dir,{reserveBytes:0});
+          const legacy=new ResearchStore(path.join(dir,'research-canonical-v2'),{reserveBytes:0});legacy.flush();
+          await require('../lib/researchV3Migration').migrate(dir);require('../lib/researchV3Activation').activate(dir);
+          return new(require('../lib/researchStoreV3').ResearchStoreV3)(path.join(dir,'research-canonical-v3'),{reserveBytes:0});})(),
         old = {
           researchEnabled: minimal.researchEnabled,
           current: minimal.current,
         };
       minimal.researchEnabled = () => true;
       minimal.current = () => c;
-      t.after(() => {
+      t.after(async () => {
+        await c.close();
         Object.assign(minimal, old);
         fs.rmSync(dir, { recursive: true, force: true });
       });

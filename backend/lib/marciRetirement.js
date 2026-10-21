@@ -13,6 +13,7 @@ function ledger(root){
  return {rows,sha256:bytes?sha(bytes):null};
 }
 async function build(c,root,commit,visit,at=Date.now()){
+ if(c.backend==='v3')return require('./marciRetirementV3').build(c,root,commit,visit,at);
  if(!/^[a-f0-9]{40}$/.test(commit||'')||!Number.isFinite(at))throw Error('RETIREMENT_PROVENANCE_REQUIRED');
  const old=ledger(root),epoch=c.state.epochId,watermark=c.state.sequence,proof=new Map();
  const candidates=new Set(Object.entries(c.state.episodes).filter(([,e])=>unresolved(e)).map(([id])=>id));
@@ -58,6 +59,7 @@ function publish(root,receipt){
 function read(root){const file=path.join(root,NAME);if(!fs.existsSync(file))return null;
  if(fs.statSync(file).size>LIMIT)throw Error('RETIREMENT_RECEIPT_SIZE_LIMIT');return JSON.parse(fs.readFileSync(file,'utf8'));}
 function accounting(c,root){
+ if(c.backend==='v3')return require('./marciRetirementV3').accounting(c,root);
  const old=ledger(root),none={receipt:null,coveredEpisodes:new Set(),coveredRows:new Set(),failure:null};
  try{
   const r=read(root);if(!r)return {...none,rows:old.rows};

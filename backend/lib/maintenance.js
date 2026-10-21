@@ -224,14 +224,16 @@ function current() {
       const legacyObligations = legacy.reduce((n,x)=>n+x.obligations,0);
       const retired=require('./marciRetirement').accounting(c,require('./store').DATA_DIR);
       const nativeTrades = [...engine.getTrades({limit:Infinity}), ...retired.rows.filter((_,i)=>!retired.coveredRows.has(i))];
-      const native = nativeTrades.filter(t => ['OPEN','PENDING'].includes(t.status)).length;
-      const counterfactuals = nativeTrades.filter(t => t.marciCounterfactual?.tracking === true).length;
-      const unresolved = Object.entries(c.state.episodes).filter(([id,e]) => !retired.coveredEpisodes.has(id) && (!e.controlResolved ||
-        Object.values(e.controls || {}).some(v => !v) || Object.values(e.arms || {}).some(v => !v))).length;
+      const native = nativeTrades.filter(t => ['OPEN','PENDING'].includes(t.status)).length + (retired.summary?.native || 0);
+      const counterfactuals = nativeTrades.filter(t => t.marciCounterfactual?.tracking === true).length + (retired.summary?.counterfactuals || 0);
+      let unresolved = 0;
+      for (const [id,e] of c.backend === 'v3' ? c.openEpisodes() : Object.entries(c.state.episodes))
+        if (!retired.coveredEpisodes.has(id) && (!e.controlResolved || Object.values(e.controls || {}).some(v => !v) || Object.values(e.arms || {}).some(v => !v))) unresolved++;
       const providers = { groq: require('./groqShadowProducer').maintenanceStatus(), qwen: require('./alibabaShadowProducer').maintenanceStatus() };
       for (const [key,provider] of [['groq','Groq'],['qwen','Alibaba']])
-        providers[key].openRequests = Object.values(c.state.aiAttempts || {}).filter(a => a.provider === provider &&
-          !['PARSED_RESPONSE','TRANSPORT_ERROR','INTERRUPTED_UNCERTAIN'].includes(a.aiEvent)).length;
+        { let openRequests=0; for(const a of c.backend === 'v3' ? c.openAttempts() : Object.values(c.state.aiAttempts || {}))
+          if(a.provider===provider&&!['PARSED_RESPONSE','TRANSPORT_ERROR','INTERRUPTED_UNCERTAIN'].includes(a.aiEvent))openRequests++;
+          providers[key].openRequests=openRequests; }
       const runtime = require('./researchRuntime').maintenanceStatus();
       return { processBootId: require('./runtimeIdentity').processBootId, maintenanceEpoch: current().maintenanceEpoch || null,
         capture, sequence: capture.sequence, attempted: capture.attemptedRows, accepted: capture.acceptedRows,

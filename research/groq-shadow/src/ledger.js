@@ -88,12 +88,14 @@ async function readRecords(file, visit) {
 }
 
 function boundedSetAdd(set, value, max = MAX_INDEX_ENTRIES) {
+  if(set.diskBacked){set.add(value);return;}
   if (set.has(value)) set.delete(value);
   set.add(value);
   while (set.size > max) set.delete(set.values().next().value);
 }
 
 function boundedMapSet(map, key, value, max = MAX_INDEX_ENTRIES) {
+  if(map.diskBacked){map.set(key,value);return;}
   if (map.has(key)) map.delete(key);
   map.set(key, value);
   while (map.size > max) map.delete(map.keys().next().value);
@@ -192,11 +194,14 @@ class LedgerIndex {
 
   async load(nowMs, readOnly = false) {
     const day = new Date(nowMs).toISOString().slice(0,10);
+    if(this.canonical?.hydrate) await this.canonical.hydrate(this,nowMs);
+    else {
     this.clear(day);
     scanCount += 1;
     if(this.canonical) await this.canonical.read(row=>this.apply(row,nowMs)); else await readRecords(this.file, row => this.apply(row, nowMs));
+    }
     if (readOnly && this.openRequests.size) throw Error('PROVIDER_RECOVERY_REQUIRED');
-    for (const started of [...this.openRequests.values()]) {
+    for (const started of this.openRequests.values()) {
       const completedIso = new Date(nowMs).toISOString();
       const interrupted = {
         ...started,
@@ -215,7 +220,7 @@ class LedgerIndex {
       };
       delete interrupted.estimated_tokens_reserved;
       if(this.canonical) await this.canonical.append(interrupted); else await appendImmutableAsync(this.file, interrupted, {allowedRoot:this.allowedRoot});
-      this.apply(interrupted, nowMs);
+      if(this.canonical?.hydrate)await this.canonical.hydrate(this,nowMs);else this.apply(interrupted, nowMs);
     }
     this.initialized = true;
   }
@@ -245,7 +250,7 @@ class LedgerIndex {
 
   async append(record, nowMs = Date.now()) {
     if(this.canonical) await this.canonical.append(record); else await appendImmutableAsync(this.file, record, {allowedRoot:this.allowedRoot});
-    this.apply(record, nowMs);
+    if(this.canonical?.hydrate)await this.canonical.hydrate(this,nowMs);else this.apply(record, nowMs);
   }
 }
 
@@ -288,5 +293,5 @@ function nextMinuteAvailableAt(state, estimatedTokens, config, nowMs) {
   return nowMs + 60025;
 }
 
-module.exports = {appendImmutable,appendImmutableAsync,readRecords,ledgerState,ledgerIndex,budgetReason,nextMinuteAvailableAt,validateWritePath,
+module.exports = {LedgerIndex,appendImmutable,appendImmutableAsync,readRecords,ledgerState,ledgerIndex,budgetReason,nextMinuteAvailableAt,validateWritePath,
   _test:{resetCaches:()=>caches.clear(),scanCount:()=>scanCount,resetScanCount:()=>{scanCount=0;},MAX_INDEX_ENTRIES}};

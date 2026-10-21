@@ -5,7 +5,8 @@ const { StringDecoder } = require('string_decoder');
 // Restore the existing checkpoint format without keeping the complete UTF-8
 // buffer and JSON string alongside the restored indexes. Temporary input is
 // bounded by one 64 KiB chunk plus the largest index entry; no history is omitted.
-function readCheckpointJson(file) {
+function readCheckpointJson(file, visitor = null, rootArray = false) {
+  const VISITED = Symbol('visited');
   const fd = fs.openSync(file, 'r');
   const buffer = Buffer.allocUnsafe(64 * 1024);
   const decoder = new StringDecoder('utf8');
@@ -96,27 +97,37 @@ function readCheckpointJson(file) {
     if (!token || !/^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)$/.test(token)) invalid();
     return JSON.parse(token);
   }
-  function value(depth = 0) {
+  function value(depth = 0, field = null) {
     whitespace();
     const char = peek();
+    if (rootArray && depth === 0 && char !== '[') invalid();
     if (char === '"') return string();
     if (char === '{' || char === '[') {
       const array = char === '[', result = array ? [] : {};
+      let index = 0;
       offset++;
       whitespace();
       const end = array ? ']' : '}';
-      if (peek() === end) { offset++; return result; }
+      if (peek() === end) { offset++; if (visitor && depth === 1) { visitor(field, null, result); return VISITED; } return result; }
       for (;;) {
         whitespace();
         let key;
         if (!array) { if (peek() !== '"') invalid(); key = string(); whitespace(); consume(':'); }
         // Let V8 restore each record with its compact native object layout.
         // Building every nested field in JS significantly inflates live state.
-        const child = depth < 1 ? value(depth + 1) : entry();
-        if (array) result.push(child);
+        const child = rootArray && depth === 0 ? entry() : depth < 1 ? value(depth + 1, key)
+          : visitor && field === 'archives' ? value(depth + 1, 'archive:' + index)
+          : visitor && depth === 2 && key === 'eventIds' ? value(depth + 1, 'archiveEventIds') : entry();
+        if (visitor && rootArray && depth === 0) visitor('rows',String(index++),child);
+        else if (visitor && field === 'archiveEventIds') { visitor(field, String(index++), child); }
+        else
+        if (visitor && depth === 1) visitor(field, array ? String(index++) : key, child);
+        else if (visitor && depth === 0) {
+          if (child !== VISITED) visitor(key, null, child);
+        } else if (array) result.push(child);
         else Object.defineProperty(result, key, { value: child, writable: true, enumerable: true, configurable: true });
         whitespace();
-        if (peek() === end) { offset++; return result; }
+        if (peek() === end) { offset++; return visitor && (depth === 1 || field === 'archiveEventIds') ? VISITED : result; }
         consume(',');
       }
     }
@@ -129,4 +140,6 @@ function readCheckpointJson(file) {
     return result;
   } finally { fs.closeSync(fd); }
 }
-module.exports = { readCheckpointJson };
+function visitCheckpointJson(file, visit) { readCheckpointJson(file, visit); }
+function visitJsonArray(file,visit){readCheckpointJson(file,(_field,index,value)=>visit(value,Number(index)),true);}
+module.exports = { readCheckpointJson, visitCheckpointJson, visitJsonArray };

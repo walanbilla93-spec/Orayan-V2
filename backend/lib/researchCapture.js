@@ -158,7 +158,9 @@ function compactFiles(date = 'all') {
 }
 // Restore the small semantic index after restart, so a restart does not re-emit every setup.
 try {
-  if(minimal.enabled())for(const [key,value]of Object.entries(minimal.current().state.nativeEpisodeIndex||{}))if(value.at>=Date.now()-3*3600000)lastCandidate.set(key,value);
+  if(minimal.enabled()) { const capture=minimal.current(),cutoff=Date.now()-3*3600000;
+    for(const [key,value]of capture.backend==='v3'?capture.nativeRecent(cutoff):Object.entries(capture.state.nativeEpisodeIndex||{}))if(value.at>=cutoff)lastCandidate.set(key,value);
+  }
   prune(Date.now());
   // Only recent compact rows are needed to rebuild the live semantic index. Candidate
   // continuity is 30m and forward labels mature after ~62m. Re-reading the entire 48h

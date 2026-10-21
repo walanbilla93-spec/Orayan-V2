@@ -44,11 +44,12 @@ function begin(provider, snapshot, request, requestId, secrets = []) {
         : {mode:provider==='Alibaba'?'QWEN_BASE':'GROQ_BASE'};
     } catch (_) {}
   }
-  const prior = Object.values(c.state.aiAttempts || {}).filter(
+  const projection = c.backend === 'v3' ? c.evaluation(ctx.evaluationId) : null;
+  const prior = projection ? null : Object.values(c.state.aiAttempts || {}).filter(
     (a) => a.evaluationId === ctx.evaluationId,
   );
-  ctx.attemptNumber = prior.length + 1;
-  ctx.retryOfAttemptId = prior.at(-1)?.attemptId || null;
+  ctx.attemptNumber = (projection ? projection.count : prior.length) + 1;
+  ctx.retryOfAttemptId = projection ? projection.lastAttemptId : prior.at(-1)?.attemptId || null;
   const sanitized = clean(request, [...c.secrets, ...secrets]);
   const packed = require("./researchRequest").pack(sanitized);
   const shared = packed.shared,
@@ -168,6 +169,7 @@ function canonical(provider) {
   const c = capture();
   if (!c) return null;
   return {
+    ...(c.backend === 'v3' ? {hydrate:(index,nowMs)=>require('./researchV3Provider').hydrate(c,provider,index,nowMs)} : {}),
     async read(visit) {
       await require("./researchArchive").rows(c, (row) => {
         if (
@@ -185,7 +187,7 @@ function canonical(provider) {
         record.request_id,
         record.model,
       ).evaluationId;
-      const completion = Object.values(c.state.aiAttempts || {}).find(
+      const completion = c.backend === 'v3' ? c.evaluation(evaluation).completion : Object.values(c.state.aiAttempts || {}).find(
         (a) => a.evaluationId === evaluation && a.aiEvent === "PARSED_RESPONSE",
       );
       let compact = record;
