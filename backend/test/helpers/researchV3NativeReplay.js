@@ -15,9 +15,9 @@ function create(){let clock=Date.parse('2026-10-20T00:00:00Z'),trades=[],outcome
     if(n!=='./researchExcursions')throw Error('native require '+n);return {observeMinute:(trade,bar)=>{const v=excursions.sample(trade,bar,extremes[trade.id]);if(v)extremes[trade.id]=v;}};
   }};vm.createContext(ctx);vm.runInContext(span,ctx);
   const settings={mode:'paper',riskUsdtPerTrade:.25,maxNotionalUsdt:1000,leverage:1,entryWindowMin:10,entryBufferBps:0,tpThroughBps:0,slSlipBps:0,makerFeePct:.02,takerFeePct:.055,maxHoldMin:60};
-  return {identity:{engineSpan:hash(span),executor:hash(fs.readFileSync(path.join(root,'executor.js'))),risk:hash(fs.readFileSync(path.join(root,'risk.js')))},async run(index){clock=Date.parse('2026-10-20T00:00:00Z')+index*60000;outcomes=[];locks=[];extremes={};persisted=0;ids=0;trades.length=0;
+  return {identity:{engineSpan:hash(span),executor:hash(fs.readFileSync(path.join(root,'executor.js'))),risk:hash(fs.readFileSync(path.join(root,'risk.js')))},async run(index,onStart=()=>{}){clock=Date.parse('2026-10-20T00:00:00Z')+index*60000;outcomes=[];locks=[];extremes={};persisted=0;ids=0;trades.length=0;
       for(let i=0;i<12;i++){const signal={id:'signal-'+i,symbol:'T'+i,side:'BUY',entry:100,sl:98,tp:104,rr:2,score:75,market:{turnover24h:1000}},sizing=risk.sizePosition({entry:100,sl:98,settings,instrument:{qtyStep:.001,tickSize:.01,minOrderQty:.001}});trades.push(executor.createPendingOrder({signal,sizing,settings}));}
-      await ctx.manageOpenTrades(settings);if(persisted!==1||outcomes.length!==12||locks.length!==12||trades.some(t=>t.status!=='CLOSED'||t.mode!=='paper'))throw Error('native decision omission');
+      onStart();await ctx.manageOpenTrades(settings);if(persisted!==1||outcomes.length!==12||locks.length!==12||trades.some(t=>t.status!=='CLOSED'||t.mode!=='paper'))throw Error('native decision omission');
       const body={outcomes,locks,persisted,extremes,trades:trades.map(t=>({id:t.id,status:t.status,fillPrice:t.fillPrice,exitPrice:t.exitPrice,netPnl:t.netPnl,fees:t.fees,closeReason:t.closeReason}))};return {digest:hash(JSON.stringify(body)),body};
     }};
 }

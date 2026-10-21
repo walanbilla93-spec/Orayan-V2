@@ -7,13 +7,13 @@ fs.mkdirSync(root,{recursive:true});const replay=create(),origin=performance.now
 let dueOrigin=Infinity;const s=new Q.Scheduler({native:()=>({ready:index<count&&performance.now()>=dueOrigin+index*cadence,running,due:index<count?dueOrigin+index*cadence:Infinity})});
 const budget={reserve:{encoded:2*1024*1024,accounted:4*1024*1024,entries:4096},completionBoundMs:600000};let fixture;
 function trace(file,row){fs.appendFileSync(path.join(root,file),JSON.stringify(row)+'\n');}
-async function invoke(i){const due=dueOrigin+i*cadence;await new Promise(resolve=>setTimeout(resolve,Math.max(0,due-performance.now())));running=true;const start=performance.now(),actual=await replay.run(i);startMax=Math.max(startMax,Math.max(0,start-due));
+async function invoke(i){const due=dueOrigin+i*cadence;await new Promise(resolve=>setTimeout(resolve,Math.max(0,due-performance.now())));running=true;const timerEntry=performance.now();let start;const actual=await replay.run(i,()=>{start=performance.now();});startMax=Math.max(startMax,Math.max(0,start-due));
   if(mode==='fold'){const reference=JSON.parse(fs.readFileSync(path.join(root,'baseline-'+i+'.json')));if(reference.digest!==actual.digest)drift++;
     // Single bounded pending protected transaction; never enqueue multiple retries.
     while(writerActive)await new Promise(r=>setImmediate(r));writerActive=true;
     try{await store.transaction(actual.body.outcomes.map((v,n)=>({key:C.key('O','record',['outcome/'+i+'/'+n]),value:Buffer.from(JSON.stringify(v))})),{protectedWrite:true});}finally{writerActive=false;}
   }else{while(writerActive)await Q.immediate();writerActive=true;try{await store.transaction(actual.body.outcomes.map((v,n)=>({key:C.key('O','record',['outcome/'+i+'/'+n]),value:Buffer.from(JSON.stringify(v))})),{protectedWrite:true});}finally{writerActive=false;}fs.writeFileSync(path.join(root,'baseline-'+i+'.json'),JSON.stringify({digest:actual.digest,startDelay:Math.max(0,start-due)}));}
-  const complete=performance.now();completeMax=Math.max(completeMax,complete-due);trace(mode+'-probes.jsonl',{i,due:due-dueOrigin,start:start-dueOrigin,complete:complete-dueOrigin,startDelay:Math.max(0,start-due),digest:actual.digest});running=false;index=i+1;
+  const complete=performance.now();completeMax=Math.max(completeMax,complete-due);trace(mode+'-probes.jsonl',{i,due:due-dueOrigin,timerEntry:timerEntry-dueOrigin,start:start-dueOrigin,complete:complete-dueOrigin,startDelay:Math.max(0,start-due),digest:actual.digest});running=false;index=i+1;
 }
 let cyclePromise=null;
 async function work(){let nextCycle=performance.now();while(!done){
@@ -26,6 +26,6 @@ async function work(){let nextCycle=performance.now();while(!done){
   try{worker=work().catch(e=>{error=e;done=true;});for(let i=0;i<count;i++){if(error)throw error;await invoke(i);}await new Promise(r=>setTimeout(r,Math.max(0,dueOrigin+duration-performance.now())));}finally{done=true;if(worker)await worker;if(cyclePromise)await cyclePromise;clearInterval(sampler);hist.disable();}
   if(error)throw error;let increase=0;const probes=fs.readFileSync(path.join(root,mode+'-probes.jsonl'),'utf8').trim().split('\n').map(JSON.parse);if(mode==='fold')for(const p of probes){const baseline=JSON.parse(fs.readFileSync(path.join(root,'baseline-'+p.i+'.json')));increase=Math.max(increase,p.startDelay-baseline.startDelay);}
   const row={mode,cadence,duration,minimumDurationQualified:duration>=900000,probes:probes.length,expectedProbes:count,cycles,startMax,completeMax,increase,drift,barrierMax,ordinaryFences,writeCount,eventLoopP95:hist.percentile(95)/1e6,eventLoopP99:hist.percentile(99)/1e6,eventLoopMax:hist.max/1e6,metrics:s.metrics,nativeSource:replay.identity};
-  row.status=probes.length===count&&drift===0&&startMax<=(mode==='baseline'?500:750)&&increase<=250&&barrierMax<=750&&s.metrics.sliceMaxMs<=250&&row.eventLoopP95<=100&&row.eventLoopP99<=250&&(mode==='baseline'||cycles>=3)?'PASS':'FAIL';if(duration<900000)row.status='NOT_RUN_MINIMUM_DURATION';
+  row.status=probes.length===count&&drift===0&&completeMax<cadence&&startMax<=(mode==='baseline'?500:750)&&increase<=250&&barrierMax<=750&&s.metrics.sliceMaxMs<=250&&row.eventLoopP95<=100&&row.eventLoopP99<=250&&(mode==='baseline'||cycles>=3)?'PASS':'FAIL';if(duration<900000)row.status='NOT_RUN_MINIMUM_DURATION';
   fs.writeFileSync(path.join(root,mode+'-results.json'),JSON.stringify(row,null,2));if(store)await store.close();console.log('NATIVE_RESULT',JSON.stringify(row));if(row.status!=='PASS')process.exitCode=2;
 })().catch(e=>{fs.writeFileSync(path.join(root,mode+'-results.json'),JSON.stringify({status:'FAIL',error:e.stack}));console.error(e);process.exitCode=1;});
