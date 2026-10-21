@@ -76,6 +76,11 @@ test('asynchronous test-hook waits are excluded while synchronous hook work keep
  let now=0;const s=new Q.Scheduler({clock:()=>now}),h=new Harness(temp(),{scheduler:s,budget,hook:async()=>{await Q.immediate();now+=300;}});await h.mark('ASYNC_HOOK');s.finishSegment();assert.equal(s.fenced,null);assert.ok(s.metrics.sliceMaxMs<250);
  h.hook=()=>{now+=251;};await assert.rejects(h.mark('SYNC_HOOK'),{code:'SLICE_LIMIT'});assert.equal(s.metrics.sliceViolationCount,1);assert.equal(s.metrics.sliceMaxMs,251);
 });
+
+test('slow diagnostic I/O keeps one pending write, drops samples and preserves required probes',async()=>{
+ const {Trace}=require('./helpers/researchV3Trace'),t=new Trace(),parts=[];let release,first=true;const gate=new Promise(r=>{release=r;}),file={async write(b,off,len){if(first){first=false;await gate;}const n=Math.min(len,3);parts.push(b.subarray(off,off+n));return {bytesWritten:n};},async close(){}};t.files=new Map([['memory',file],['probe',file]]);
+ assert.equal(t.sample('memory',{at:1,value:'sample'}),true);assert.equal(t.sample('memory',{at:2,value:'dropped'}),false);const required=t.required('probe',{i:0,value:'required'});release();await required;await t.close();assert.deepEqual(Buffer.concat(parts).toString().trim().split('\n').map(JSON.parse),[{at:1,value:'sample'},{i:0,value:'required'}]);assert.equal(t.stats().maxPending,1);assert.equal(t.stats().droppedSamples,1);assert.equal(t.stats().written,2);
+});
 test('final H waits outside its barrier for an already accepted transaction',async()=>{
  let pending,once=true;const h=await new Harness(temp(),{budget,hook:async(phase,store)=>{if(phase==='BEFORE_CUTOVER_FENCE'&&once){once=false;let accepted,release;const atWAL=new Promise(r=>{accepted=r;}),gate=new Promise(r=>{release=r;});pending=store.transaction([r('pre-H','accepted')],{protectedWrite:true,afterWAL:async()=>{accepted();await gate;}});await atWAL;setTimeout(release,10);}}}).init();await h.transaction([r('prefix')]);const result=await h.cycle();await pending;assert.equal(result.F,1);assert.equal(result.H,2);assert.equal((await h.get(r('pre-H').key)).toString(),'accepted');assert.equal(h.admissionHeld,false);await h.close();
 });

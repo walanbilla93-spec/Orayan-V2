@@ -106,12 +106,12 @@ class Harness {
     try{let old;while((old=await reader.next()))if(old.key.equals(key))return old.flags===1?null:old.value;return null;}finally{await reader.close();this.s.finishSegment();}
   }
   async cycle(){if(!this.s.enforceSliceLimit)C.fail('coordinator requires enforced slice ceiling');if(this.cycleFault)Q.fault('CYCLE_FAULT');if(this.cycleBusy||this.writerBusy||this.budget.pending)Q.fault('CYCLE_BUSY');this.cycleBusy=true;const {s,dir}=this;let cycle;
-    try{await this.mark('PIN_BOUNDARY');if(this.writerBusy||this.budget.pending)Q.fault('WRITER_BUSY');this.F=this.pendingCycle?.body.F??this.lsn;this.anchor=this.pendingCycle?.body.anchor??this.head;this.foldInputEnd=this.pendingCycle?.body.inputEnd??this.end;const p=this.budget.P||this.budget.pin();
-      const bitmap=Buffer.alloc(320),ordered=await Q.order(s,p);for(let i=0;i<ordered.length;i++)await s.slice(()=>{const r=ordered[i],n=C.FAMILIES.indexOf(String.fromCharCode(r.key[1]))*256+r.digest[0];bitmap[n>>3]|=1<<(n&7);});
+    try{await this.mark('PIN_BOUNDARY');if(this.writerBusy||this.budget.pending)Q.fault('WRITER_BUSY');this.F=this.pendingCycle?.body.F??this.lsn;this.anchor=this.pendingCycle?.body.anchor??this.head;this.foldInputEnd=this.pendingCycle?.body.inputEnd??this.end;let p=this.budget.P||this.budget.pin();
+      const bitmap=Buffer.alloc(320);let ordered=await Q.order(s,p);for(let i=0;i<ordered.length;i++)await s.slice(()=>{const r=ordered[i],n=C.FAMILIES.indexOf(String.fromCharCode(r.key[1]))*256+r.digest[0];bitmap[n>>3]|=1<<(n&7);});
       cycle={version:1,writer:'test-only-exclusive-v1',epoch:'fixture-v1',codec:1,C:this.C,F:this.F,parent:this.cp.root.sha256,anchor:this.anchor,journal:this.journal,inputEnd:this.foldInputEnd,touched:bitmap.toString('hex')};const cycleRef=await json(s,dir,cycle,16384);if(this.pendingCycle&&cycleRef.sha256!==this.pendingCycle.ref.sha256)C.fail('reconstructed cycle differs');this.cycleId=cycleRef.sha256;
       const cyclePointer=crypto.randomUUID()+'.cycle';await put(s,dir,cyclePointer,Buffer.from(JSON.stringify(cycleRef)));await s.io(()=>fs.rename(path.join(dir,cyclePointer),path.join(dir,'CYCLE')));await Q.syncDir(s,dir);await this.mark('CYCLE_DURABLE');
       // Family/bucket order uses a fixed 2560-bin index, never history-sized queues.
-      const bins=Array.from({length:2560},()=>[]);for(let i=0;i<ordered.length;i+=64)await s.slice(()=>{for(let j=i;j<Math.min(i+64,ordered.length);j++){const r=ordered[j];bins[C.FAMILIES.indexOf(String.fromCharCode(r.key[1]))*256+r.digest[0]].push(r);}});
+      let bins=Array.from({length:2560},()=>[]);for(let i=0;i<ordered.length;i+=64)await s.slice(()=>{for(let j=i;j<Math.min(i+64,ordered.length);j++){const r=ordered[j];bins[C.FAMILIES.indexOf(String.fromCharCode(r.key[1]))*256+r.digest[0]].push(r);}});
       const directory={};for(const family of C.FAMILIES){directory[family]=[];for(let bucket=0;bucket<256;bucket++){
           const updates=bins[C.FAMILIES.indexOf(family)*256+bucket];
           if(!updates.length){directory[family].push(this.directory[family][bucket]);continue;}
@@ -143,7 +143,7 @@ class Harness {
         await this.publish({version:3,checkpoint,previous:oldPointer});await this.mark('INSTALL_VIEW');
         this.barrierMs=performance.now()-barrierAt;this.directory=directory;this.C=this.F;this.journal=newId;this.end=suffixEnd;this.cp=await load(s,dir,checkpoint,1048576);const pointer=await this.readPointer();this.pointer=pointer.ptr;this.pointerHash=await digest(s,pointer.bytes);
         // Retirement updates accounting once and retains every physical input.
-        await this.mark('RETIRE_PREFIX');await s.slice(()=>this.budget.retire());this.pendingCycle=null;this.barrier=false;await this.drainProtected();this.admissionHeld=false;this.barrierMs=performance.now()-barrierAt;await this.mark('DONE');
+        await this.mark('RETIRE_PREFIX');await s.slice(()=>{p=null;ordered=null;bins=null;this.budget.retire();});this.pendingCycle=null;this.barrier=false;await this.drainProtected();this.admissionHeld=false;this.barrierMs=performance.now()-barrierAt;await this.mark('DONE');
         if(this.barrierMs>750)Q.fault('PUBLICATION_BARRIER_LIMIT');s.finishSegment();return {C:this.C,F:this.F,H:this.H,barrierMs:this.barrierMs,metrics:{...s.metrics}};
       }finally{await Q.close(s,old);try{await Q.close(s,suffix);}catch(e){if(e.code!=='EBADF')throw e;}}
     }catch(e){this.cycleFault=true;this.budget.ordinaryReason=e.code||'FOLD_FAULT';throw e;}finally{this.cycleBusy=false;s.finishSegment();}

@@ -14,7 +14,9 @@ class Scheduler {
   check(){if(this.fenced)fault(this.fenced);}
   // Measure from the genuine event-loop yield through the caller's immediate
   // microtask chain, including allocations/dispatch outside the inner loop.
-  finishSegment(){if(this.segmentStart===null||this.segmentStart===undefined)return;const ms=this.clock()-this.segmentStart;this.segmentStart=null;const m=this.metrics,context=()=>({ms,phase:this.phase,operation:this.operation||'continuation',yield:m.yieldCount});if(ms>m.sliceMaxMs){m.sliceMaxMs=ms;m.sliceMaxContext=context();}if(ms>100){m.sliceOverTargetCount++;if(m.overTargetSlices.length<128)m.overTargetSlices.push(context());else m.overTargetTraceOverflow++;}if(ms>250){m.sliceViolationCount++;if(this.enforceSliceLimit)this.fenced='SLICE_LIMIT';}}
+  recordSegment(ms,operation=this.operation||'continuation'){const m=this.metrics,context=()=>({ms,phase:this.phase,operation,yield:m.yieldCount});if(ms>m.sliceMaxMs){m.sliceMaxMs=ms;m.sliceMaxContext=context();}if(ms>100){m.sliceOverTargetCount++;if(m.overTargetSlices.length<128)m.overTargetSlices.push(context());else m.overTargetTraceOverflow++;}if(ms>250){m.sliceViolationCount++;if(this.enforceSliceLimit)this.fenced='SLICE_LIMIT';}}
+  finishSegment(){if(this.segmentStart===null||this.segmentStart===undefined)return;const ms=this.clock()-this.segmentStart;this.segmentStart=null;this.recordSegment(ms);}
+  measureSync(fn,operation){const at=this.clock();try{return fn();}finally{this.recordSegment(this.clock()-at,operation);}}
   async boundary(){
     this.finishSegment();if(this.queued)fault('COMPETING_CONTINUATION');this.queued=true;
     try{for(;;){await new Promise(resolve=>setImmediate(()=>{this.segmentStart=this.clock();resolve();}));this.metrics.yieldCount++;this.check();

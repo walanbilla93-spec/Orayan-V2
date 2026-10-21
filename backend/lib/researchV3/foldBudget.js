@@ -34,10 +34,10 @@ class Budget {
   }
   cancel(ticket){if(ticket!==this.pending)C.fail('reservation identity');this.pending=null;}
   pin(){if(this.P||this.pending)fault('CYCLE_BUSY');this.P=this.N;this.N=new Map();this.prefix={...this.used};this.pinnedAt=this.clock();return this.P;}
-  retire(){if(!this.P)C.fail('no prefix');let accounted=0,entries=0;for(const v of this.P.values()){accounted+=v.cost;entries++;}this.used.encoded-=this.prefix.encoded;this.used.accounted-=accounted;this.used.entries-=entries;this.P=null;this.prefix=null;this.assert();}
+  retire(){if(!this.P)C.fail('no prefix');this.used.encoded-=this.prefix.encoded;this.used.accounted-=this.prefix.accounted;this.used.entries-=this.prefix.entries;this.P=null;this.prefix=null;this.assert();}
   lookup(key){const id=key.toString('hex');return this.N.get(id)?.r||this.P?.get(id)?.r||null;}
   trigger(){return Object.keys(CAPS).some(k=>this.used[k]>=TRIGGERS[k]);}
   assert(){for(const k of Object.keys(CAPS))if(this.used[k]<0||this.used[k]>CAPS[k])C.fail('global budget '+k);}
-  status(){return {used:{...this.used},reserved:this.reserve&&{...this.reserve},pending:this.pending?.request||zero(),high:{...this.high},P:this.P?.size||0,N:this.N.size};}
+  status(){const p=this.P?this.prefix:zero();return {used:{...this.used},charges:{P:{...p},N:{encoded:this.used.encoded-p.encoded,accounted:this.used.accounted-p.accounted,entries:this.used.entries-p.entries}},reserved:this.reserve&&{...this.reserve},pending:this.pending?.request||zero(),high:{...this.high},P:this.P?.size||0,N:this.N.size,pinnedAgeMs:this.P?this.clock()-this.pinnedAt:0,completionRemainingMs:this.P&&this.completionBoundMs!==null?Math.max(0,this.completionBoundMs-(this.clock()-this.pinnedAt)):null};}
 }
 module.exports={Budget,CAPS,TRIGGERS,cost,zero};
