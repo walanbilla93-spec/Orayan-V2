@@ -9,12 +9,12 @@ class Scheduler {
   constructor({native=()=>({ready:false,running:false,due:Infinity}),quantum=65536,onPhase=()=>{},clock=()=>performance.now(),enforceSliceLimit=true}={}){
     C.integer(quantum,65536);if(!quantum)C.fail('zero quantum');
     Object.assign(this,{native,quantum,onPhase,clock,enforceSliceLimit,phase:'IDLE',epoch:1,queued:false,ioActive:false,fenced:null});
-    this.lastProgress=clock();this.metrics={sliceMaxMs:0,sliceOverTargetCount:0,sliceViolationCount:0,yieldCount:0,progress:0,ioCount:0,ioMax:0,guardWaits:0};
+    this.lastProgress=clock();this.metrics={sliceMaxMs:0,sliceMaxContext:null,sliceOverTargetCount:0,sliceViolationCount:0,overTargetSlices:[],overTargetTraceOverflow:0,yieldCount:0,progress:0,ioCount:0,ioMax:0,guardWaits:0};
   }
   check(){if(this.fenced)fault(this.fenced);}
   // Measure from the genuine event-loop yield through the caller's immediate
   // microtask chain, including allocations/dispatch outside the inner loop.
-  finishSegment(){if(this.segmentStart===null||this.segmentStart===undefined)return;const ms=this.clock()-this.segmentStart;this.segmentStart=null;const m=this.metrics;m.sliceMaxMs=Math.max(m.sliceMaxMs,ms);if(ms>100)m.sliceOverTargetCount++;if(ms>250){m.sliceViolationCount++;if(this.enforceSliceLimit)this.fenced='SLICE_LIMIT';}}
+  finishSegment(){if(this.segmentStart===null||this.segmentStart===undefined)return;const ms=this.clock()-this.segmentStart;this.segmentStart=null;const m=this.metrics,context=()=>({ms,phase:this.phase,operation:this.operation||'continuation',yield:m.yieldCount});if(ms>m.sliceMaxMs){m.sliceMaxMs=ms;m.sliceMaxContext=context();}if(ms>100){m.sliceOverTargetCount++;if(m.overTargetSlices.length<128)m.overTargetSlices.push(context());else m.overTargetTraceOverflow++;}if(ms>250){m.sliceViolationCount++;if(this.enforceSliceLimit)this.fenced='SLICE_LIMIT';}}
   async boundary(){
     this.finishSegment();if(this.queued)fault('COMPETING_CONTINUATION');this.queued=true;
     try{for(;;){await new Promise(resolve=>setImmediate(()=>{this.segmentStart=this.clock();resolve();}));this.metrics.yieldCount++;this.check();
@@ -24,27 +24,27 @@ class Scheduler {
       this.metrics.guardWaits++;this.finishSegment();await new Promise(r=>setTimeout(r,5));
     }}finally{this.queued=false;}
   }
-  async slice(fn,progress=0){await this.boundary();const token=this.epoch;let value;
+  async slice(fn,progress=0,operation='slice'){await this.boundary();this.operation=operation;const token=this.epoch;let value;
     try{value=fn();if(value&&typeof value.then==='function')fault('ASYNC_SLICE');}
     catch(e){this.finishSegment();throw e;}
     if(token!==this.epoch)fault('STALE_COMPLETION');this.check();if(progress)this.progress(progress);return value;
   }
   progress(n){this.metrics.progress+=n;this.lastProgress=this.clock();this.starved=false;}
-  async io(fn){await this.boundary();if(this.ioActive)fault('COMPETING_IO');this.ioActive=true;const token=this.epoch;this.metrics.ioCount++;this.metrics.ioMax=1;
-    try{const operation=fn();this.finishSegment();const result=await operation;this.segmentStart=this.clock();await this.boundary();if(token!==this.epoch)fault('STALE_COMPLETION');return result;}finally{this.ioActive=false;}
+  async io(fn,operation='filesystem I/O'){await this.boundary();if(this.ioActive)fault('COMPETING_IO');this.operation=operation+' dispatch';this.ioActive=true;const token=this.epoch;this.metrics.ioCount++;this.metrics.ioMax=1;
+    try{const pending=fn();this.finishSegment();const result=await pending;this.operation=operation+' completion';this.segmentStart=this.clock();await this.boundary();if(token!==this.epoch)fault('STALE_COMPLETION');return result;}finally{this.ioActive=false;}
   }
   async stage(phase){await this.slice(()=>{this.phase=phase;this.onPhase(phase);});}
   abort(){this.epoch++;this.fenced='ABORTED';}
   ordinaryFence(){return this.fenced||(this.clock()-this.lastProgress>=15000?'FOLD_STARVED':null);}
 }
-async function open(s,file,flags='r'){return s.io(()=>fs.open(file,flags,0o600));}
+async function open(s,file,flags='r'){return s.io(()=>fs.open(file,flags,0o600),'open');}
 async function close(s,f){if(f){if(s.fenced){await immediate();await f.close();await immediate();}else await s.io(()=>f.close());}}
 async function read(s,f,b,at){C.integer(at);C.integer(at+b.length);let off=0;
-  while(off<b.length){const n=Math.min(s.quantum,b.length-off),r=await s.io(()=>f.read(b,off,n,at+off));if(!r.bytesRead)C.fail('short positioned read');off+=r.bytesRead;}
+  while(off<b.length){const n=Math.min(s.quantum,b.length-off),r=await s.io(()=>f.read(b,off,n,at+off),'positioned read');if(!r.bytesRead)C.fail('short positioned read');off+=r.bytesRead;}
   return b;
 }
 async function write(s,f,b,at){C.integer(at);C.integer(at+b.length);let off=0;
-  while(off<b.length){const n=Math.min(s.quantum,b.length-off),r=await s.io(()=>f.write(b,off,n,at+off));if(!r.bytesWritten)fault('SHORT_WRITE');off+=r.bytesWritten;}
+  while(off<b.length){const n=Math.min(s.quantum,b.length-off),r=await s.io(()=>f.write(b,off,n,at+off),'positioned write');if(!r.bytesWritten)fault('SHORT_WRITE');off+=r.bytesWritten;}
 }
 async function syncDir(s,dir){if(process.platform==='win32')return;const f=await open(s,dir);try{await s.io(()=>f.sync());}finally{await close(s,f);}}
 async function regular(s,dir,name){if(!/^[-a-zA-Z0-9.]+$/.test(name)||name==='.'||name==='..')C.fail('unsafe path');const file=path.join(dir,name),stat=await s.io(()=>fs.lstat(file));if(!stat.isFile()||stat.isSymbolicLink())C.fail('nonregular file');return file;}
