@@ -12,6 +12,11 @@ test('cooperative merge/proof/hash bytes equal synchronous oracle with collision
 test('incremental ordering handles the full entry ceiling without Array.sort',async()=>{
  const map=new Map();for(let i=0;i<32768;i++)map.set(i,{r:r(String(i))});const s=new Q.Scheduler(),rows=await Q.order(s,map);for(let i=1;i<rows.length;i++)assert.ok(C.compare(rows[i-1],rows[i])<0);assert.equal(rows.length,32768);
 });
+
+test('collision ordering and key hashing resume inside maximum-length shared prefixes',async()=>{
+ const rows=new Map(),digest=Buffer.alloc(32,7);for(let i=31;i>=0;i--){const key=C.key('D','record',['m'.repeat((C.MAX_KEY-8)/2-2)+String(i).padStart(2,'0')]);rows.set(i,{r:C.record(key,Buffer.alloc(0),1,0,digest)});}
+ const s=new Q.Scheduler({quantum:1024}),original=s.slice.bind(s);s.slice=async(fn,bytes=0)=>{assert.ok(bytes<=1024);return original(fn,bytes);};const ordered=await Q.order(s,rows);for(let i=1;i<ordered.length;i++)assert.ok(C.compare(ordered[i-1],ordered[i])<0);assert.deepEqual(await Q.keyDigest(s,ordered[0].key),C.sha(ordered[0].key));assert.ok(s.metrics.yieldCount>1000);
+});
 test('positioned I/O handles short reads/writes, zero completion and exact offsets',async()=>{
  const s=new Q.Scheduler({quantum:7}),target=Buffer.alloc(100),src=Buffer.from('abcdefghijklmnopqrstuvwxyz');let reads=0,writes=0;
  await Q.write(s,{async write(b,off,len,at){const n=Math.min(len,3);b.copy(target,at,off,off+n);writes++;return {bytesWritten:n};}},src,10);

@@ -102,6 +102,8 @@ class Pages {
   }
   async close(){await close(this.s,this.file);await close(this.s,this.proof);}
 }
+async function keyDigest(s,key,testDigest){if(testDigest)return s.slice(()=>testDigest(key));const h=crypto.createHash('sha256');for(let at=0;at<key.length;at+=s.quantum)await s.slice(()=>h.update(key.subarray(at,at+s.quantum)),Math.min(s.quantum,key.length-at));return s.slice(()=>h.digest());}
+async function compare(s,a,b){const d=await s.slice(()=>Buffer.compare(a.digest,b.digest));if(d)return d;const limit=Math.min(a.key.length,b.key.length),n=Math.max(1,Math.floor(s.quantum/2));for(let at=0;at<limit;at+=n){const end=Math.min(at+n,limit),v=await s.slice(()=>Buffer.compare(a.key.subarray(at,end),b.key.subarray(at,end)),2*(end-at));if(v)return v;}return a.key.length-b.key.length;}
 class Reader {
   constructor(s,dir,d,{testDigest=null}={}){Object.assign(this,{s,dir,d,testDigest});this.index=0;this.previous=null;this.live=0;this.maxLSN=0;this.offset=0;}
   async init(){const {s,d}=this;await s.slice(()=>{if(d.format!==S.FORMAT||d.codec!==1||!C.FAMILIES.includes(d.family)||JSON.stringify(d).length>1024)C.fail('shard format');C.integer(d.bucket,255);C.integer(d.count);C.integer(d.live);C.integer(d.tombstones);C.integer(d.maxLSN);if(d.live+d.tombstones!==d.count)C.fail('counts');});
@@ -113,7 +115,7 @@ class Reader {
     const b=await this.slots.range(this.index*S.SLOT,S.SLOT,S.SLOT),ko=C.from64(b,32),kl=C.from64(b,40),vo=C.from64(b,48),vl=C.from64(b,56),lsn=C.from64(b,64),flags=b.readUInt32LE(72);
     if(b.readUInt32LE(76)||ko!==this.offset||vo!==ko+kl||lsn>d.maxLSN||![0,1,2].includes(flags))C.fail('slot fields');
     const key=await this.values.range(ko,kl,C.MAX_KEY),digest=b.subarray(0,32);
-    await s.slice(()=>{C.validateKey(key,d.family);const expected=this.testDigest?this.testDigest(key):C.sha(key);if(!digest.equals(expected)||digest[0]!==d.bucket||this.previous&&C.compare(this.previous,{key,digest})>=0)C.fail('key/order');},kl);
+    await s.slice(()=>C.validateKey(key,d.family));const expected=await keyDigest(s,key,this.testDigest);if(!digest.equals(expected)||digest[0]!==d.bucket||this.previous&&await compare(s,this.previous,{key,digest})>=0)C.fail('key/order');
     const value=await this.values.range(vo,vl,C.MAX_VALUE);const r={key,digest,value,lsn,flags};this.index++;this.offset=vo+vl;if(flags!==1)this.live++;this.maxLSN=Math.max(this.maxLSN,lsn);this.previous={key,digest};return r;
   }
   async close(){if(this.slots)await this.slots.close();if(this.values)await this.values.close();}
@@ -121,7 +123,7 @@ class Reader {
 class Writer {
   constructor(s,dir,family,bucket,{testDigest=null}={}){Object.assign(this,{s,dir,family,bucket,testDigest,count:0,live:0,maxLSN:0,offset:0,previous:null});this.prefix=crypto.randomUUID()+'.building';}
   async init(){const {s,dir,prefix}=this;this.slotPath=path.join(dir,prefix+'.slots');this.valuePath=path.join(dir,prefix+'.values');this.sf=await open(s,this.slotPath,'wx');this.vf=await open(s,this.valuePath,'wx');return this;}
-  async add(r){const {s}=this;await s.slice(()=>{C.record(r.key,r.value,r.lsn,r.flags,r.digest);C.validateKey(r.key,this.family);if(!(this.testDigest?this.testDigest(r.key):C.sha(r.key)).equals(r.digest)||r.digest[0]!==this.bucket||this.previous&&C.compare(this.previous,r)>=0)C.fail('output order');},r.key.length);
+  async add(r){const {s}=this;await s.slice(()=>{C.record(r.key,r.value,r.lsn,r.flags,r.digest);C.validateKey(r.key,this.family);});if(!(await keyDigest(s,r.key,this.testDigest)).equals(r.digest)||r.digest[0]!==this.bucket||this.previous&&await compare(s,this.previous,r)>=0)C.fail('output order');
     await write(s,this.sf,S.slot(r,this.offset),this.count*S.SLOT);await write(s,this.vf,r.key,this.offset);await write(s,this.vf,r.value,this.offset+r.key.length);
     this.offset+=r.key.length+r.value.length;this.count++;if(r.flags!==1)this.live++;this.maxLSN=Math.max(this.maxLSN,r.lsn);this.previous={key:r.key,digest:r.digest};
   }
@@ -139,13 +141,14 @@ async function order(s,map){let a=[],b=[];const it=map.values();let end=false;
   while(!end)await s.slice(()=>{for(let n=0;n<64;n++){const v=it.next();if(v.done){end=true;break;}if(a.length>=32768)C.fail('sort cap');a.push(v.value.r||v.value);}},64*8);
   b=new Array(a.length);
   for(let width=1;width<a.length;width*=2){for(let start=0;start<a.length;start+=width*2){let i=start,j=Math.min(start+width,a.length),at=start,mid=j,end=Math.min(start+2*width,a.length);
-      while(at<end)await s.slice(()=>{let n=0;while(at<end&&n++<64)b[at++]=i<mid&&(j===end||C.compare(a[i],a[j])<=0)?a[i++]:a[j++];},512);
+      while(at<end){if(i<mid&&j<end&&Math.max(a[i].key.length,a[j].key.length)>Math.floor(s.quantum/4)){const cmp=await compare(s,a[i],a[j]);await s.slice(()=>{b[at++]=cmp<=0?a[i++]:a[j++];},8);continue;}
+        await s.slice(()=>{let n=0,bytes=0;while(at<end&&n++<64){const cost=i<mid&&j<end?64+2*Math.min(a[i].key.length,a[j].key.length):8;if(bytes&&bytes+cost>s.quantum)break;b[at++]=i<mid&&(j===end||C.compare(a[i],a[j])<=0)?a[i++]:a[j++];bytes+=cost;if(i<mid&&j<end&&Math.max(a[i].key.length,a[j].key.length)>Math.floor(s.quantum/4))break;}},8);}
     }[a,b]=[b,a];}
   return a;
 }
 async function fold(s,dir,d,updates,options={}){if(!s.enforceSliceLimit)C.fail('fold requires enforced slice ceiling');await s.stage('BUILD_SHARD');const reader=await new Reader(s,dir,d,options).init(),writer=await new Writer(s,dir,d.family,d.bucket,options).init();let old=await reader.next(),i=0;
   try{while(old||i<updates.length){const u=updates[i];if(!old){await writer.add(u);i++;}else if(!u){await writer.add(old);old=await reader.next();}else{
-        const cmp=await s.slice(()=>C.compare(old,u));if(cmp<0){await writer.add(old);old=await reader.next();}else if(cmp>0){await writer.add(u);i++;}else{
+        const cmp=await compare(s,old,u);if(cmp<0){await writer.add(old);old=await reader.next();}else if(cmp>0){await writer.add(u);i++;}else{
           if(u.lsn<old.lsn)C.fail('LSN regression');if(u.lsn===old.lsn){if(u.flags!==old.flags||u.value.length!==old.value.length)C.fail('conflicting LSN');for(let off=0;off<u.value.length;off+=s.quantum)await s.slice(()=>{if(!u.value.subarray(off,off+s.quantum).equals(old.value.subarray(off,off+s.quantum)))C.fail('conflicting LSN');},Math.min(s.quantum,u.value.length-off));}
           await writer.add(u);i++;old=await reader.next();
         }
@@ -154,4 +157,4 @@ async function fold(s,dir,d,updates,options={}){if(!s.enforceSliceLimit)C.fail('
     try{while(await verify.next()){} }finally{await verify.close();}return descriptor;
   }finally{await reader.close();await writer.close();}
 }
-module.exports={Scheduler,immediate,fault,open,close,read,write,syncDir,regular,hashFile,immutable,tree,Pages,Reader,Writer,order,fold};
+module.exports={Scheduler,immediate,fault,open,close,read,write,syncDir,regular,hashFile,immutable,tree,Pages,Reader,Writer,order,fold,compare,keyDigest};
