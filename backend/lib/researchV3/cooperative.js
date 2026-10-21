@@ -6,7 +6,7 @@ const C=require('./codec'),P=require('./pages'),S=require('./shard');
 const immediate=()=>new Promise(resolve=>setImmediate(resolve));
 function fault(code,message=code){const e=Error(message);e.code=code;throw e;}
 class Scheduler {
-  constructor({native=()=>({ready:false,running:false,due:Infinity}),quantum=65536,onPhase=()=>{},clock=()=>performance.now(),enforceSliceLimit=true}={}){
+  constructor({native=()=>({ready:false,running:false,due:Infinity}),quantum=16384,onPhase=()=>{},clock=()=>performance.now(),enforceSliceLimit=true}={}){
     C.integer(quantum,65536);if(!quantum)C.fail('zero quantum');
     Object.assign(this,{native,quantum,onPhase,clock,enforceSliceLimit,phase:'IDLE',epoch:1,queued:false,ioActive:false,fenced:null});
     this.lastProgress=clock();this.metrics={sliceMaxMs:0,sliceMaxContext:null,sliceOverTargetCount:0,sliceViolationCount:0,overTargetSlices:[],overTargetTraceOverflow:0,yieldCount:0,progress:0,ioCount:0,ioMax:0,guardWaits:0};
