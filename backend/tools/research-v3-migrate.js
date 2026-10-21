@@ -13,6 +13,8 @@ async function main(){
       next=now+30000;console.error(JSON.stringify({migrationProgress:step,at:new Date(now).toISOString(),memory:process.memoryUsage()}));
     }});
   }
+  else if(command==='abandon-audit')result=require('../lib/researchV3Abandon').audit(root);
+  else if(command==='remove-abandoned-staging')result=require('../lib/researchV3Abandon').remove(root);
   else if(command==='verify')result=A.verify(root);
   else if(command==='activate')result=A.activate(root);
   else if(command==='rollback-before-write')result=A.rollback(root);

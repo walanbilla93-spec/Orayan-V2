@@ -13,6 +13,7 @@ function checkHashes(source,target,scratch) {let count=0;for(const e of jsonLine
 function safeSource(source,name) {const file=path.resolve(source,name);if(!file.startsWith(path.resolve(source)+path.sep))throw Error('MIGRATION_SOURCE_PATH');return file;}
 async function migrate(root,{afterStep=()=>{},reserveBytes=0}={}) {
   root=path.resolve(root);const source=path.join(root,'research-canonical-v2'),destination=path.join(root,'research-canonical-v3');
+  if(fs.existsSync(path.join(root,'research-v3-bulk-migration-abandoned.json')))throw Error('V2_V3_HISTORICAL_BULK_MIGRATION_PERMANENTLY_ABANDONED');
   if(!fs.existsSync(path.join(source,'status.json')))throw Error('V2_SOURCE_UNAVAILABLE');
   const marker=require('./researchV3Activation').readMarker(root);if(marker&&marker.state!=='V2')throw Error('MIGRATION_BACKEND_ALREADY_SELECTED');
   fs.mkdirSync(destination,{recursive:true});const release=require('./researchV3Lease').acquire(destination);
