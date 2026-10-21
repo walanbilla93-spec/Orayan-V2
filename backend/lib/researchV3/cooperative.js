@@ -115,7 +115,8 @@ class Reader {
     const b=await this.slots.range(this.index*S.SLOT,S.SLOT,S.SLOT),ko=C.from64(b,32),kl=C.from64(b,40),vo=C.from64(b,48),vl=C.from64(b,56),lsn=C.from64(b,64),flags=b.readUInt32LE(72);
     if(b.readUInt32LE(76)||ko!==this.offset||vo!==ko+kl||lsn>d.maxLSN||![0,1,2].includes(flags))C.fail('slot fields');
     const key=await this.values.range(ko,kl,C.MAX_KEY),digest=b.subarray(0,32);
-    await s.slice(()=>C.validateKey(key,d.family));const expected=await keyDigest(s,key,this.testDigest);if(!digest.equals(expected)||digest[0]!==d.bucket||this.previous&&await compare(s,this.previous,{key,digest})>=0)C.fail('key/order');
+    if(key.length<=Math.floor((s.quantum-256)/4))await s.slice(()=>{C.validateKey(key,d.family);const expected=this.testDigest?this.testDigest(key):C.sha(key);if(!digest.equals(expected)||digest[0]!==d.bucket||this.previous&&C.compare(this.previous,{key,digest})>=0)C.fail('key/order');},4*key.length+256,'short-key validation/hash/order');
+    else{await s.slice(()=>C.validateKey(key,d.family));const expected=await keyDigest(s,key,this.testDigest);if(!digest.equals(expected)||digest[0]!==d.bucket||this.previous&&await compare(s,this.previous,{key,digest})>=0)C.fail('key/order');}
     const value=await this.values.range(vo,vl,C.MAX_VALUE);const r={key,digest,value,lsn,flags};this.index++;this.offset=vo+vl;if(flags!==1)this.live++;this.maxLSN=Math.max(this.maxLSN,lsn);this.previous={key,digest};return r;
   }
   async close(){if(this.slots)await this.slots.close();if(this.values)await this.values.close();}
@@ -123,7 +124,9 @@ class Reader {
 class Writer {
   constructor(s,dir,family,bucket,{testDigest=null}={}){Object.assign(this,{s,dir,family,bucket,testDigest,count:0,live:0,maxLSN:0,offset:0,previous:null});this.prefix=crypto.randomUUID()+'.building';}
   async init(){const {s,dir,prefix}=this;this.slotPath=path.join(dir,prefix+'.slots');this.valuePath=path.join(dir,prefix+'.values');this.sf=await open(s,this.slotPath,'wx');this.vf=await open(s,this.valuePath,'wx');return this;}
-  async add(r){const {s}=this;await s.slice(()=>{C.record(r.key,r.value,r.lsn,r.flags,r.digest);C.validateKey(r.key,this.family);});if(!(await keyDigest(s,r.key,this.testDigest)).equals(r.digest)||r.digest[0]!==this.bucket||this.previous&&await compare(s,this.previous,r)>=0)C.fail('output order');
+  async add(r){const {s}=this;const validate=()=>{C.record(r.key,r.value,r.lsn,r.flags,r.digest);if(String.fromCharCode(r.key[1])!==this.family)C.fail('output family');};
+    if(r.key.length<=Math.floor((s.quantum-256)/4))await s.slice(()=>{validate();if(!(this.testDigest?this.testDigest(r.key):C.sha(r.key)).equals(r.digest)||r.digest[0]!==this.bucket||this.previous&&C.compare(this.previous,r)>=0)C.fail('output order');},4*r.key.length+256,'short-key validation/hash/order');
+    else{await s.slice(validate);if(!(await keyDigest(s,r.key,this.testDigest)).equals(r.digest)||r.digest[0]!==this.bucket||this.previous&&await compare(s,this.previous,r)>=0)C.fail('output order');}
     await write(s,this.sf,S.slot(r,this.offset),this.count*S.SLOT);await write(s,this.vf,r.key,this.offset);await write(s,this.vf,r.value,this.offset+r.key.length);
     this.offset+=r.key.length+r.value.length;this.count++;if(r.flags!==1)this.live++;this.maxLSN=Math.max(this.maxLSN,r.lsn);this.previous={key:r.key,digest:r.digest};
   }
