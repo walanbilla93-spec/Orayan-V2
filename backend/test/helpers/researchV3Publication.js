@@ -27,7 +27,10 @@ async function decode(s,b,lsn,prev){C.integer(b.length,MAX_TX);if(b.length<HEADE
 }
 class Harness {
   constructor(dir,{scheduler=new Q.Scheduler(),budget={},testDigest=null,hook=async()=>{},fixture=null}={}){
-    Object.assign(this,{dir,s:scheduler,w:new Q.Scheduler(),budgetOptions:budget,testDigest,hook,fixture,writerBusy:false,barrier:false,cycleBusy:false});this.budget=new Budget(budget);
+    // The 250-ms fold fence belongs to the fold lane. The synthetic writer is
+    // measured separately against native persistence/completion deadlines and
+    // must finish an accepted WAL rather than inherit a fold cancellation.
+    Object.assign(this,{dir,s:scheduler,w:new Q.Scheduler({enforceSliceLimit:false}),budgetOptions:budget,testDigest,hook,fixture,writerBusy:false,barrier:false,cycleBusy:false});this.budget=new Budget(budget);
     const native=this.s.native;this.s.native=()=>{const n=native.call(this.s);return {...n,ready:n.ready||this.writerBusy&&this.acceptedLSN>this.lsn};};
   }
   async mark(phase){await this.s.stage(phase);await this.hook(phase,this);}

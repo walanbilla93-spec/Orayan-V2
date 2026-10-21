@@ -6,15 +6,15 @@ const C=require('./codec'),P=require('./pages'),S=require('./shard');
 const immediate=()=>new Promise(resolve=>setImmediate(resolve));
 function fault(code,message=code){const e=Error(message);e.code=code;throw e;}
 class Scheduler {
-  constructor({native=()=>({ready:false,running:false,due:Infinity}),quantum=65536,onPhase=()=>{},clock=()=>performance.now()}={}){
+  constructor({native=()=>({ready:false,running:false,due:Infinity}),quantum=65536,onPhase=()=>{},clock=()=>performance.now(),enforceSliceLimit=true}={}){
     C.integer(quantum,65536);if(!quantum)C.fail('zero quantum');
-    Object.assign(this,{native,quantum,onPhase,clock,phase:'IDLE',epoch:1,queued:false,ioActive:false,fenced:null});
+    Object.assign(this,{native,quantum,onPhase,clock,enforceSliceLimit,phase:'IDLE',epoch:1,queued:false,ioActive:false,fenced:null});
     this.lastProgress=clock();this.metrics={sliceMaxMs:0,sliceOverTargetCount:0,sliceViolationCount:0,yieldCount:0,progress:0,ioCount:0,ioMax:0,guardWaits:0};
   }
   check(){if(this.fenced)fault(this.fenced);}
   // Measure from the genuine event-loop yield through the caller's immediate
   // microtask chain, including allocations/dispatch outside the inner loop.
-  finishSegment(){if(this.segmentStart===null||this.segmentStart===undefined)return;const ms=this.clock()-this.segmentStart;this.segmentStart=null;const m=this.metrics;m.sliceMaxMs=Math.max(m.sliceMaxMs,ms);if(ms>100)m.sliceOverTargetCount++;if(ms>250){m.sliceViolationCount++;this.fenced='SLICE_LIMIT';}}
+  finishSegment(){if(this.segmentStart===null||this.segmentStart===undefined)return;const ms=this.clock()-this.segmentStart;this.segmentStart=null;const m=this.metrics;m.sliceMaxMs=Math.max(m.sliceMaxMs,ms);if(ms>100)m.sliceOverTargetCount++;if(ms>250){m.sliceViolationCount++;if(this.enforceSliceLimit)this.fenced='SLICE_LIMIT';}}
   async boundary(){
     this.finishSegment();if(this.queued)fault('COMPETING_CONTINUATION');this.queued=true;
     try{for(;;){await new Promise(resolve=>setImmediate(()=>{this.segmentStart=this.clock();resolve();}));this.metrics.yieldCount++;this.check();
