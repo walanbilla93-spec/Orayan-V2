@@ -127,7 +127,7 @@ class Harness {
       await this.mark('VERIFY_GENERATION');const families={};for(const family of C.FAMILIES)families[family]=await json(s,dir,{family,shards:directory[family]});
       const receipt=await json(s,dir,{parent:this.cp.root.sha256,C:this.C,F:this.F,anchor:this.anchor,cycle:cycleRef,families},16384);
       const root=await json(s,dir,{format:S.FORMAT,codec:1,baseLSN:this.F,parent:this.cp.root.sha256,anchor:this.anchor,families,receipt},16384);
-      await this.mark('PREPARE_SUFFIX');const newId=C.sha(Buffer.from(this.cycleId)).toString('hex'),suffixAttempt=crypto.randomUUID()+'.suffix',suffix=await Q.open(s,path.join(dir,suffixAttempt),'wx');let copied=cycle.inputEnd,suffixEnd=JHEADER;
+      await this.mark('PREPARE_SUFFIX');const newId=C.sha(Buffer.from(this.cycleId+':'+crypto.randomUUID())).toString('hex'),suffixAttempt=crypto.randomUUID()+'.suffix',suffix=await Q.open(s,path.join(dir,suffixAttempt),'wx');let copied=cycle.inputEnd,suffixEnd=JHEADER;
       const old=await Q.open(s,path.join(dir,this.journal+'.log'));try{await Q.write(s,suffix,journalHeader(this.F,this.anchor,newId),0);
         const copy=async()=>{const through=this.end;while(copied<through){const n=Math.min(s.quantum,through-copied),b=await Q.read(s,old,Buffer.alloc(n),copied);await Q.write(s,suffix,b,suffixEnd);copied+=n;suffixEnd+=n;}await s.io(()=>suffix.sync());};
         await copy();await this.mark('PREPARE_CHECKPOINT');await this.mark('BEFORE_CUTOVER_FENCE');

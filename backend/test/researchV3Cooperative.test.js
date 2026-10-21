@@ -64,3 +64,10 @@ test('final H waits outside its barrier for an already accepted transaction',asy
 test('publication leaves the fixed 1-second dispatch guard plus its 750-ms barrier allowance',async()=>{
  let approaching=false,observed=false;const s=new Q.Scheduler({native:()=>({ready:false,running:false,due:approaching?performance.now()+1400:Infinity})}),h=await new Harness(temp(),{scheduler:s,budget,hook:async phase=>{if(phase==='BEFORE_CUTOVER_FENCE'){approaching=true;setTimeout(()=>{approaching=false;},10);}if(phase==='CUTOVER_FENCE'){assert.equal(approaching,false);observed=true;}}}).init();await h.transaction([r('slack')]);await h.cycle();assert.ok(observed);await h.close();
 });
+
+test('restart can prepare a new suffix after an unpublished suffix and additional accepted writes',async()=>{
+ const dir=temp();let failed=false;const h=await new Harness(dir,{budget,hook:async(phase,store)=>{if(store.cycleBusy&&phase==='BEFORE_CURRENT_RENAME'&&!failed){failed=true;throw Error('interrupt prepared publication');}}}).init();
+ await h.transaction([r('retry','before')]);await assert.rejects(h.cycle());await h.close();const before=fs.readdirSync(dir).filter(n=>n.endsWith('.log'));
+ const q=await new Harness(dir,{budget}).init();await q.transaction([r('retry','after')],{scalar:6});const result=await q.cycle();assert.equal(result.F,1);assert.equal(result.H,2);assert.ok(q.reusedShards>0);for(const n of before)assert.ok(fs.existsSync(path.join(dir,n)));await q.close();
+ for(let i=0;i<2;i++){const again=await new Harness(dir,{budget}).init();assert.equal(again.scalar,6);assert.equal((await again.get(r('retry').key)).toString(),'after');await again.close();}
+});
