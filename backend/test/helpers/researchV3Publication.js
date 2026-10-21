@@ -91,7 +91,7 @@ class Harness {
   }
   async drainProtected(){const pending=this.protectedPending;if(!pending)return;this.protectedPending=null;try{const lsn=await this.transaction(pending.mutations,{scalar:pending.scalar,protectedWrite:true,_ticket:pending.ticket});pending.resolve(lsn);}catch(e){pending.reject(e);throw e;}}
   async transaction(mutations,{scalar=0,protectedWrite=false,liability=zero(),afterWAL=null,_ticket=null}={}){
-    if(this.writerBusy||this.barrier)Q.fault('WRITER_BUSY');this.writerBusy=true;let ticket,accepted=false;
+    if(this.writerBusy||this.barrier||this.admissionHeld&&!protectedWrite)Q.fault('WRITER_BUSY');this.writerBusy=true;let ticket,accepted=false;
     try{const lsn=this.lsn+1,records=[];
       // Admission caller owns inputs until resolution; durable frame takes ownership.
       for(const m of mutations)records.push(C.record(m.key,m.value,lsn,m.flags||0));
@@ -131,7 +131,9 @@ class Harness {
       const old=await Q.open(s,path.join(dir,this.journal+'.log'));try{await Q.write(s,suffix,journalHeader(this.F,this.anchor,newId),0);
         const copy=async()=>{const through=this.end;while(copied<through){const n=Math.min(s.quantum,through-copied),b=await Q.read(s,old,Buffer.alloc(n),copied);await Q.write(s,suffix,b,suffixEnd);copied+=n;suffixEnd+=n;}await s.io(()=>suffix.sync());};
         await copy();await this.mark('PREPARE_CHECKPOINT');await this.mark('BEFORE_CUTOVER_FENCE');
-        if(this.writerBusy||this.budget.pending)Q.fault('WRITER_BUSY');this.barrier=true;const barrierAt=performance.now();this.H=this.lsn;
+        // Stop new ordinary admission, then finish the one existing transaction
+        // before selecting H. Waiting happens outside the publication barrier.
+        this.admissionHeld=true;while(this.writerBusy||this.budget.pending)await s.boundary();this.barrier=true;const barrierAt=performance.now();this.H=this.lsn;
         await this.mark('CUTOVER_FENCE');await copy();await s.io(()=>suffix.sync());await Q.close(s,suffix);await Q.immutable(s,path.join(dir,suffixAttempt),dir,newId+'.log',await Q.hashFile(s,path.join(dir,suffixAttempt)));
         const checkpoint=await json(s,dir,{version:3,testOnly:true,root,indexBaseLSN:this.F,checkpointLSN:this.H,scalar:this.scalar,activeJournal:{id:newId,baseLSN:this.F,anchor:this.anchor,checkpointEndOffset:suffixEnd,checkpointHeadHash:this.head}},1048576);
         const oldPointer=await put(s,dir,this.pointerHash+'.pointer',Buffer.from(JSON.stringify(this.pointer)));
@@ -139,7 +141,7 @@ class Harness {
         await this.publish({version:3,checkpoint,previous:oldPointer});await this.mark('INSTALL_VIEW');
         this.barrierMs=performance.now()-barrierAt;this.directory=directory;this.C=this.F;this.journal=newId;this.end=suffixEnd;this.cp=await load(s,dir,checkpoint,1048576);const pointer=await this.readPointer();this.pointer=pointer.ptr;this.pointerHash=await digest(s,pointer.bytes);
         // Retirement updates accounting once and retains every physical input.
-        await this.mark('RETIRE_PREFIX');await s.slice(()=>this.budget.retire());this.pendingCycle=null;this.barrier=false;await this.drainProtected();await this.mark('DONE');
+        await this.mark('RETIRE_PREFIX');await s.slice(()=>this.budget.retire());this.pendingCycle=null;this.barrier=false;await this.drainProtected();this.admissionHeld=false;await this.mark('DONE');
         if(this.barrierMs>750)Q.fault('PUBLICATION_BARRIER_LIMIT');s.finishSegment();return {C:this.C,F:this.F,H:this.H,barrierMs:this.barrierMs,metrics:{...s.metrics}};
       }finally{await Q.close(s,old);try{await Q.close(s,suffix);}catch(e){if(e.code!=='EBADF')throw e;}}
     }catch(e){this.cycleFault=true;this.budget.ordinaryReason=e.code||'FOLD_FAULT';throw e;}finally{this.cycleBusy=false;s.finishSegment();}

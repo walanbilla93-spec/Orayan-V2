@@ -58,3 +58,6 @@ test('fold slice failure does not cancel the separate mandatory writer lane',asy
  let now=0;const fold=new Q.Scheduler({clock:()=>now});await fold.slice(()=>{now+=251;});await assert.rejects(fold.slice(()=>{}),{code:'SLICE_LIMIT'});
  const writer=new Q.Scheduler({clock:()=>now,enforceSliceLimit:false});await writer.slice(()=>{now+=251;});await writer.slice(()=>{});assert.equal(writer.fenced,null);assert.equal(writer.metrics.sliceViolationCount,1);
 });
+test('final H waits outside its barrier for an already accepted transaction',async()=>{
+ let pending,once=true;const h=await new Harness(temp(),{budget,hook:async(phase,store)=>{if(phase==='BEFORE_CUTOVER_FENCE'&&once){once=false;let accepted,release;const atWAL=new Promise(r=>{accepted=r;}),gate=new Promise(r=>{release=r;});pending=store.transaction([r('pre-H','accepted')],{protectedWrite:true,afterWAL:async()=>{accepted();await gate;}});await atWAL;setTimeout(release,10);}}}).init();await h.transaction([r('prefix')]);const result=await h.cycle();await pending;assert.equal(result.F,1);assert.equal(result.H,2);assert.equal((await h.get(r('pre-H').key)).toString(),'accepted');assert.equal(h.admissionHeld,false);await h.close();
+});
