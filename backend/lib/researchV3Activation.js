@@ -38,8 +38,15 @@ function select(root,flag=process.env.RESEARCH_STORE_BACKEND||'v2') {
 function activate(root) {
   const old=readMarker(root);if(old?.state==='V3_WRITE_INTENT')return old;
   if(hasWrites(root))throw Error('V3_FIX_FORWARD_REQUIRED');
-  const r=verify(root),hashes=path.join(r.destination,'source-hashes.jsonl'),scratch=new(require('./researchV3/scratch').Scratch)(require('os').tmpdir(),'orayan-v3-activate-');
-  try{if(IO.hashFile(hashes)!==r.sourceHashesBefore)throw Error('MIGRATION_SOURCE_HASH_RECEIPT');require('./researchV3Migration').checkHashes(path.join(root,'research-canonical-v2'),hashes,scratch);}finally{scratch.close();}
+  const r=verify(root);
+  if(r.contract==='ORAYAN_CLEAN_V3_EPOCH_1'){
+    const proof=require('./researchV3Abandon').verifySource(root,r.sourceHashes);if(proof.manifestSHA256!==r.sourceHashesBefore)throw Error('CLEAN_SOURCE_RECEIPT');
+    for(const [rel,hash]of Object.entries(r.inputHashes))if(IO.hashFile(path.join(root,rel))!==hash)throw Error('OPERATIONAL_INPUT_CHANGED');
+    const state=JSON.parse(fs.readFileSync(path.join(r.destination,'index','CURRENT'))).body.state;if(state.epochId!==r.epochId||!state.cleanProspectiveExperiment)throw Error('CLEAN_EPOCH_IDENTITY');
+  }else{
+    const hashes=path.join(r.destination,'source-hashes.jsonl'),scratch=new(require('./researchV3/scratch').Scratch)(require('os').tmpdir(),'orayan-v3-activate-');
+    try{if(IO.hashFile(hashes)!==r.sourceHashesBefore)throw Error('MIGRATION_SOURCE_HASH_RECEIPT');require('./researchV3Migration').checkHashes(path.join(root,'research-canonical-v2'),hashes,scratch);}finally{scratch.close();}
+  }
   const body={contract:'ORAYAN_BACKEND_ACTIVATION_1',state:'V3_SELECTED',destination:r.destination,baselineLSN:r.storageLSN,migrationSHA256:r.sha256,sourceHashes:r.sourceHashesBefore,at:Date.now()};save(root,body);return body;
 }
 function beforeWrite(store) {

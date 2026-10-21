@@ -576,7 +576,8 @@ function advanceMinuteCache() {
     .finally(()=>{minuteCacheManagement=false;});
 }
 function journal(){if(!instance){const root=require('./store').DATA_DIR;
-  instance=new ShadowJournal(path.join(root,'v3-shadow-compact-v1'),{legacyDir:path.join(root,'v3-shadow')});
+  const c=process.env.RESEARCH_STORE_BACKEND==='v3'?require('./researchRuntime').current():null;
+  instance=c?.state.cleanProspectiveExperiment?new ShadowJournal(path.join(c.dir,'shadow-operational')):new ShadowJournal(path.join(root,'v3-shadow-compact-v1'),{legacyDir:path.join(root,'v3-shadow')});
   const timer=setInterval(()=>{instance.advance().catch(e=>instance.captureError(e,{subsystem:'TRADE_WORKER'}));
     advanceMinuteCache();},15000);timer.unref();}return instance;}
 function observeScan({scanAt,scanId,candlesBySymbol,tickerBySymbol,instruments,btcRegime,settings,signals,marketSnapshot}) {

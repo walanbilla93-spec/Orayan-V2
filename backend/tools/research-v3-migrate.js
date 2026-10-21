@@ -14,6 +14,8 @@ async function main(){
     }});
   }
   else if(command==='abandon-audit')result=require('../lib/researchV3Abandon').audit(root);
+  else if(command==='prepare-clean-epoch')result=await require('../lib/researchV3CleanEpoch').prepare(root);
+  else if(command==='publish-clean-epoch')result=require('../lib/researchV3CleanEpoch').publish(root);
   else if(command==='remove-abandoned-staging')result=require('../lib/researchV3Abandon').remove(root);
   else if(command==='verify')result=A.verify(root);
   else if(command==='activate')result=A.activate(root);

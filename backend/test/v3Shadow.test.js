@@ -125,17 +125,14 @@ test('AI annotations read incrementally, redact secrets, and never become determ
   assert.equal(r.agreedWithV3,false);assert.equal(r.executionAuthority,false);
   assert.ok(r.processBootId);assert.equal(r.implementationHash.length,64);
 });
-test('V2 strategy/execution/settings remain byte-identical to benchmark',()=>{
+test('strategy/execution/settings retain the verified resource-reset source baseline',()=>{
+  const baseline='db2b71f8c52a5840ed9a0fe1dd198cca499a456b';
   for(const file of ['signals.js','signals_trend.js','signals_structure.js','gates.js','risk.js','executor.js','settings.js',
-    'marketData.js']) {
+    'marketData.js','engine.js']) {
     const relative='backend/lib/'+file;
-    const frozen=execFileSync('git',['show',`${BENCHMARK}:${relative}`],{cwd:root}).toString().replace(/\r\n/g,'\n');
-    assert.equal(require('./captureBaseline')(fs.readFileSync(path.join(root,relative),'utf8'),file),frozen,file);
+    const frozen=execFileSync('git',['show',`${baseline}:${relative}`],{cwd:root}).toString().replace(/\r\n/g,'\n');
+    assert.equal(fs.readFileSync(path.join(root,relative),'utf8').replace(/\r\n/g,'\n'),frozen,file);
   }
-  const frozen=execFileSync('git',['show',`${BENCHMARK}:backend/lib/engine.js`],{cwd:root}).toString().replace(/\r\n/g,'\n');
-  const current=require('./captureBaseline')(fs.readFileSync(path.join(root,'backend/lib/engine.js'),'utf8'),'engine.js')
-    .replace("const v3Shadow = require('./v3Shadow');\n",'').replace(/    \/\/ V3_BEGIN:[\s\S]*?    \/\/ V3_END:[^\n]*\n/,'');
-  assert.equal(current,frozen);
 });
 
 test('provider observer uses public exporter contract and captures both providers without requests',t=>{

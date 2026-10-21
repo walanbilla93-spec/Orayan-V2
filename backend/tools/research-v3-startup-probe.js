@@ -10,8 +10,8 @@ async function main(){
   process.env.RESEARCH_STORE_BACKEND='v3';process.env.GROQ_SHADOW_ENABLED='false';process.env.ALIBABA_SHADOW_ENABLED='false';
   const legacy=require('../lib/researchStore'),Original=legacy.ResearchStore;let legacyConstructs=0;
   legacy.ResearchStore=new Proxy(Original,{construct(){legacyConstructs++;throw Error('LEGACY_V2_BOOT_FORBIDDEN');}});
-  const open=fs.openSync,v2=path.join(root,'research-canonical-v2')+path.sep;let v2Opens=0;
-  fs.openSync=(file,...args)=>{if(typeof file==='string'&&path.resolve(file).startsWith(v2)){v2Opens++;throw Error('V2_HISTORY_OPEN_AT_BOOT');}return open(file,...args);};
+  const open=fs.openSync,forbidden=['research-canonical-v2','research-v2','meta-brain-v1-evidence','v3-shadow-compact-v1','v3-shadow'].map(name=>path.join(root,name)+path.sep);let v2Opens=0;
+  fs.openSync=(file,...args)=>{if(typeof file==='string'&&forbidden.some(prefix=>path.resolve(file).startsWith(prefix))){v2Opens++;throw Error('OLD_HISTORY_OPEN_AT_BOOT');}return open(file,...args);};
   const runtime=require('../lib/researchRuntime');
   const before=process.memoryUsage();const {server,startServer}=require('../server');
   startServer(0);await new Promise(resolve=>server.once('listening',resolve));

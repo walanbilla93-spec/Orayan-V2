@@ -1,3 +1,5 @@
+CURRENT PRODUCTION PROCEDURE: See CLEAN_EPOCH_RUNBOOK.md. Historical bulk migration below is superseded and permanently abandoned.
+
 # Production V3 OOM fix
 
 This candidate starts from `db2b71f8c52a5840ed9a0fe1dd198cca499a456b` on branch `fix/orayan-oom-v3-production`. It implements the service backend, additive migration, archive traversal and activation. Production deployment has not been performed.
@@ -105,3 +107,4 @@ Targeted tests cover realistic migration, checkpoint and physical-stage resume, 
 The actual server booted from a migrated 259-event fixture under `--max-old-space-size=192`: first startup RSS 62,758,912 bytes, heap used 14,340,792 bytes, external 2,654,370 bytes; restart RSS 62,259,200 bytes, heap used 14,233,048 bytes, external 2,654,242 bytes. Boot read no event-history cursor, constructed no V2 store and held zero historical dictionaries. Measurements were on Windows, Node 24.19.0; cgroup peak was unavailable. This is fixture evidence and architectural validation, not a claim of measurement on the production volume or Linux cgroup.
 
 Foreground append/fold follows the existing synchronous caller contract, with bounded shard merge memory. Large shards can still cause I/O latency during folding. This candidate fixes retained-history RAM residency; production latency and volume headroom should be observed during the authorized rollout without changing the retention contract.
+

@@ -263,5 +263,6 @@ class ResearchStoreV3 {
   async close(){try{this.flush();}finally{this.index.handles.close();this.index.cache.clear();this.releaseLease?.();}}
   async export(){throw Error('USE_STREAMING_RESEARCH_ARCHIVE');}
 }
-for(const method of ['pressured','canAdmit','canDispatch','health','epoch'])ResearchStoreV3.prototype[method]=Legacy.ResearchStore.prototype[method];
+for(const method of ['pressured','canAdmit','health','epoch'])ResearchStoreV3.prototype[method]=Legacy.ResearchStore.prototype[method];
+ResearchStoreV3.prototype.canDispatch=function(){return this.now()>=(this.state.providerRecoveryFenceUntil||0)&&Legacy.ResearchStore.prototype.canDispatch.call(this);};
 module.exports={ResearchStoreV3,TABLES,unresolved,terminal};

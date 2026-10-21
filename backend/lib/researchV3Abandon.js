@@ -3,9 +3,21 @@ const fs=require('fs'),path=require('path'),crypto=require('crypto');
 const IO=require('./researchV3/io'),A=require('./researchV3Activation');
 const {files}=require('./researchV3Migration'),{jsonLines}=require('./researchV3/index');
 const flag=root=>path.join(root,'research-v3-bulk-migration-abandoned.json');
-function sealed(file,body){
+function createReceiptFile(file,root){
+  try{return fs.openSync(file,'wx',0o444);}catch(e){
+    if(e.code!=='ENOSPC'||!root)throw e;
+    // Reuse only our own dead launcher's disposable PID files when the abandoned
+    // copy has exhausted filesystem inodes. Never consume a canonical file.
+    for(const name of ['orayan-v3-migration.pid','orayan-v3-migration-batch.pid','orayan-v3-migration-final.pid']){
+      const slot=path.join(root,name);if(!fs.existsSync(slot))continue;const s=fs.lstatSync(slot);
+      if(!s.isFile()||s.isSymbolicLink()||s.nlink!==1||s.size>32||!/^\d+\s*$/.test(fs.readFileSync(slot,'utf8')))throw Error('AUDIT_INODE_SLOT_NOT_DISPOSABLE');
+      fs.renameSync(slot,file);const fd=fs.openSync(file,'w');fs.fchmodSync(fd,0o444);return fd;
+    }throw e;
+  }
+}
+function sealed(file,body,root=null){
   const data=JSON.stringify(body),value={body,sha256:crypto.createHash('sha256').update(data).digest('hex')};
-  const fd=fs.openSync(file,'wx',0o444);try{IO.write(fd,Buffer.from(JSON.stringify(value,null,2)+'\n'));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}if(process.platform!=='win32')IO.syncDir(path.dirname(file));return value;
+  const fd=createReceiptFile(file,root);try{IO.write(fd,Buffer.from(JSON.stringify(value,null,2)+'\n'));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}if(process.platform!=='win32')IO.syncDir(path.dirname(file));return value;
 }
 function read(file){const r=JSON.parse(fs.readFileSync(file,'utf8'));if(crypto.createHash('sha256').update(JSON.stringify(r.body)).digest('hex')!==r.sha256)throw Error('ABANDONMENT_RECEIPT_INTEGRITY');return r;}
 function offline(root){
@@ -30,10 +42,10 @@ function verifySource(root,hashes){
 function audit(root){
   root=path.resolve(root);const dir=offline(root),proof=inventory(dir),receipts=path.join(root,'research-cutover-receipts');fs.mkdirSync(receipts,{recursive:true});
   const hashes=path.join(dir,'source-hashes.jsonl'),source=verifySource(root,hashes),copy=path.join(receipts,'v2-source-hashes-'+source.manifestSHA256+'.jsonl');
-  if(!fs.existsSync(copy)){const fd=fs.openSync(copy,'wx',0o444),input=fs.openSync(hashes,'r'),b=Buffer.alloc(65536);try{let n;while((n=fs.readSync(input,b,0,b.length,null)))IO.write(fd,b.subarray(0,n));fs.fsyncSync(fd);}finally{fs.closeSync(fd);fs.closeSync(input);}}
+  if(!fs.existsSync(copy)){const fd=createReceiptFile(copy,root),input=fs.openSync(hashes,'r'),b=Buffer.alloc(65536);try{let n;while((n=fs.readSync(input,b,0,b.length,null)))IO.write(fd,b.subarray(0,n));fs.fsyncSync(fd);}finally{fs.closeSync(fd);fs.closeSync(input);}}
   const body={contract:'ORAYAN_V3_STAGING_ABANDONMENT_1',state:'ABANDONED_BEFORE_ACTIVATION',at:new Date().toISOString(),root,staging:dir,activationMarkerAbsent:true,activationWriteStarted:false,authoritativeV3Writes:0,selectedBackend:'v2',v2RemainedSelectedThroughout:true,selectionEvidence:'ABSENT_ACTIVATION_MARKER_AND_NO_WRITE_FLAG_OR_WAL_WRITE_INTENT;SERVICE_HELD_WITHOUT_SERVER',bulkMigrationWillNotResume:true,v2Source:source,sourceHashes:copy,stagingIsolation:proof};
-  const receipt=path.join(receipts,'v3-abandonment-'+crypto.randomUUID()+'.json'),sealedReceipt=sealed(receipt,body);
-  if(!fs.existsSync(flag(root)))sealed(flag(root),{contract:'ORAYAN_V3_BULK_MIGRATION_PERMANENT_STOP_1',receipt,receiptSHA256:sealedReceipt.sha256});
+  const receipt=path.join(receipts,'v3-abandonment-'+crypto.randomUUID()+'.json'),sealedReceipt=sealed(receipt,body,root);
+  if(!fs.existsSync(flag(root)))sealed(flag(root),{contract:'ORAYAN_V3_BULK_MIGRATION_PERMANENT_STOP_1',receipt,receiptSHA256:sealedReceipt.sha256},root);
   return {receipt,...body};
 }
 function remove(root){
@@ -43,4 +55,4 @@ function remove(root){
   const body={contract:'ORAYAN_V3_STAGING_REMOVAL_1',at:new Date().toISOString(),abandonmentReceipt:fence.receipt,removed:dir,reclaimedAllocatedBytes:before.allocatedBytes,reclaimedLogicalBytes:before.bytes,v2Source:source};
   const receipt=path.join(path.dirname(fence.receipt),'v3-removal-'+crypto.randomUUID()+'.json');sealed(receipt,body);return {receipt,...body};
 }
-module.exports={audit,remove,inventory,verifySource,sealed,read};
+module.exports={audit,remove,inventory,verifySource,sealed,read,createReceiptFile};
