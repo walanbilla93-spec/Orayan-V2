@@ -133,7 +133,7 @@ class Harness {
         await copy();await this.mark('PREPARE_CHECKPOINT');await this.mark('BEFORE_CUTOVER_FENCE');
         // Stop new ordinary admission, then finish the one existing transaction
         // before selecting H. Waiting happens outside the publication barrier.
-        this.admissionHeld=true;while(this.writerBusy||this.budget.pending)await s.boundary();this.barrier=true;const barrierAt=performance.now();this.H=this.lsn;
+        this.admissionHeld=true;for(;;){const n=s.native();if(!this.writerBusy&&!this.budget.pending&&!n.ready&&!n.running&&n.due-s.clock()>1000+750)break;await s.boundary();}this.barrier=true;const barrierAt=performance.now();this.H=this.lsn;
         await this.mark('CUTOVER_FENCE');await copy();await s.io(()=>suffix.sync());await Q.close(s,suffix);await Q.immutable(s,path.join(dir,suffixAttempt),dir,newId+'.log',await Q.hashFile(s,path.join(dir,suffixAttempt)));
         const checkpoint=await json(s,dir,{version:3,testOnly:true,root,indexBaseLSN:this.F,checkpointLSN:this.H,scalar:this.scalar,activeJournal:{id:newId,baseLSN:this.F,anchor:this.anchor,checkpointEndOffset:suffixEnd,checkpointHeadHash:this.head}},1048576);
         const oldPointer=await put(s,dir,this.pointerHash+'.pointer',Buffer.from(JSON.stringify(this.pointer)));
