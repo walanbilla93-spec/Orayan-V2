@@ -17,13 +17,13 @@ async function invoke(i){const due=dueOrigin+i*cadence;await new Promise(resolve
 }
 let cyclePromise=null;
 async function work(){let nextCycle=performance.now();while(!done){
-    if(mode==='fold'&&!cycleActive&&!writerActive&&!running&&performance.now()>=nextCycle){cycleActive=true;cyclePromise=store.cycle().then(r=>{cycles++;barrierMax=Math.max(barrierMax,r.barrierMs);nextCycle=performance.now()+1000;}).catch(e=>{error=e;done=true;}).finally(()=>{cycleActive=false;});}
+    if(mode==='fold'&&!cycleActive&&!writerActive&&!running&&performance.now()>=nextCycle){cycleActive=true;cyclePromise=store.cycle().then(r=>{cycles++;barrierMax=Math.max(barrierMax,r.barrierMs);nextCycle=performance.now()+1000;}).catch(e=>{if(!error)error=e;done=true;}).finally(()=>{cycleActive=false;});}
     if(!writerActive&&!store.barrier&&!running&&(!store.cycleBusy||store.budget.P)){writerActive=true;try{const i=writeCount++;await store.transaction([{key:Buffer.from(fixture.representative[i%fixture.representative.length],'hex'),value:Buffer.alloc(128,i%255)}]);}catch(e){if(['OVERLAY_CAPACITY','ENVELOPE_UNQUALIFIED','FOLD_STARVED','WRITER_BUSY'].includes(e.code))ordinaryFences++;else throw e;}finally{writerActive=false;}}
     await new Promise(r=>setTimeout(r,100));
   }}
 (async()=>{const fixtureHelper=require('../test/helpers/researchV3PhysicalFixture');fixture=fixtureHelper.prepare(root);const dir=path.join(root,mode+'-store');fixtureHelper.attach(root,dir,fixture);store=await new Harness(dir,{scheduler:s,budget,fixture}).init();
   await store.transaction(fixture.representative.map(key=>({key:Buffer.from(key,'hex'),value:Buffer.alloc(128,66)})));dueOrigin=performance.now()+2000;hist.enable();const start=performance.now(),sampler=setInterval(()=>trace(mode+'-memory.jsonl',{at:performance.now()-start,...process.memoryUsage(),maxRSS:process.resourceUsage().maxRSS*1024,budget:store?.budget.status(),phase:s.phase}),100);let worker;
-  try{worker=work().catch(e=>{error=e;done=true;});for(let i=0;i<count;i++){if(error)throw error;await invoke(i);}await new Promise(r=>setTimeout(r,Math.max(0,dueOrigin+duration-performance.now())));}
+  try{worker=work().catch(e=>{if(!error)error=e;done=true;});for(let i=0;i<count;i++){if(error)throw error;await invoke(i);}await new Promise(r=>setTimeout(r,Math.max(0,dueOrigin+duration-performance.now())));}
   catch(e){error=e;running=false;index=count;done=true;s.abort();}
   finally{done=true;if(worker)await worker;if(cyclePromise)await cyclePromise;clearInterval(sampler);hist.disable();}
   if(error)throw error;let increase=0;const probes=fs.readFileSync(path.join(root,mode+'-probes.jsonl'),'utf8').trim().split('\n').map(JSON.parse);if(mode==='fold')for(const p of probes){const baseline=JSON.parse(fs.readFileSync(path.join(root,'baseline-'+p.i+'.json')));increase=Math.max(increase,p.startDelay-baseline.startDelay);}

@@ -54,3 +54,7 @@ test('ENOSPC during proof and rename failure retain old CURRENT and continuous j
 test('an accepted WAL takes priority over the next fold continuation until exact completion',async()=>{
  const h=await new Harness(temp(),{budget}).init();let release,accepted;const gate=new Promise(r=>{release=r;}),atWAL=new Promise(r=>{accepted=r;});const write=h.transaction([r('accepted-priority')],{afterWAL:async()=>{accepted();await gate;}});await atWAL;assert.equal(h.s.native().ready,true);let ran=false;const slice=h.s.slice(()=>{ran=true;});await new Promise(r=>setTimeout(r,10));assert.equal(ran,false);release();await write;await slice;assert.equal(ran,true);await h.close();
 });
+test('fold slice failure does not cancel the separate mandatory writer lane',async()=>{
+ let now=0;const fold=new Q.Scheduler({clock:()=>now});await fold.slice(()=>{now+=251;});await assert.rejects(fold.slice(()=>{}),{code:'SLICE_LIMIT'});
+ const writer=new Q.Scheduler({clock:()=>now,enforceSliceLimit:false});await writer.slice(()=>{now+=251;});await writer.slice(()=>{});assert.equal(writer.fenced,null);assert.equal(writer.metrics.sliceViolationCount,1);
+});
