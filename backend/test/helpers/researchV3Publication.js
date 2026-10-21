@@ -34,7 +34,8 @@ class Harness {
     Object.assign(this,{dir,s:scheduler,w:new Q.Scheduler({enforceSliceLimit:false}),budgetOptions:budget,testDigest,hook,fixture,writerBusy:false,barrier:false,cycleBusy:false});this.budget=new Budget(budget);
     const native=this.s.native;this.s.native=()=>{const n=native.call(this.s);return {...n,ready:n.ready||this.writerBusy&&this.acceptedLSN>this.lsn};};
   }
-  async mark(phase){await this.s.stage(phase);await this.hook(phase,this);}
+  async awaitHook(s,fn){try{const pending=fn();s.finishSegment();await pending;}finally{await s.boundary();}}
+  async mark(phase){await this.s.stage(phase);await this.awaitHook(this.s,()=>this.hook(phase,this));}
   async init(){const {s,dir}=this;await s.io(()=>fs.mkdir(dir,{recursive:true}));
     // mkdir is exclusive. Tests release only after the child process is known dead;
     // the library never steals a stale owner based on elapsed time.
@@ -75,7 +76,7 @@ class Harness {
     if(this.lsn<cp.checkpointLSN)C.fail('unprovable extent');this.acceptedLSN=this.acknowledgedLSN=this.lsn;this.cycleFault=false;
   }
   applyRecovered(tx){const ticket=this.budget.precommit(tx.records,tx.bytes.length,{protectedWrite:true});this.budget.apply(ticket);this.lsn=tx.lsn;this.head=tx.hash;if(tx.lsn>this.cp.checkpointLSN)this.scalar+=tx.scalar;}
-  async writerMark(phase){await this.w.stage(phase);await this.hook(phase,this);}
+  async writerMark(phase){await this.w.stage(phase);await this.awaitHook(this.w,()=>this.hook(phase,this));}
   async complete(tx){const {w:s,dir}=this;await put(s,dir,'canonical-'+tx.lsn+'.frame',tx.bytes);await this.writerMark('CANONICAL_DURABLE');const f=await Q.open(s,path.join(dir,this.journal+'.log'),'r+');
     try{const size=(await s.io(()=>f.stat())).size;if(size<this.end||size>this.end+tx.bytes.length)C.fail('journal extent');
       if(size>this.end){const prefix=await Q.read(s,f,Buffer.alloc(size-this.end),this.end);for(let i=0;i<prefix.length;i+=s.quantum)await s.slice(()=>{if(!prefix.subarray(i,i+s.quantum).equals(tx.bytes.subarray(i,Math.min(i+s.quantum,prefix.length))))C.fail('WAL retry conflict');});}
@@ -98,7 +99,7 @@ class Harness {
       for(const m of mutations)records.push(C.record(m.key,m.value,lsn,m.flags||0));
       ticket=_ticket||this.budget.precommit(records,frameBytes(records),{protectedWrite,liability,scheduler:this.cycleBusy?this.s:null});if(_ticket&&(_ticket!==this.budget.pending||!protectedWrite))C.fail('pending protected identity');
       const frame=await encode(this.w,records,lsn,scalar,this.head),tx=await decode(this.w,frame.bytes,lsn,this.head);ticket.records=tx.records;
-      await put(this.w,this.dir,'wal-'+lsn+'.commit',tx.bytes);accepted=true;this.acceptedLSN=lsn;await this.writerMark('WAL_ACCEPTED');if(afterWAL)await afterWAL();await this.complete(tx);this.budget.apply(ticket);this.lsn=lsn;this.head=tx.hash;this.scalar+=scalar;this.acknowledgedLSN=lsn;return lsn;
+      await put(this.w,this.dir,'wal-'+lsn+'.commit',tx.bytes);accepted=true;this.acceptedLSN=lsn;await this.writerMark('WAL_ACCEPTED');if(afterWAL)await this.awaitHook(this.w,afterWAL);await this.complete(tx);this.budget.apply(ticket);this.lsn=lsn;this.head=tx.hash;this.scalar+=scalar;this.acknowledgedLSN=lsn;return lsn;
     }catch(e){if(!accepted&&ticket)this.budget.cancel(ticket);if(accepted)this.budget.ordinaryReason='ACCEPTED_WAL_PENDING';throw e;}finally{this.writerBusy=false;this.w.finishSegment();}
   }
   async get(key){const r=this.budget.lookup(key);if(r)return r.flags===1?null:r.value;const family=String.fromCharCode(key[1]),bucket=(this.testDigest?this.testDigest(key):C.sha(key))[0],reader=await new Q.Reader(this.s,this.dir,this.directory[family][bucket],{testDigest:this.testDigest}).init();
