@@ -143,7 +143,7 @@ async function order(s,map){let a=[],b=[];const it=map.values();let end=false;
     }[a,b]=[b,a];}
   return a;
 }
-async function fold(s,dir,d,updates,options={}){await s.stage('BUILD_SHARD');const reader=await new Reader(s,dir,d,options).init(),writer=await new Writer(s,dir,d.family,d.bucket,options).init();let old=await reader.next(),i=0;
+async function fold(s,dir,d,updates,options={}){if(!s.enforceSliceLimit)C.fail('fold requires enforced slice ceiling');await s.stage('BUILD_SHARD');const reader=await new Reader(s,dir,d,options).init(),writer=await new Writer(s,dir,d.family,d.bucket,options).init();let old=await reader.next(),i=0;
   try{while(old||i<updates.length){const u=updates[i];if(!old){await writer.add(u);i++;}else if(!u){await writer.add(old);old=await reader.next();}else{
         const cmp=await s.slice(()=>C.compare(old,u));if(cmp<0){await writer.add(old);old=await reader.next();}else if(cmp>0){await writer.add(u);i++;}else{
           if(u.lsn<old.lsn)C.fail('LSN regression');if(u.lsn===old.lsn){if(u.flags!==old.flags||u.value.length!==old.value.length)C.fail('conflicting LSN');for(let off=0;off<u.value.length;off+=s.quantum)await s.slice(()=>{if(!u.value.subarray(off,off+s.quantum).equals(old.value.subarray(off,off+s.quantum)))C.fail('conflicting LSN');},Math.min(s.quantum,u.value.length-off));}
