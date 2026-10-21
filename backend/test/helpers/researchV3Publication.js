@@ -80,7 +80,7 @@ class Harness {
   deferProtected(mutations,{scalar=0}={}){
     if(!this.barrier)C.fail('protected defer requires publication barrier');if(this.protectedPending)Q.fault('PROTECTED_PENDING_CAPACITY');
     const records=mutations.map(m=>C.record(m.key,m.value,this.lsn+1,m.flags||0)),ticket=this.budget.precommit(records,frameBytes(records),{protectedWrite:true});
-    let resolve,reject;const completion=new Promise((a,b)=>{resolve=a;reject=b;});this.protectedPending={mutations,scalar,ticket,resolve,reject};this.protectedPendingHighWater=1;
+    let resolve,reject;const completion=new Promise((a,b)=>{resolve=a;reject=b;});this.protectedPending={mutations:records,scalar,ticket,resolve,reject};this.protectedPendingHighWater=1;
     // Native computation returns immediately. Only the persistence observer may
     // await this one bounded completion after the publication boundary.
     return {completion};
