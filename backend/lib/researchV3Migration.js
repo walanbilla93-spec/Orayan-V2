@@ -28,20 +28,37 @@ async function migrate(root,{afterStep=()=>{},reserveBytes=0}={}) {
     function visitStep(work){store.transaction(()=>{work();store.state.migrationCursor=(store.state.migrationCursor||0)+1;},{migration:true});afterStep('entry:'+store.state.migrationCursor);}
     if(stage.stage<1) {
       let n=0;const resume=store.state.migrationCursor||0;
-      visitCheckpointJson(path.join(source,'status.json'),(field,key,value)=>{
-        if(++n<=resume)return;
-        visitStep(()=>{
-          if(field==='archiveEventIds')return; // IDs are reconciled from checked ZIP metadata below, never guessed.
+      // Import bounded groups, rather than fsyncing the same scalar descriptor
+      // for every source key (including archive IDs requiring no destination key).
+      // The entry cursor and all keys in a group share one durable transaction.
+      let batch=[],batchBytes=0;
+      function flushBatch(){
+        if(!batch.length)return;
+        const entries=batch,start=store.state.migrationCursor||0;
+        store.transaction(()=>{
+          for(const [field,key,value]of entries){
+          if(field==='archiveEventIds')continue; // IDs are reconciled from checked ZIP metadata below, never guessed.
           if(TABLES.includes(field)){if(key!==null)store.put(field,key,value);}
           else if(field==='segments'){if(key!==null)store.put('segments',value.name,value);}
           else if(field==='archives'){if(key!==null){const {eventIds,...descriptor}=value;store.put('archives',value.day,descriptor);}}
           else if(field==='garbageSegments'){if(key!==null)store.put('garbageSegments',value,true);}
           else if(SCALARS.has(field)) {
-            if(field==='schemaVersion'){if(value!==SCHEMA)throw Error('V2_SCHEMA_MISMATCH');return;}
+            if(field==='schemaVersion'){if(value!==SCHEMA)throw Error('V2_SCHEMA_MISMATCH');continue;}
             if(key===null)store.state[field]=value;else{store.state[field]??={};Object.defineProperty(store.state[field],key,{value,writable:true,enumerable:true,configurable:true});}
           }else throw Error('MIGRATION_UNKNOWN_SOURCE_FIELD:'+field);
-        });
+          }
+          store.state.migrationCursor=start+entries.length;
+        },{migration:true});
+        batch=[];batchBytes=0;
+        for(let i=1;i<=entries.length;i++)afterStep('entry:'+(start+i));
+      }
+      visitCheckpointJson(path.join(source,'status.json'),(field,key,value)=>{
+        if(++n<=resume)return;
+        const bytes=Buffer.byteLength(JSON.stringify([field,key,value]));
+        if(batch.length&&(batch.length>=64||batchBytes+bytes>128*1024))flushBatch();
+        batch.push([field,key,value]);batchBytes+=bytes;
       });
+      flushBatch();
       done(1);
     }
     if(stage.stage<2) {

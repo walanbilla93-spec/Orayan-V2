@@ -46,6 +46,8 @@ The migration command streams checkpoint entries, journal receipts, committed WA
 
 The receipt explicitly preserves prior compaction/dedupe coverage gaps. It does not claim to reconstruct keys or history absent from the source index. Retained bytes in V3 count logical row bytes; V2's physical JSONL size differs. V2 has no global storage LSN; its event sequence and native journal are reconciled separately. V3 accepted/acknowledged storage LSNs identify its durable transaction boundary.
 
+Checkpoint import groups at most 64 entries and 128 KiB of serialized input, except that an individual entry retains the existing transaction cap. Each group and its resume cursor commit together. This avoids a filesystem flush for every key or ignored archive member while preserving restartability. Existing per-entry migration cursors remain compatible.
+
 Activation rechecks every V2 source file against the migration inventory before publishing `V3_SELECTED`. If V2 changed after migration, activation fails; V2 remains selectable. Keep the service stopped between migration and activation. A pre-write selected namespace requires explicit rollback before V2 may resume.
 
 For the service restart, set:

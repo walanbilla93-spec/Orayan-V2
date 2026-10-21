@@ -35,6 +35,21 @@ test('checkpoint migration restarts mid-stage and resumes exact keys without dup
   const r=await migrate(d);assert.equal(r.eventSequence,v2.state.sequence);assert.equal(r.acceptedRows,v2.state.acceptedRows);
   assert.equal(r.sourceHashesBefore,r.sourceHashesAfter);assert.equal((await migrate(d)).sha256,r.sha256);
 });
+
+test('checkpoint batching bounds work and durably resumes at group boundaries',async t=>{
+  const d=root(t),v2=fixture(d,70),{Index}=require('../lib/researchV3/index');
+  const commit=Index.prototype.commit;let commits=0,largest=0;
+  Index.prototype.commit=function(ops,state){commits++;largest=Math.max(largest,ops.length);return commit.call(this,ops,state);};
+  try{
+    await assert.rejects(migrate(d,{afterStep:step=>{if(step==='entry:20')throw Error('BATCH_STOP');}}),/BATCH_STOP/);
+    const dir=path.join(d,'research-canonical-v3','index'),index=new Index(dir);
+    assert.equal(index.root.state.migrationCursor,64);
+    index.handles.close();index.cache.clear();
+    assert.ok(commits<10);assert.ok(largest<=64);
+    const receipt=await migrate(d);assert.equal(receipt.eventSequence,v2.state.sequence);
+    assert.equal(receipt.sourceHashesBefore,receipt.sourceHashesAfter);
+  }finally{Index.prototype.commit=commit;}
+});
 test('archive causal closure, streaming manifest, compaction and boot reject historical enumeration',async t=>{
   const d=root(t);fixture(d,25);await migrate(d);A.activate(d);
   const c=new ResearchStoreV3(path.join(d,'research-canonical-v3'),{reserveBytes:0,admissionHeadroom:0});
