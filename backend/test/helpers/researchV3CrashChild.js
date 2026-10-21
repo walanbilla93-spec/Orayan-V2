@@ -5,7 +5,7 @@ const budget={reserve:{encoded:65536,accounted:262144,entries:128},completionBou
 const row=(family,value,flags=0)=>({key:C.key(family,'record',['same']),value:Buffer.from(value),flags});
 let armed=false,sent=false,post=false;
 const pause=async phase=>{if(armed&&!sent&&phase===target){sent=true;if(process.send)process.send({phase});await new Promise(()=>{});}};
-class CrashScheduler extends Q.Scheduler {async io(fn){const v=await super.io(fn);if(armed&&['BUILD_SHARD','PROOF_slots','HASH_slots','PREPARE_SUFFIX'].includes(target)&&this.phase===target){this.targetIO=(this.targetIO||0)+1;if(this.targetIO>=({BUILD_SHARD:10,PROOF_slots:5,HASH_slots:4,PREPARE_SUFFIX:5}[target]))await pause(target);}return v;}}
+class CrashScheduler extends Q.Scheduler {async io(fn){const v=await super.io(fn);if(armed&&['BUILD_SHARD','FINALIZE_SHARD','PROOF_slots','HASH_slots','PREPARE_SUFFIX'].includes(target)&&this.phase===target){this.targetIO=(this.targetIO||0)+1;if(this.targetIO>=({BUILD_SHARD:10,FINALIZE_SHARD:2,PROOF_slots:5,HASH_slots:4,PREPARE_SUFFIX:5}[target]))await pause(target);}return v;}}
 (async()=>{const s=new CrashScheduler(),h=await new Harness(dir,{scheduler:s,budget,hook:async(phase,store)=>{
     if(armed&&phase==='CYCLE_DURABLE'&&!post){post=true;await store.transaction([row('D','',1),row('O','after')],{scalar:5,protectedWrite:true});}
     await pause(phase);
