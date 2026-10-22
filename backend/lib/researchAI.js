@@ -152,6 +152,7 @@ function finish(ctx, result) {
     at: Date.now(),
   });
   try { require('./metaBrainResearch').observeAI(ctx,result); } catch (_) {}
+  require('./aiOpportunityOutcomes').observeAI(ctx,result,capture().state.latestEventId);
 }
 function transportError(ctx, error) {
   if (!ctx) return;

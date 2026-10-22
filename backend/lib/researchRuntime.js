@@ -69,6 +69,10 @@ function start() {
     if (busy || !enabled() || require('./maintenance').fenced()) return;
     busy = true;
     try {
+      if(current().backend==='v3'&&current().state.cleanProspectiveExperiment){
+        try { await require('./aiOpportunityOutcomes').current().tick(); }
+        catch(e){current().transaction(()=>{current().state.aiOpportunityOutcomes={...require('./aiOpportunityOutcomes').current().summary(),lastError:e.code||e.message};});}
+      }
       await require("./researchArchive").tick(current());
     } catch (e) {
       try {

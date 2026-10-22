@@ -398,6 +398,8 @@ async function scanOnce() {
         btc:{r12:btcObservation?.r12 == null ? null : Math.log1p(btcObservation.r12)}, universe:universeResearch,
         tickerDynamic:tickerResearch.get(signal.symbol), birthResearch }); }
       catch (e) { logger.warn('research', 'Birth capture failed', { error:e.message, symbol:signal.symbol }); }
+      if (birth?.kind === 'candidate_birth' && sharedPacket)
+        require('./aiOpportunityOutcomes').observeBirth(sharedPacket,signal,settings);
       if (birth?.kind === 'candidate_birth' && birth.engine === 'NEW_ORAYAN' &&
           require('./minimalCapture').researchEnabled() && !sharedPacket)
         for (const provider of ['Groq','Alibaba']) require('./researchAI').notRequested(provider,birth,signal.id,'LOCAL_ABSTAIN_INPUT_UNAVAILABLE');
