@@ -6,7 +6,7 @@ const C = require('./codec'), S = require('./shard'), IO = require('./io');
 const {atomic, sha} = require('../researchStore');
 const FAMILY = Object.freeze({events:'E', dedupe:'D', episodes:'P', sourceEpisodes:'S',
   episodeMetadata:'S', nativeEpisodeIndex:'N', aiAttempts:'A', evaluations:'A',
-  openEpisodes:'O', openAttempts:'O', definitions:'X', extremes:'X', openedEpochs:'X',
+  openEpisodes:'O', openAttempts:'O', aiOutcomePending:'O', definitions:'X', extremes:'X', openedEpochs:'X',
   providerState:'A',providerDays:'A',providerRequestIds:'A',providerTerminalIds:'A',providerCandidates:'A',providerStartedCandidates:'A',providerOpenRequests:'O',archives:'C', segments:'C', garbageSegments:'C', members:'V', work:'V'});
 const OVERLAY_CAP = 2 * 1024 * 1024, TX_CAP = 2 * 1024 * 1024;
 function decode(k) { let at=4; const out=[]; for(let i=0;i<k[3];i++) {const n=k.readUInt32LE(at); at+=4; out.push(k.subarray(at,at+n).toString('utf16le')); at+=n;} return out; }
