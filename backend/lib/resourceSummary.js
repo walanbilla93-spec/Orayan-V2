@@ -10,8 +10,8 @@ function recoverySummary(provider, result, durationMs) {
 
 // Presentation only: never mutate the canonical manifest or any nested metadata.
 function compactCapture(status) {
-  if (!status || status.schemaVersion !== 'ORAYAN_RESEARCH_V2') return status;
-  const { archives = [], segments = [], ...rest } = status;
+  if (!status || !['ORAYAN_RESEARCH_V2','ORAYAN_RESEARCH_V3'].includes(status.schemaVersion)) return status;
+  const { archives = [], segments = [], liveStructures, startupMemory, memory, ...rest } = status;
   let archiveBytes = 0, activeArchives = 0, latest = null;
   const summaries = archives.map(a => {
     if (!a.expired) { archiveBytes += a.bytes || 0; activeArchives++; }
@@ -19,7 +19,7 @@ function compactCapture(status) {
     return { day:a.day, bytes:a.bytes, filename:a.filename, sha256:a.sha256,
       expired:a.expired, published:a.published, verified:a.verified };
   });
-  return { ...rest, archives:summaries,
+  return { ...rest, ...(status.backend!=='v3'?{...(memory?{memory}:{}),...(startupMemory?{startupMemory}:{}),...(liveStructures?{liveStructures}:{})}:{}), ...(status.backend==='v3'?{captureSchema:status.schemaVersion,downloadAvailable:!!status.epochId,exportScope:status.cleanProspectiveExperiment?'ACTIVE_CLEAN_EPOCH':'CURRENT_30H',memory:memory?{rss:memory.rss,heapUsed:memory.heapUsed,external:memory.external,cgroupPeak:memory.cgroupPeak}:undefined}:{}), archives:summaries,
     segments:segments.map(s => ({ name:s.name, bytes:s.bytes, rows:s.rows, day:s.day, sealed:s.sealed })),
     archiveSummary:{ count:archives.length, activeCount:activeArchives, bytes:archiveBytes,
       latestDay:latest?.day ?? null, latestId:latest?.filename ?? null, segmentCount:segments.length,

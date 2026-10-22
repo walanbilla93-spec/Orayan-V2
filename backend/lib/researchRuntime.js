@@ -124,7 +124,8 @@ async function buildCurrent(options = {}) {
   try {
     await require("./researchArchive").build(c, {
       ...options,
-      sinceAt: Date.now() - 30 * 3600000,
+      sinceAt: c.backend==='v3'&&c.state.cleanProspectiveExperiment&&!options.provider?0:Date.now() - 30 * 3600000,
+      includeEpochEvidence: c.backend==='v3'&&c.state.cleanProspectiveExperiment&&!options.provider,
       target: file,
     });
   } catch (e) {
@@ -139,7 +140,7 @@ async function buildCurrent(options = {}) {
     contentType: "application/zip",
     filename: options.provider
       ? "orayan-" + options.provider.toLowerCase() + "-30h.zip"
-      : "orayan-current-30h.zip",
+      : c.backend==='v3'&&c.state.cleanProspectiveExperiment?"orayan-clean-v3-"+c.state.epochId+".zip":"orayan-current-30h.zip",
     cleanup: () => fs.rmSync(scratch, { recursive: true, force: true }),
   };
 }
@@ -208,14 +209,16 @@ function status() {
       ...(current().backend === 'v3' ? {startupMemory:current().startupMemory,memory:current().memory()} : {}),
       evidencePreservationEnabled: require("./researchArchive").preservationEnabled(),
       exportAuthorization: {
+        current: current().backend==='v3'&&!!current().state.cleanProspectiveExperiment,
         groq: !!process.env.GROQ_SHADOW_EXPORT_TOKEN,
         alibaba: !!process.env.ALIBABA_SHADOW_EXPORT_TOKEN,
       },
     };
   } catch (error) {
     return {
-      schemaVersion: SCHEMA,
-      captureSchema: SCHEMA,
+      schemaVersion: process.env.RESEARCH_STORE_BACKEND==='v3'?'ORAYAN_RESEARCH_V3':SCHEMA,
+      captureSchema: process.env.RESEARCH_STORE_BACKEND==='v3'?'ORAYAN_RESEARCH_V3':SCHEMA,
+      downloadAvailable: false,
       captureHalted: true,
       health: "RESEARCH CAPTURE HALTED",
       captureReason: error.code || "WRITER_INITIALIZATION_FAILED",

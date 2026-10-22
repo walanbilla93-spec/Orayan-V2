@@ -51,15 +51,18 @@ function writeManifest(file,header,work) {
     append(fd,'}');fs.fsyncSync(fd);
   }finally{fs.closeSync(fd);}
 }
-async function build(store,{day=null,sinceAt=null,untilAt=Date.now(),target=null,provider=null}={}) {
+async function build(store,{day=null,sinceAt=null,untilAt=Date.now(),target=null,provider=null,includeEpochEvidence=false}={}) {
   if(!target)throw Error('EXPORT_SCRATCH_TARGET_REQUIRED');
   const work=new Scratch(os.tmpdir(),'orayan-v3-archive-'),watermark=store.state.sequence;
   let pumping,zip;
+  const epoch={backend:store.backend,epochId:store.state.epochId,startedAt:store.state.startedAt,cleanProspectiveExperiment:!!store.state.cleanProspectiveExperiment,storageLSN:store.index.root.lsn,state:store.scalars()};
   try {
     await closure(store,work,{day,sinceAt,untilAt,provider,watermark});
+    const evidenceFile=path.join(work.dir,'epoch-evidence.jsonl');
+    const supplemental=includeEpochEvidence?await require('./researchEpochEvidence').spool(store,evidenceFile):null;
     zip=new yazl.ZipFile();zip.on('error',e=>zip.outputStream.destroy(e));
     pumping=pipeline(zip.outputStream,fs.createWriteStream(target+'.building',{flags:'wx',mode:0o600}));pumping.catch(()=>{});
-    const manifest={schemaVersion:SCHEMA,boundedTraversal:true,timezone:store.timezone,day,window:{sinceAt,untilAt,provider},watermark,complete:true,counts:{},entries:[],integrity:{reconciliation:store.status().reconciliation,episodeStates:store.state.episodeStates,criticalLoss:store.state.lostRows,optionalSuppression:store.state.optionalSuppressed,populationComplete:store.state.populationComplete}};
+    const manifest={schemaVersion:SCHEMA,boundedTraversal:true,epoch,supplemental,timezone:store.timezone,day,window:{sinceAt,untilAt,provider},watermark,complete:true,counts:{},entries:[],integrity:{reconciliation:{attempted:epoch.state.attemptedRows,accepted:epoch.state.acceptedRows,persisted:epoch.state.persistedRows,archived:epoch.state.archivedRows},episodeStates:epoch.state.episodeStates,criticalLoss:epoch.state.lostRows,optionalSuppression:epoch.state.optionalSuppressed,populationComplete:epoch.state.populationComplete}};
     for(const stream of streams) {
       let has=false;for(const [,m]of work.entries('chosen'))if(m.stream===stream){has=true;break;}if(!has)continue;
       const name='records/'+stream+'.jsonl';
@@ -73,6 +76,7 @@ async function build(store,{day=null,sinceAt=null,untilAt=Date.now(),target=null
         pipeline(Readable.from(pieces()),meter).catch(e=>meter.destroy(e));cb(null,meter);
       });
     }
+    if(supplemental){const name='epoch-evidence.jsonl';manifest.entries.push({name,bytes:fs.statSync(evidenceFile).size,sha256:IO.hashFile(evidenceFile)});zip.addFile(evidenceFile,name);}
     const schema=Buffer.from(JSON.stringify({schemaVersion:SCHEMA,encoding:'lossless-base64-chunks',chunkChecksum:'sha256',streams}));
     manifest.entries.push({name:'schema.json',bytes:schema.length,sha256:sha(schema)});zip.addBuffer(schema,'schema.json');
     zip.addReadStreamLazy('manifest.json',cb=>{try{const file=path.join(work.dir,'manifest.json');writeManifest(file,manifest,work);cb(null,fs.createReadStream(file));}catch(e){cb(e);}});
