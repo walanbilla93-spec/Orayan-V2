@@ -180,6 +180,10 @@ function renderCaptureSummary(info,cap){
     metric('Stored data',fmtBytes(cap.retainedBytes)),metric('Capture losses',count((cap.lostRows||0)+(cap.volatileLostRows||0))),
     metric('Errors observed',count((cap.healthBuckets||[]).reduce((n,b)=>n+b.count,0)),'Recent aggregated buckets')
   ].join('');
+  if(v3&&cap.aiOpportunityOutcomes){
+    const a=cap.aiOpportunityOutcomes,counts=Object.values(a.providers||{}),total=label=>counts.reduce((n,p)=>n+Object.entries(p).filter(([k])=>k.endsWith(':'+label)).reduce((s,[,v])=>s+v,0),0);
+    $('#captureCounters').innerHTML+=metric('AI opinions linked',count(a.opinions))+metric('AI TP first',count(total('TP_FIRST')),'Per-provider opinions; includes SKIP')+metric('AI SL first',count(total('SL_FIRST')),'Hypothetical opportunity outcomes')+metric('Candidate paths pending',count(a.pending),a.lastError?'Tracking needs attention: '+a.lastError:a.recovery==='COMPLETE'?'No-fill, timeout and ambiguous results remain separate':'Recovering original birth evidence');
+  }
   const inherited=(cap.inheritedClosed||0)+(cap.inheritedCancelled||0)+(cap.inheritedExpired||0);
   $('#capturePopulationNote').textContent=v3?'Counters cover the active clean V3 epoch. Inherited positions carry explicit continuity labels.':v2?'Counters cover capture history across epochs. Episodes preserve their original cohort; missing chains are labeled censored.':'Admissions, fills and closes count new-epoch trades across separately labeled paper and shadow modes.'+(inherited?` ${count(inherited)} inherited trade outcomes are excluded.`:'')+(!clean?' Early records contain capture gaps; use complete observation windows for research.':'');
   const arms=info.holdout?.pairedArms||{},names={FIRST_ADMISSION_ONLY:['First admission','One admission per episode'],FIRST_FILLED_ONLY:['First filled trade','One filled trade per episode'],ATR1M_BUFFER:['1 ATR buffer','Wider stop; original structural target'],ATR1M_1P5_REPLACEMENT:['1.5 ATR replacement','Separate full-geometry opportunity population']};
