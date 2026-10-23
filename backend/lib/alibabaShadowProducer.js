@@ -16,7 +16,7 @@ const {validateSnapshot}=require('../../research/alibaba-shadow/src/snapshot');
 const {redact}=require('../../research/alibaba-shadow/src/security');
 
 const AUDIT_SCHEMA = 'ORAYAN_ALIBABA_SNAPSHOT_AUDIT_V1';
-const MAX_ENV_POINTS = 64;
+const MAX_ENV_POINTS = 128;
 const MAX_SEEN = 4096;
 const environment = [];
 const seenBirths = new Set();
@@ -129,6 +129,13 @@ function causalPoint(point,birthAt) {
 }
 function h2Feature(name, current, baseline, birthAt) {
   current = causalPoint(current,birthAt); baseline = causalPoint(baseline,birthAt);
+  // Cached 15-minute breadth snapshots repeat across scans. Select a distinct
+  // observation, not merely a scan received ten minutes earlier.
+  if (current && (!baseline || current.observedAt-baseline.observedAt < 5*60000 || current.observedAt-baseline.observedAt > 20*60000)) {
+    baseline = environment.map(point=>causalPoint(point[name],birthAt)).filter(point=>
+      point && point.value != null && current.observedAt-point.observedAt >= 5*60000 && current.observedAt-point.observedAt <= 20*60000)
+      .sort((a,b)=>Math.abs(current.observedAt-a.observedAt-10*60000)-Math.abs(current.observedAt-b.observedAt-10*60000))[0] || null;
+  }
   const ageSeconds = current?.observedAt == null ? null : Math.max(0, (birthAt - current.observedAt) / 1000);
   const value = current?.value ?? null, base = baseline?.value ?? null;
   return {
