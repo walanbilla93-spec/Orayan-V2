@@ -238,6 +238,14 @@ async function scanOnce() {
     const instruments = await marketData.getInstruments({ testnet: settings.testnet });
     const btcRegime = await getBtcRegime(settings);
     logger.info('engine', `BTC regime ${btcRegime.regime} from closed bar ${btcRegime.closedBarAt || 'NOT_AVAILABLE'}`);
+    // Separate research-only quotes: never replace the native ticker/gate inputs.
+    // Fetch before any candidate is built so receipt time cannot exceed its cutoff.
+    let researchTickers = tickers;
+    if (require('./minimalCapture').researchEnabled()) {
+      try { researchTickers = await marketData.getTickers({testnet:settings.testnet,ttlMs:5000,research:true}); }
+      catch(e) { logger.warn('research','Fresh research quotes unavailable',{code:e.code||e.reasonCode}); }
+    }
+    const researchTickerBySymbol = new Map(researchTickers.map(t=>[t.symbol,t]));
     const scanAt = Date.now();
     const scanId = uid('scan');
     const researchConfigHash = researchCapture.settingsHash(settings);
@@ -359,7 +367,7 @@ async function scanOnce() {
     // journal. This is bounded in memory and has no network I/O or execution authority.
     try { groqShadowProducer.observeEnvironment({ at:scanAt, marketSnapshot, tickers }); }
     catch (e) { logger.warn('groq-shadow', 'Environment observation failed open', { error:e.message }); }
-    try { alibabaShadowProducer.observeEnvironment({ at:Date.now(), marketSnapshot, tickers, btcRegime }); }
+    try { alibabaShadowProducer.observeEnvironment({ at:Date.now(), marketSnapshot, tickers:researchTickers, btcRegime }); }
     catch (e) { logger.warn('alibaba-shadow', 'Environment observation failed open', { code:e.code }); }
     const btcObservation = marketObservations.find(x => x?.symbol === 'BTCUSDT');
     const r12s = marketObservations.filter(x => x?.symbol !== 'BTCUSDT' && Number.isFinite(x?.r12))
@@ -370,7 +378,7 @@ async function scanOnce() {
       // embedded in the existing birth append: no extra I/O, queue or async work.
       let birth = null, sharedPacket = null;
       const birthContext = {scanAt,settings,marketSnapshot,
-        ticker:tickerBySymbol.get(signal.symbol),btcRegime,
+        ticker:researchTickerBySymbol.get(signal.symbol),btcRegime,
         openPositions:[...openTrades(),...pendingTrades()]};
       const birthResearch = row => {
         const minimal = require('./minimalCapture');
