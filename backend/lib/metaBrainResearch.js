@@ -92,13 +92,25 @@ class EvidenceStore {
 let instance,failed=null,lastError=null,modelCache;
 function failure(e){lastError=e.code||(/^[A-Z0-9_]+$/.test(e.message)?e.message:'RESEARCH_EVIDENCE_FAILURE');failed=e.code==='ENOSPC'?'STORAGE_FULL':/CAPACITY/.test(e.message)?'CAPACITY':'RESEARCH_ERROR';}
 function enabled(){return process.env.META_BRAIN_V1_SHADOW==='true';}
+function cleanEpochMembership(c){
+ const file=path.join(c.dir,'migration-receipt.json');
+ if(fs.statSync(file).size>65536)throw Error('CLEAN_FEEDBACK_RECEIPT_SIZE');
+ const receipt=JSON.parse(fs.readFileSync(file,'utf8')),{sha256,...body}=receipt;
+ if(require('./researchStore').sha(JSON.stringify(body))!==sha256||receipt.contract!=='ORAYAN_CLEAN_V3_EPOCH_1'||
+   path.resolve(receipt.destination)!==path.resolve(c.dir)||receipt.completedV2HistoryImported!==false||
+   receipt.oldAIOutputsImported!==false||receipt.oldMetaLearningStateImported!==false||!receipt.epochId)
+   throw Error('CLEAN_FEEDBACK_RECEIPT_INVALID');
+ // Clean preparation writes its initial epoch directly, without an EPOCH_OPENED
+ // event. Its checksummed receipt is the authoritative origin membership proof.
+ return epoch=>epoch===receipt.epochId||!!c.get('openedEpochs',epoch);
+}
 function current(){if(instance)return instance;const root=require('./store').DATA_DIR;
  const c=require('./minimalCapture').researchEnabled()?require('./minimalCapture').current():null;
  return instance=c?.backend==='v3'&&c.state.cleanProspectiveExperiment
   ?new EvidenceStore(path.join(c.dir,'feedback-memory'),{epochId:c.state.epochId,dataRoot:root,inheritedTrade:id=>!!c.get('members','inherited-native:'+id),
-    // Membership comes only from this clean namespace's durable epoch-open index.
+    // Membership comes only from this clean namespace's receipt and epoch index.
     // V2 and other experiment directories are never consulted.
-    acceptEpoch:epoch=>!!c.get('openedEpochs',epoch)})
+    acceptEpoch:cleanEpochMembership(c)})
   :new EvidenceStore(path.join(root,'meta-brain-v1-evidence'));}
 function safely(fn){if(!enabled()||failed)return null;try{return fn(current());}catch(e){failure(e);return null;}}
 function loadModel(){if(modelCache!==undefined)return modelCache;
@@ -191,4 +203,4 @@ function download(){
  async function* lines(){yield canonical(manifest)+'\n';for(const record of records){yield record.bytes;yield '\n';}}
  return {__stream:true,stream:require('stream').Readable.from(lines()),contentType:'application/x-ndjson',filename:'meta-brain-v1-evidence.ndjson'};
 }
-module.exports={EvidenceStore,observeBirth,observeAI,observeClose,decorate,status,enabled,download};
+module.exports={EvidenceStore,observeBirth,observeAI,observeClose,decorate,status,enabled,download,cleanEpochMembership};
