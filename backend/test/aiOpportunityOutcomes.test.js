@@ -54,3 +54,15 @@ test('restart recovery uses frozen birth policy and links existing model respons
  c.emit('ai_calls',{...identity,sourceEpisodeId:identity.opportunity_id,provider:'Alibaba',event:'PARSED_RESPONSE',status:'TIMEOUT',normalizedResponse:{decision:'ABSTAIN'}});
  const restarted=new Tracker(c);await restarted.recover();assert.equal(restarted.summary().providerResponses,2);assert.equal(restarted.summary().opinions,1);assert.equal(restarted.summary().failedResponses,1);
 });
+test('preserved canonical recovery skips duplicate archives, yields to health work and links a response missed before restart',async t=>{
+ const {c}=fixture(t),prior=process.env.RESEARCH_PRESERVE_EVIDENCE;process.env.RESEARCH_PRESERVE_EVIDENCE='true';
+ t.after(()=>{if(prior===undefined)delete process.env.RESEARCH_PRESERVE_EVIDENCE;else process.env.RESEARCH_PRESERVE_EVIDENCE=prior;});
+ c.emit('configuration',{configHash:'cfg',config:settings});
+ c.emit('decisions',{boundary:'candidate_birth',sourceEpisodeId:identity.opportunity_id,symbol:'TESTUSDT',side:'BUY',configHash:'cfg',geometry:{entryPrice:100,invalidationPrice:98,objectivePrice:104},meta_lite:{...identity,causal_cutoff:identity.birth_cutoff}});
+ for(let i=0;i<96;i++)c.emit('integrity',{event:'UNRELATED',i});
+ c.emit('ai_calls',{...identity,sourceEpisodeId:identity.opportunity_id,provider:'Groq',event:'PARSED_RESPONSE',status:'OK',normalizedResponse:{decision:'SKIP'}});
+ c.put('archives','duplicate',{filename:'must-not-open.zip',expired:false});
+ let healthRan=false;setImmediate(()=>{healthRan=true;});const tracker=new Tracker(c);await tracker.recover();
+ assert.equal(healthRan,true);assert.equal(tracker.summary().opinions,1);assert.equal(c.exportReaders,0);assert.equal(c.enumerationAttempts,0);
+ assert.equal(tracker.summary().recovery,'COMPLETE');assert.equal(tracker.summary().unlinkedRecordedOpinions,0);
+});
