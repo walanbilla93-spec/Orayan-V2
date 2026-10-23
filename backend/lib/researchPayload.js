@@ -89,7 +89,11 @@ function staleReasons(snapshot, nowMs, maxAgeMs) {
   const checks = [[snapshot?.regime,1200,'regime'],[snapshot?.planned_trade?.quote_evidence,15,'quote'],[snapshot?.exposure,120,'exposure']];
   for (const [v,limit,label] of checks) {
     const observed = Date.parse(v?.exchange_timestamp_utc || v?.observed_at_utc || v?.available_to_system_at_utc);
-    const age = Math.max(Number(v?.age_seconds), (nowMs-observed)/1000);
+    // Providers evaluate the frozen birth, not a live execution quote. Enforce
+    // quote freshness at birth; the separate maxAgeMs bound limits dispatch age.
+    // Never refresh a queued snapshot with post-birth data.
+    const reference = label==='quote'?birth:nowMs;
+    const age = Math.max(Number(v?.age_seconds), (reference-observed)/1000);
     if (!Number.isFinite(age) || age < 0 || age > limit || observed > birth) reasons.push(label+':stale_or_future');
   }
   return reasons;
