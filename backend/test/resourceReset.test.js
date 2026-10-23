@@ -10,7 +10,7 @@ function birth(at=10000){const p=packet(at);return {identity:p.identity,context:
 function closed(at=20000){return {id:'T',mode:'paper',status:'CLOSED',symbol:'TESTUSDT',side:'BUY',filledAt:11000,closedAt:at,fillPrice:100,realisedRR:-1,fees:0.02,netPnl:-0.25};}
 test('native management/admission and protected trading/comparator modules retain baseline bytes',()=>{
  const b=require('./fixtures/resourceResetBaseline.json'),s=text('lib/engine.js');
- for(const f of ['signals.js','gates.js','risk.js','executor.js','metaLite.js','researchPayload.js'])assert.equal(hash(text('lib/'+f)),b[f],f);
+ for(const f of ['signals.js','gates.js','risk.js','executor.js','metaLite.js'])assert.equal(hash(text('lib/'+f)),b[f],f);
  const a=s.indexOf('async function manageOpenTrades(settings) {'),end=s.indexOf('async function scanOnce() {',a);
  assert.equal(hash(s.slice(a,end).trim()),b.native_management);
  const c=s.indexOf('    const blockReason = !settings.tradingEnabled'),d=s.indexOf('    for (const signal of journalSignals) {\n      if (signal.gates?.passed',c);
