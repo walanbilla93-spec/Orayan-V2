@@ -8,6 +8,7 @@ const klineCache = new Map();   // `${symbol}:${interval}` -> { at, expiresAt, c
 const MAX_KLINE_CACHE_ENTRIES = 180; // 100-symbol universe + BTC + room for managed 1m trades
 const instrumentCache = { at: 0, map: new Map() };
 let tickerCache = { at: 0, list: [] };
+let researchTickerCache = { at: 0, list: [] };
 
 /**
  * Fetch closed candles, oldest first.
@@ -75,10 +76,11 @@ async function getCandles(symbol, interval, limit, { testnet, ttlMs } = {}) {
 }
 
 /** All linear USDT perpetual tickers, with 24h turnover and spread. */
-async function getTickers({ testnet, ttlMs = 60000 } = {}) {
-  if (tickerCache.testnet === (testnet !== false) && Date.now() - tickerCache.at < ttlMs && tickerCache.list.length) return tickerCache.list;
+async function getTickers({ testnet, ttlMs = 60000, research = false } = {}) {
+  const cache=research?researchTickerCache:tickerCache;
+  if (cache.testnet === (testnet !== false) && Date.now() - cache.at < ttlMs && cache.list.length) return cache.list;
 
-  const res = await bybit.publicGet('/v5/market/tickers', { category: 'linear' }, testnet);
+  const res = await (research?bybit.researchGet:bybit.publicGet)('/v5/market/tickers', { category: 'linear' }, testnet);
   const list = (res?.list || [])
     .filter((t) => String(t.symbol).endsWith('USDT'))
     .map((t) => {
@@ -106,7 +108,8 @@ async function getTickers({ testnet, ttlMs = 60000 } = {}) {
       };
     });
 
-  tickerCache = { at: Date.now(), list, testnet:testnet !== false };
+  const next={ at: Date.now(), list, testnet:testnet !== false };
+  if(research)researchTickerCache=next;else tickerCache=next;
   return list;
 }
 
@@ -146,6 +149,7 @@ async function getInstruments({ testnet, ttlMs = 6 * 3600 * 1000 } = {}) {
 function clearCaches() {
   klineCache.clear();
   tickerCache = { at: 0, list: [] };
+  researchTickerCache = { at: 0, list: [] };
   instrumentCache.at = 0;
   instrumentCache.map = new Map();
   instrumentCache.testnet = null;
