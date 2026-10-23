@@ -82,14 +82,14 @@ class Tracker{
     try{
       // Two streaming disk passes: births first, then original responses. No
       // historical trades.json, V2 namespace, synthetic AI calls or new epochs.
-      await require('./researchArchive').rows(c,async row=>{
+      await require('./researchArchiveV3').recoveryRows(c,async row=>{
         if(row.stream!=='decisions'||row.boundary!=='candidate_birth'||!row.meta_lite||!valid(identity(row.meta_lite)))return;
         try{const configId=c.get('definitions',row.configHash),meta=configId&&c.get('events',configId),config=meta&&c.readRow(meta).config;
           const g=row.geometry;this.register({identity:identity(row.meta_lite),symbol:row.symbol,side:row.side,entry:g?.entryPrice,sl:g?.invalidationPrice,tp:g?.objectivePrice,settings:config,origin:'RECONSTRUCTED_FROM_FROZEN_BIRTH',birthEventId:row.eventId});
         }catch(e){if(!/^OUTCOME_(FROZEN_POLICY|GEOMETRY|IDENTITY)_UNAVAILABLE/.test(e.message))throw e;missing++;}
         if(++n%16===0)await pause();
-      });
-      await require('./researchArchive').rows(c,async row=>{if(row.stream==='ai_calls'&&row.event==='PARSED_RESPONSE'&&!this.attach({...row,availableAt:row.at},{status:row.status,decision:row.normalizedResponse||row.parsed},row.eventId))unlinked++;});
+      },m=>m.stream==='decisions',row=>row.stream==='decisions'&&row.boundary==='candidate_birth');
+      await require('./researchArchiveV3').recoveryRows(c,async row=>{if(row.stream==='ai_calls'&&row.event==='PARSED_RESPONSE'&&!this.attach({...row,availableAt:row.at},{status:row.status,decision:row.normalizedResponse||row.parsed},row.eventId))unlinked++;},m=>m.stream==='ai_calls'&&m.aiEvent==='PARSED_RESPONSE',row=>row.stream==='ai_calls'&&row.event==='PARSED_RESPONSE');
       c.transaction(()=>{c.state.aiOpportunityOutcomes={...this.summary(),recovery:'COMPLETE',unrecoverableBirths:missing,unlinkedRecordedOpinions:unlinked,recoveryCompletedAt:this.now()};});
       this.recovered=true;
     }finally{c.exportReaders--;}
