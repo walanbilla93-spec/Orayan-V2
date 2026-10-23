@@ -132,6 +132,30 @@ async function verify(file) {
     return m;
   }finally{work.close();}
 }
+async function recoveryRows(store,visit,selectMeta,selectRow) {
+  // Preservation mode retains the entire authoritative canonical index. Do not
+  // decompress duplicate daily ZIPs into tens of thousands of scratch files.
+  if(!require('./researchArchive').preservationEnabled()||store.state.indexCompactedThroughDay||store.state.retainedRows!==store.state.persistedRows)
+    return rows(store,async row=>{if(selectRow(row))await visit(row);});
+  const work=new Scratch(os.tmpdir(),'orayan-v3-recovery-'),Spool=require('./researchV3/spool'),C=require('./researchV3/codec');
+  const refs=new Spool.Output(path.join(work.dir,'rows.run')),expected=store.state.retainedRows;
+  store.exportReaders=(store.exportReaders||0)+1;let count=0;
+  try{
+    for(const m of store.values('events')){
+      if(++count%32===0)await yieldLoop();
+      if(!selectMeta(m))continue;
+      const row=store.readRow(m);if(!selectRow(row))continue;
+      refs.add(C.record(C.key('E','record',[m.eventId]),Buffer.from(JSON.stringify(m)),m.sequence));
+    }
+    if(count!==expected)throw Error('RECOVERY_CANONICAL_COUNT_MISMATCH');
+    refs.close();await yieldLoop();
+    const source=new Spool.Input(path.join(work.dir,'rows.run'));
+    const records={*[Symbol.iterator](){let r;while((r=source.next()))yield r;}};
+    let sorted;try{sorted=Spool.sort(path.join(work.dir,'ordered'),records,(a,b)=>a.lsn-b.lsn||Buffer.compare(a.key,b.key));}finally{source.close();}
+    const input=new Spool.Input(sorted);let r,n=0;
+    try{while((r=input.next())){await visit(store.readRow(JSON.parse(r.value)));if(++n%16===0)await yieldLoop();}}finally{input.close();}
+  }finally{refs.close();store.exportReaders--;work.close();}
+}
 async function rows(store,visit) {
   const work=new Scratch(os.tmpdir(),'orayan-v3-rows-'),A=require('./researchArchive');
   const Spool=require('./researchV3/spool'),C=require('./researchV3/codec');
@@ -232,4 +256,4 @@ async function tick(store,now=Date.now()) {
 }
 async function collectGarbage(store){if(require('./researchArchive').preservationEnabled()||store.exportReaders)return;for(const a of store.values('archives'))if(a.expired){const file=path.join(store.dir,'archives',a.filename);if(fs.existsSync(file)){if(IO.hashFile(file)!==a.sha256)throw Error('GARBAGE_ARCHIVE_CHECKSUM');fs.unlinkSync(file);}}store.index.collectFiles();}
 async function isV3Archive(file){let v3=false;await require('./researchArchive').zipEntries(file,async(name,s)=>{if(name!=='manifest.json'){s.resume();return;}let prefix='';for await(const b of s)if(prefix.length<1024)prefix+=b.toString('utf8',0,Math.min(b.length,1024-prefix.length));v3=/"boundedTraversal":true/.test(prefix);});return v3;}
-module.exports={build,closure,verify,rows,closeDay,retention,compactIndex,tick,manifestTo,prune,writeManifest,collectGarbage,isV3Archive};
+module.exports={build,closure,verify,rows,recoveryRows,closeDay,retention,compactIndex,tick,manifestTo,prune,writeManifest,collectGarbage,isV3Archive};
