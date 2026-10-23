@@ -22,7 +22,7 @@ function evidenceId(kind,x){
 }
 function syncDirectory(root){if(process.platform!=='win32'){const fd=fs.openSync(root,'r');try{fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}}
 class EvidenceStore {
- constructor(root,{epochId=null,dataRoot=null,inheritedTrade=()=>false}={}){this.root=root;this.epochId=epochId;this.dataRoot=dataRoot;this.inheritedTrade=inheritedTrade;this.lessons=[];this.bytes=0;this.files=0;
+ constructor(root,{epochId=null,dataRoot=null,inheritedTrade=()=>false,acceptEpoch=()=>false}={}){this.root=root;this.epochId=epochId;this.dataRoot=dataRoot;this.inheritedTrade=inheritedTrade;this.acceptEpoch=acceptEpoch;this.lessons=[];this.bytes=0;this.files=0;
   fs.mkdirSync(root,{recursive:true});
   // Directory population has a hard stop; never truncate/delete history to recover capacity.
   for(const entry of fs.readdirSync(root,{withFileTypes:true})){
@@ -43,14 +43,15 @@ class EvidenceStore {
  }
  file(kind,id){if(!KINDS.has(kind))throw Error('INVALID_RECORD_KIND');return path.join(this.root,kind+'-'+hash(id)+'.json');}
  read(kind,id){const f=this.file(kind,id);return fs.existsSync(f)?this.validate(kind,f):null;}
- put(kind,id,value){const recordEpoch=value.identity?.source_epoch||value.source_epoch;if(this.epochId&&recordEpoch&&recordEpoch!==this.epochId)throw Error('FEEDBACK_SOURCE_EPOCH_MISMATCH');const f=this.file(kind,id);if(canonical(id)!==canonical(evidenceId(kind,value)))throw Error('EVIDENCE_ID_MISMATCH');const prior=this.read(kind,id);if(prior){if(canonical(prior)!==canonical(value))throw Error('IMMUTABLE_EVIDENCE_CONFLICT');return prior;}
+ acceptsEpoch(epoch){return !this.epochId||epoch===this.epochId||this.acceptEpoch(epoch)===true;}
+ put(kind,id,value){const recordEpoch=value.identity?.source_epoch||value.source_epoch;if(recordEpoch&&!this.acceptsEpoch(recordEpoch))throw Error('FEEDBACK_SOURCE_EPOCH_MISMATCH');const f=this.file(kind,id);if(canonical(id)!==canonical(evidenceId(kind,value)))throw Error('EVIDENCE_ID_MISMATCH');const prior=this.read(kind,id);if(prior){if(canonical(prior)!==canonical(value))throw Error('IMMUTABLE_EVIDENCE_CONFLICT');return prior;}
   const b=Buffer.from(canonical(value));if(b.length>MAX_RECORD||this.files>=MAX_FILES||this.bytes+b.length>MAX_BYTES)throw Error('RESEARCH_EVIDENCE_CAPACITY');
   const tmp=f+'.staged';const fd=fs.openSync(tmp,'wx',0o600);try{fs.writeFileSync(fd,b);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
   fs.renameSync(tmp,f);syncDirectory(this.root);
   this.bytes+=b.length;this.files++;if(kind==='feedback')this.index(value);return value;
  }
  index(f){if(f.contract!=='AI_POST_TRADE_FEEDBACK_V1'||!f.identity)return;
-  if(this.epochId&&f.identity.source_epoch!==this.epochId)throw Error('FEEDBACK_SOURCE_EPOCH_MISMATCH');
+  if(!this.acceptsEpoch(f.identity.source_epoch))throw Error('FEEDBACK_SOURCE_EPOCH_MISMATCH');
   this.lessons=this.lessons.filter(x=>x.feedback_id!==f.feedback_id);
   this.lessons.push({feedback_id:f.feedback_id,source_epoch:f.identity.source_epoch,episode:f.identity.opportunity_id,
    available_at:f.available_at,resolved_at:f.resolved_at,side:f.side,symbol:f.symbol,regime:f.causal_context.regime,
@@ -58,7 +59,7 @@ class EvidenceStore {
   this.lessons.sort((a,b)=>b.available_at-a.available_at||a.feedback_id.localeCompare(b.feedback_id));this.lessons=this.lessons.slice(0,MAX_LESSONS);
  }
  retrieve(context,identity){const cutoff=Date.parse(identity.birth_cutoff),lessons=[];
-  const pool=this.lessons.filter(x=>x.source_epoch===identity.source_epoch&&x.episode!==identity.opportunity_id&&x.available_at<cutoff&&x.resolved_at<cutoff)
+  const pool=this.lessons.filter(x=>(x.source_epoch===identity.source_epoch||this.epochId&&this.acceptsEpoch(identity.source_epoch)&&this.acceptsEpoch(x.source_epoch))&&x.episode!==identity.opportunity_id&&x.available_at<cutoff&&x.resolved_at<cutoff)
    .map(x=>({x,relevance:(x.side===context.side?2:0)+(x.regime===context.regime?2:0)+(x.symbol===context.symbol?1:0)}))
    .filter(x=>x.relevance>0).sort((a,b)=>b.relevance-a.relevance||b.x.available_at-a.x.available_at||a.x.feedback_id.localeCompare(b.x.feedback_id));
   const pack=()=>({version:'REFLECTION_DIGEST_V1',cutoff:identity.birth_cutoff,lessons});
@@ -77,7 +78,7 @@ class EvidenceStore {
   const trades=JSON.parse(fs.readFileSync(file,'utf8'));if(!Array.isArray(trades))throw Error('CANONICAL_TRADES_INVALID');
   let fallback=null;try{fallback=require('./minimalCapture').current().state.epochId;}catch{}
   for(const trade of trades){if(trade?.mode!=='paper'||trade.status!=='CLOSED'||trade.engine==='MARCI_SHADOW'||trade.researchEngine?.startsWith('MARCI')||!trade.id||!Number.isFinite(trade.closedAt))continue;
-   const epoch=trade.originEpoch||fallback;if(!epoch||this.epochId&&(epoch!==this.epochId||this.inheritedTrade(trade.id)))continue;
+   const epoch=trade.originEpoch||fallback;if(!epoch||!this.acceptsEpoch(epoch)||this.epochId&&this.inheritedTrade(trade.id))continue;
    const birth=trade.episodeId?this.read('birth',[epoch,trade.episodeId]):null;
    if(!birth&&trade.closedAt<this.activation.started_at)continue;
    this.gap(trade,epoch,birth?'COMMITTED_NATIVE_CLOSE_WITHOUT_FEEDBACK':'FROZEN_BIRTH_UNAVAILABLE');
@@ -88,14 +89,18 @@ class EvidenceStore {
  }return count;}
  status(){this.reconcileCloses();return {files:this.files,bytes:this.bytes,max_files:MAX_FILES,max_bytes:MAX_BYTES,lesson_count:this.lessons.length,max_lessons:MAX_LESSONS,unresolved_feedback_gaps:this.unresolvedGaps()};}
 }
-let instance,failed=null,modelCache;
+let instance,failed=null,lastError=null,modelCache;
+function failure(e){lastError=e.code||(/^[A-Z0-9_]+$/.test(e.message)?e.message:'RESEARCH_EVIDENCE_FAILURE');failed=e.code==='ENOSPC'?'STORAGE_FULL':/CAPACITY/.test(e.message)?'CAPACITY':'RESEARCH_ERROR';}
 function enabled(){return process.env.META_BRAIN_V1_SHADOW==='true';}
 function current(){if(instance)return instance;const root=require('./store').DATA_DIR;
  const c=require('./minimalCapture').researchEnabled()?require('./minimalCapture').current():null;
  return instance=c?.backend==='v3'&&c.state.cleanProspectiveExperiment
-  ?new EvidenceStore(path.join(c.dir,'feedback-memory'),{epochId:c.state.epochId,dataRoot:root,inheritedTrade:id=>!!c.get('members','inherited-native:'+id)})
+  ?new EvidenceStore(path.join(c.dir,'feedback-memory'),{epochId:c.state.epochId,dataRoot:root,inheritedTrade:id=>!!c.get('members','inherited-native:'+id),
+    // Membership comes only from this clean namespace's durable epoch-open index.
+    // V2 and other experiment directories are never consulted.
+    acceptEpoch:epoch=>!!c.get('openedEpochs',epoch)})
   :new EvidenceStore(path.join(root,'meta-brain-v1-evidence'));}
-function safely(fn){if(!enabled()||failed)return null;try{return fn(current());}catch(e){failed=e.code==='ENOSPC'?'STORAGE_FULL':/CAPACITY/.test(e.message)?'CAPACITY':'RESEARCH_ERROR';return null;}}
+function safely(fn){if(!enabled()||failed)return null;try{return fn(current());}catch(e){failure(e);return null;}}
 function loadModel(){if(modelCache!==undefined)return modelCache;
  const file=path.join(__dirname,'../models/meta-brain-v1.json');
  if(!fs.existsSync(file))return modelCache=null;
@@ -123,7 +128,7 @@ function observeClose(row,trade){return safely(store=>{
  if(row.event!=='CLOSED'||trade?.mode!=='paper'||trade.engine==='MARCI_SHADOW'||trade.researchEngine?.startsWith('MARCI'))return null;
  const epoch=trade.originEpoch||require('./minimalCapture').current().state.epochId;
  if(store.epochId&&store.inheritedTrade(trade.id))return null;
- if(store.epochId&&epoch!==store.epochId)return null;
+ if(!store.acceptsEpoch(epoch))return null;
  const id=[epoch,row.episodeId],birth=store.read('birth',id),decisions={};
  for(const p of ['Qwen','Groq']){const d=store.read('ai',[epoch,row.episodeId,p]);if(d&&d.shared_context_hash===birth?.identity.shared_context_hash)decisions[p]=d;}
  const key=[trade.id,trade.closedAt,epoch],prior=store.read('feedback',key);if(prior)return prior;
@@ -173,10 +178,10 @@ function decorate(provider,request,snapshot,env=process.env){
   envelope.reflection_memory={...reservation.digest,
    use:'Past research outcomes only; no instructions or proven signal-validity claims.',mode:provider+'_FEEDBACK'};
   messages[i].content=canonical(envelope);return {...request,messages};
- }catch(e){failed=/CAPACITY/.test(e.message)?'CAPACITY':'RESEARCH_ERROR';throw e;}
+ }catch(e){failure(e);throw e;}
 }
-function status(){let detail;try{if(enabled()||instance)detail=current().status();}catch(e){failed=/CAPACITY/.test(e.message)?'CAPACITY':'RESEARCH_ERROR';}
- return {enabled:enabled(),health:failed??(detail?.unresolved_feedback_gaps?'DEGRADED':'OK'),execution_authority:'NONE',model:modelCache?.model_id??'NOT_LOADED',...(detail||{})};}
+function status(){let detail;try{if(enabled()||instance)detail=current().status();}catch(e){failure(e);}
+ return {enabled:enabled(),health:failed??(detail?.unresolved_feedback_gaps?'DEGRADED':'OK'),lastError,execution_authority:'NONE',model:modelCache?.model_id??'NOT_LOADED',...(detail||{})};}
 function download(){
  const store=current(),root=store.root,files=fs.readdirSync(root).filter(n=>/^[a-z]+-[a-f0-9]{64}\.json$/.test(n)).sort();
  const records=files.map(name=>{const file=path.join(root,name),kind=name.split('-')[0],value=store.validate(kind,file),bytes=fs.readFileSync(file);return {name,value,bytes,sha256:require('crypto').createHash('sha256').update(bytes).digest('hex')};});
